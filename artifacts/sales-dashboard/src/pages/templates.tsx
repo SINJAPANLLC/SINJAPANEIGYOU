@@ -304,6 +304,292 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
   </div>
 </div>`,
   },
+  {
+    label: "✨ アニメ：パルスネオン",
+    name: "パルスネオン提案",
+    subjectTemplate: "{{company_name}}様、光る未来へ — {{service_name}}",
+    htmlTemplate: `<!DOCTYPE html>
+<html>
+<head>
+<style>
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 20px rgba(139,92,246,0.4), 0 0 60px rgba(139,92,246,0.15); }
+    50% { box-shadow: 0 0 40px rgba(139,92,246,0.8), 0 0 100px rgba(139,92,246,0.3); }
+  }
+  @keyframes shimmer {
+    0% { background-position: -600px 0; }
+    100% { background-position: 600px 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-8px); }
+  }
+  @keyframes slide-in {
+    from { opacity:0; transform: translateX(-20px); }
+    to { opacity:1; transform: translateX(0); }
+  }
+  .pulse-card {
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+  .shimmer-text {
+    background: linear-gradient(90deg, #c084fc 0%, #ffffff 40%, #60a5fa 60%, #c084fc 100%);
+    background-size: 600px auto;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 3s linear infinite;
+  }
+  .float-icon {
+    display: inline-block;
+    animation: float 3s ease-in-out infinite;
+  }
+  .slide-row { animation: slide-in 0.6s ease both; }
+  .slide-row:nth-child(1) { animation-delay: 0.1s; }
+  .slide-row:nth-child(2) { animation-delay: 0.25s; }
+  .slide-row:nth-child(3) { animation-delay: 0.4s; }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#060612;">
+<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#060612;color:#e2e8f0;">
+
+  <!-- Header -->
+  <div style="padding:56px 48px 40px;text-align:center;position:relative;overflow:hidden;">
+    <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#8b5cf6,#60a5fa,#8b5cf6,transparent);"></div>
+    <div class="float-icon" style="font-size:48px;margin-bottom:16px;">⚡</div>
+    <div style="font-size:10px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(139,92,246,0.7);margin-bottom:20px;">{{service_name}}</div>
+    <h1 style="font-size:36px;font-weight:900;line-height:1.1;margin:0;letter-spacing:-0.03em;">
+      <span class="shimmer-text">{{company_name}}様へ、<br>特別なご提案</span>
+    </h1>
+  </div>
+
+  <!-- Pulse card -->
+  <div style="padding:0 48px 40px;">
+    <div class="pulse-card" style="background:linear-gradient(135deg,#1a0a2e,#0d1333);border:1px solid rgba(139,92,246,0.3);border-radius:16px;padding:36px;">
+      <p style="font-size:15px;line-height:2;color:#a78bfa;margin:0 0 20px;">突然のご連絡、失礼いたします。<strong style="color:#e2e8f0;">{{service_name}}</strong>の担当でございます。</p>
+      <p style="font-size:15px;line-height:2;color:#94a3b8;margin:0 0 32px;">{{company_name}}様のビジネスを次のステージへ引き上げる、具体的な提案をご用意しました。</p>
+
+      <!-- Animated rows -->
+      <div class="slide-row" style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid rgba(139,92,246,0.15);">
+        <div style="width:8px;height:8px;border-radius:50%;background:#8b5cf6;flex-shrink:0;box-shadow:0 0 8px #8b5cf6;"></div>
+        <span style="font-size:13px;color:#d1d5db;">AIによる<strong style="color:#c084fc;">完全自動化</strong>で工数70%削減</span>
+      </div>
+      <div class="slide-row" style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid rgba(96,165,250,0.15);">
+        <div style="width:8px;height:8px;border-radius:50%;background:#60a5fa;flex-shrink:0;box-shadow:0 0 8px #60a5fa;"></div>
+        <span style="font-size:13px;color:#d1d5db;"><strong style="color:#93c5fd;">30日間無料</strong>トライアルで即日開始</span>
+      </div>
+      <div class="slide-row" style="display:flex;align-items:center;gap:12px;padding:14px 0;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#34d399;flex-shrink:0;box-shadow:0 0 8px #34d399;"></div>
+        <span style="font-size:13px;color:#d1d5db;">導入企業<strong style="color:#6ee7b7;">97%</strong>が半年以内にROI達成</span>
+      </div>
+
+      <a href="{{service_url}}" style="display:block;margin-top:32px;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;text-decoration:none;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;padding:18px;text-align:center;font-weight:800;border-radius:10px;">デモを体験する →</a>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div style="padding:20px 48px;border-top:1px solid rgba(139,92,246,0.1);text-align:center;font-size:10px;color:#374151;letter-spacing:0.1em;">
+    {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:#374151;text-decoration:none;">配信停止</a>
+  </div>
+</div>
+</body>
+</html>`,
+  },
+  {
+    label: "✨ アニメ：オーロラ",
+    name: "オーロラグロー提案",
+    subjectTemplate: "{{company_name}}様、{{service_name}}からの輝くご提案",
+    htmlTemplate: `<!DOCTYPE html>
+<html>
+<head>
+<style>
+  @keyframes aurora {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  @keyframes bounce-dot {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0.7; }
+  }
+  .aurora-bg {
+    background: linear-gradient(270deg, #12c2e9, #c471ed, #f64f59, #12c2e9);
+    background-size: 400% 400%;
+    animation: aurora 6s ease infinite;
+  }
+  .fade-up { animation: fade-up 0.8s ease both; }
+  .fade-up:nth-child(1) { animation-delay: 0.1s; }
+  .fade-up:nth-child(2) { animation-delay: 0.3s; }
+  .fade-up:nth-child(3) { animation-delay: 0.5s; }
+  .dot1 { animation: bounce-dot 1.4s ease-in-out infinite; }
+  .dot2 { animation: bounce-dot 1.4s ease-in-out 0.2s infinite; }
+  .dot3 { animation: bounce-dot 1.4s ease-in-out 0.4s infinite; }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#f8fafc;">
+<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#ffffff;">
+
+  <!-- Aurora header -->
+  <div class="aurora-bg" style="padding:64px 48px;text-align:center;position:relative;overflow:hidden;">
+    <div style="position:absolute;inset:0;background:rgba(0,0,0,0.25);"></div>
+    <div style="position:relative;z-index:1;">
+      <!-- Loading dots -->
+      <div style="display:flex;justify-content:center;gap:6px;margin-bottom:28px;">
+        <div class="dot1" style="width:8px;height:8px;border-radius:50%;background:#fff;"></div>
+        <div class="dot2" style="width:8px;height:8px;border-radius:50%;background:#fff;"></div>
+        <div class="dot3" style="width:8px;height:8px;border-radius:50%;background:#fff;"></div>
+      </div>
+      <div style="font-size:10px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(255,255,255,0.7);margin-bottom:16px;">{{service_name}}</div>
+      <h1 style="font-size:38px;font-weight:900;line-height:1.1;margin:0;color:#ffffff;letter-spacing:-0.03em;text-shadow:0 2px 20px rgba(0,0,0,0.3);">{{company_name}}様、<br>変化の波に<br>乗りませんか。</h1>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div style="padding:48px;">
+    <p class="fade-up" style="font-size:15px;line-height:2;color:#475569;margin:0 0 20px;">突然のご連絡、失礼いたします。<strong style="color:#111;">{{service_name}}</strong>の担当でございます。</p>
+    <p class="fade-up" style="font-size:15px;line-height:2;color:#475569;margin:0 0 36px;">{{company_name}}様の未来に向けた、具体的な変革プランをご用意しております。ぜひ一度ご覧ください。</p>
+
+    <!-- Feature cards with animation delay -->
+    <div style="display:flex;gap:12px;margin-bottom:40px;flex-wrap:wrap;">
+      <div class="fade-up" style="flex:1;min-width:140px;padding:20px;background:linear-gradient(135deg,#fdf4ff,#fce7f3);border-radius:12px;border:1px solid #f0abfc;text-align:center;">
+        <div style="font-size:28px;margin-bottom:8px;">🚀</div>
+        <div style="font-size:13px;font-weight:700;color:#86198f;margin-bottom:4px;">即日導入</div>
+        <div style="font-size:11px;color:#a21caf;">セットアップ15分</div>
+      </div>
+      <div class="fade-up" style="flex:1;min-width:140px;padding:20px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:12px;border:1px solid #93c5fd;text-align:center;">
+        <div style="font-size:28px;margin-bottom:8px;">💡</div>
+        <div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:4px;">AI自動化</div>
+        <div style="font-size:11px;color:#2563eb;">工数70%削減</div>
+      </div>
+      <div class="fade-up" style="flex:1;min-width:140px;padding:20px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:12px;border:1px solid #86efac;text-align:center;">
+        <div style="font-size:28px;margin-bottom:8px;">📈</div>
+        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:4px;">成果保証</div>
+        <div style="font-size:11px;color:#16a34a;">30日返金OK</div>
+      </div>
+    </div>
+
+    <a href="{{service_url}}" style="display:block;background:linear-gradient(135deg,#c471ed,#12c2e9);color:#fff;text-decoration:none;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;padding:20px;text-align:center;font-weight:800;border-radius:10px;box-shadow:0 8px 32px rgba(196,113,237,0.3);">無料で始める →</a>
+  </div>
+
+  <div style="padding:20px 48px;border-top:1px solid #f1f5f9;text-align:center;font-size:10px;color:#cbd5e1;">
+    {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:#cbd5e1;text-decoration:none;">配信停止</a>
+  </div>
+</div>
+</body>
+</html>`,
+  },
+  {
+    label: "✨ アニメ：タイプライター",
+    name: "タイプライター演出提案",
+    subjectTemplate: "{{company_name}}様、{{service_name}}よりメッセージ",
+    htmlTemplate: `<!DOCTYPE html>
+<html>
+<head>
+<style>
+  @keyframes typing {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+  @keyframes blink {
+    0%, 100% { border-color: transparent; }
+    50% { border-color: #111; }
+  }
+  @keyframes reveal {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes underline-draw {
+    from { width: 0; }
+    to { width: 100%; }
+  }
+  @keyframes counter-up {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .typewriter {
+    display: inline-block;
+    overflow: hidden;
+    white-space: nowrap;
+    border-right: 2px solid #111;
+    animation: typing 1.8s steps(20, end) 0.3s both,
+               blink 0.75s step-end 2.1s 4;
+  }
+  .reveal { animation: reveal 0.7s ease both; }
+  .reveal:nth-child(1) { animation-delay: 2.2s; }
+  .reveal:nth-child(2) { animation-delay: 2.5s; }
+  .reveal:nth-child(3) { animation-delay: 2.8s; }
+  .underline-anim {
+    display: block;
+    height: 2px;
+    background: #111;
+    animation: underline-draw 0.5s ease 2s both;
+  }
+  .counter { animation: counter-up 0.5s cubic-bezier(0.175,0.885,0.32,1.275) both; }
+  .counter:nth-child(1) { animation-delay: 2.4s; }
+  .counter:nth-child(2) { animation-delay: 2.6s; }
+  .counter:nth-child(3) { animation-delay: 2.8s; }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#fafafa;">
+<div style="max-width:600px;margin:0 auto;font-family:'Courier New',Courier,monospace;background:#ffffff;border:1px solid #e5e7eb;">
+
+  <!-- Terminal header -->
+  <div style="background:#1a1a1a;padding:14px 20px;display:flex;align-items:center;gap:8px;">
+    <div style="width:12px;height:12px;border-radius:50%;background:#ff5f57;"></div>
+    <div style="width:12px;height:12px;border-radius:50%;background:#febc2e;"></div>
+    <div style="width:12px;height:12px;border-radius:50%;background:#28c840;"></div>
+    <span style="font-size:11px;color:#666;margin-left:12px;letter-spacing:0.1em;">{{service_name}} — message.txt</span>
+  </div>
+
+  <!-- Typewriter area -->
+  <div style="padding:48px;background:#fafafa;">
+    <div style="font-size:11px;color:#999;margin-bottom:16px;letter-spacing:0.1em;">// {{service_name}} より {{company_name}} 様へ</div>
+    <h1 style="font-size:28px;font-weight:700;line-height:1.2;margin:0 0 4px;color:#111;letter-spacing:-0.02em;">
+      <span class="typewriter">{{company_name}}様、はじめまして。</span>
+    </h1>
+    <span class="underline-anim"></span>
+  </div>
+
+  <!-- Body -->
+  <div style="padding:0 48px 48px;background:#ffffff;">
+    <p class="reveal" style="font-size:14px;line-height:2.1;color:#444;margin:0 0 16px;font-family:'Helvetica Neue',sans-serif;">突然のご連絡、失礼いたします。私どもは<strong style="color:#111;">{{service_name}}</strong>を提供しております。</p>
+    <p class="reveal" style="font-size:14px;line-height:2.1;color:#444;margin:0 0 36px;font-family:'Helvetica Neue',sans-serif;">貴社の営業活動をAIで効率化し、より多くの商談を生み出す仕組みをご提案いたします。</p>
+
+    <!-- Stats -->
+    <div class="reveal" style="display:flex;gap:0;margin-bottom:40px;border:1px solid #e5e7eb;">
+      <div class="counter" style="flex:1;text-align:center;padding:24px 12px;border-right:1px solid #e5e7eb;">
+        <div style="font-size:32px;font-weight:900;color:#111;margin-bottom:4px;">70%</div>
+        <div style="font-size:10px;color:#999;letter-spacing:0.1em;text-transform:uppercase;font-family:'Helvetica Neue',sans-serif;">工数削減</div>
+      </div>
+      <div class="counter" style="flex:1;text-align:center;padding:24px 12px;border-right:1px solid #e5e7eb;">
+        <div style="font-size:32px;font-weight:900;color:#111;margin-bottom:4px;">3x</div>
+        <div style="font-size:10px;color:#999;letter-spacing:0.1em;text-transform:uppercase;font-family:'Helvetica Neue',sans-serif;">返信率向上</div>
+      </div>
+      <div class="counter" style="flex:1;text-align:center;padding:24px 12px;">
+        <div style="font-size:32px;font-weight:900;color:#111;margin-bottom:4px;">30日</div>
+        <div style="font-size:10px;color:#999;letter-spacing:0.1em;text-transform:uppercase;font-family:'Helvetica Neue',sans-serif;">無料体験</div>
+      </div>
+    </div>
+
+    <a href="{{service_url}}" style="display:block;background:#111;color:#fff;text-decoration:none;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;padding:18px;text-align:center;font-weight:700;font-family:'Helvetica Neue',sans-serif;">詳細を確認する →</a>
+  </div>
+
+  <!-- Footer -->
+  <div style="padding:20px 48px;border-top:1px solid #e5e7eb;font-size:9px;color:#d1d5db;letter-spacing:0.1em;display:flex;justify-content:space-between;font-family:'Helvetica Neue',sans-serif;">
+    <span>{{service_name}}</span>
+    <a href="#unsubscribe" style="color:#d1d5db;text-decoration:none;">配信停止</a>
+  </div>
+</div>
+</body>
+</html>`,
+  },
 ];
 
 export default function TemplatesPage() {

@@ -427,11 +427,21 @@ export default function LeadsPage() {
 
                   <div className="space-y-2">
                     <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground border-b border-border pb-1">ライブプレビュー</div>
-                    <div className="border border-border bg-background min-h-[300px] p-6">
+                    <div className="border border-border bg-white min-h-[300px] overflow-hidden">
                       {emailBody ? (
-                        <div 
-                          dangerouslySetInnerHTML={{ __html: emailBody }}
-                          className="prose prose-sm dark:prose-invert max-w-none text-sm"
+                        <iframe
+                          srcDoc={emailBody}
+                          title="メールプレビュー"
+                          className="w-full border-0"
+                          style={{ minHeight: 300, height: "100%" }}
+                          sandbox="allow-same-origin"
+                          onLoad={(e) => {
+                            const iframe = e.currentTarget;
+                            const doc = iframe.contentDocument;
+                            if (doc) {
+                              iframe.style.height = doc.documentElement.scrollHeight + "px";
+                            }
+                          }}
                         />
                       ) : (
                         <div className="text-center text-muted-foreground text-xs font-mono py-12">本文未入力</div>
