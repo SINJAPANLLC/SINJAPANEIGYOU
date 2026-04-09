@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { useClerk } from "@clerk/react";
+import { useAuth } from "@/contexts/AuthContext";
 import { useBusiness } from "@/contexts/BusinessContext";
 import {
   LayoutDashboard,
@@ -44,7 +44,7 @@ const navigation = [
 
 export function SidebarLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { signOut } = useClerk();
+  const { signOut } = useAuth();
   const { businesses, selectedBusinessId, setSelectedBusinessId, isLoading } = useBusiness();
 
   const selectedBusiness = businesses?.find((b) => b.id === selectedBusinessId);

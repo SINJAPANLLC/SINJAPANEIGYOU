@@ -13,7 +13,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useUser } from "@clerk/react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const businessSchema = z.object({
   name: z.string().min(1, "名前は必須です"),
@@ -28,7 +28,7 @@ type BusinessFormValues = z.infer<typeof businessSchema>;
 
 export default function BusinessesPage() {
   const { toast } = useToast();
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingBusinessId, setEditingBusinessId] = useState<number | null>(null);
 

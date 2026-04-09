@@ -1,17 +1,14 @@
-import { useEffect, useRef } from "react";
-import { ClerkProvider, Show, useClerk } from "@clerk/react";
-import { jaJP } from "@clerk/localizations";
 import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
 import { queryClient } from "@/lib/queryClient";
-import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { BusinessProvider } from "@/contexts/BusinessContext";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
 
 import SignInPage from "@/pages/auth/sign-in";
-import SignUpPage from "@/pages/auth/sign-up";
 import DashboardPage from "@/pages/dashboard";
 import BusinessesPage from "@/pages/businesses";
 import LeadsPage from "@/pages/leads";
@@ -20,100 +17,38 @@ import CampaignsPage from "@/pages/campaigns";
 import EmailLogsPage from "@/pages/email-logs";
 import NotFound from "@/pages/not-found";
 
-const clerkPubKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-if (!clerkPubKey) {
-  throw new Error("Missing VITE_CLERK_PUBLISHABLE_KEY in .env file");
-}
-
-function ClerkQueryClientCacheInvalidator() {
-  const { addListener } = useClerk();
-  const queryClient = useQueryClient();
-  const prevUserIdRef = useRef<string | null | undefined>(undefined);
-
-  useEffect(() => {
-    const unsubscribe = addListener(({ user }) => {
-      const userId = user?.id ?? null;
-      if (
-        prevUserIdRef.current !== undefined &&
-        prevUserIdRef.current !== userId
-      ) {
-        queryClient.clear();
-      }
-      prevUserIdRef.current = userId;
-    });
-    return unsubscribe;
-  }, [addListener, queryClient]);
-
-  return null;
-}
-
 function HomeRedirect() {
-  return (
-    <>
-      <Show when="signed-in">
-        <Redirect to="/dashboard" />
-      </Show>
-      <Show when="signed-out">
-        <Redirect to="/sign-in" />
-      </Show>
-    </>
-  );
+  const { isSignedIn, isLoaded } = useAuth();
+  if (!isLoaded) return null;
+  return isSignedIn ? <Redirect to="/dashboard" /> : <Redirect to="/sign-in" />;
 }
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
+  const { isSignedIn, isLoaded } = useAuth();
+  if (!isLoaded) return null;
+  if (!isSignedIn) return <Redirect to="/sign-in" />;
   return (
-    <>
-      <Show when="signed-in">
-        <SidebarLayout>
-          <Component />
-        </SidebarLayout>
-      </Show>
-      <Show when="signed-out">
-        <Redirect to="/sign-in" />
-      </Show>
-    </>
+    <SidebarLayout>
+      <Component />
+    </SidebarLayout>
   );
 }
 
-function ClerkProviderWithRoutes() {
+function AppRoutes() {
   return (
-    <ClerkProvider
-      publishableKey={clerkPubKey}
-      proxyUrl={clerkProxyUrl}
-      localization={jaJP}
-      appearance={{
-        elements: {
-          socialButtonsBlock: { display: "none" },
-          dividerRow: { display: "none" },
-          socialButtonsProviderIcon: { display: "none" },
-        },
-      }}
-    >
-      <QueryClientProvider client={queryClient}>
-        <ClerkQueryClientCacheInvalidator />
-        <BusinessProvider>
-          <Switch>
-            <Route path="/" component={HomeRedirect} />
-            <Route path="/sign-in/*?" component={SignInPage} />
-            <Route path="/sign-up/*?" component={SignUpPage} />
-            
-            {/* Protected Routes */}
-            <Route path="/dashboard"><ProtectedRoute component={DashboardPage} /></Route>
-            <Route path="/businesses"><ProtectedRoute component={BusinessesPage} /></Route>
-            <Route path="/leads"><ProtectedRoute component={LeadsPage} /></Route>
-            <Route path="/templates"><ProtectedRoute component={TemplatesPage} /></Route>
-            <Route path="/campaigns"><ProtectedRoute component={CampaignsPage} /></Route>
-            <Route path="/email-logs"><ProtectedRoute component={EmailLogsPage} /></Route>
-            
-            {/* 404 */}
-            <Route component={NotFound} />
-          </Switch>
-        </BusinessProvider>
-      </QueryClientProvider>
-    </ClerkProvider>
+    <Switch>
+      <Route path="/" component={HomeRedirect} />
+      <Route path="/sign-in" component={SignInPage} />
+
+      <Route path="/dashboard"><ProtectedRoute component={DashboardPage} /></Route>
+      <Route path="/businesses"><ProtectedRoute component={BusinessesPage} /></Route>
+      <Route path="/leads"><ProtectedRoute component={LeadsPage} /></Route>
+      <Route path="/templates"><ProtectedRoute component={TemplatesPage} /></Route>
+      <Route path="/campaigns"><ProtectedRoute component={CampaignsPage} /></Route>
+      <Route path="/email-logs"><ProtectedRoute component={EmailLogsPage} /></Route>
+
+      <Route component={NotFound} />
+    </Switch>
   );
 }
 
@@ -121,8 +56,14 @@ function App() {
   return (
     <ThemeProvider defaultTheme="dark" storageKey="app-theme">
       <TooltipProvider>
-        <WouterRouter base={basePath}>
-          <ClerkProviderWithRoutes />
+        <WouterRouter>
+          <QueryClientProvider client={queryClient}>
+            <AuthProvider>
+              <BusinessProvider>
+                <AppRoutes />
+              </BusinessProvider>
+            </AuthProvider>
+          </QueryClientProvider>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>

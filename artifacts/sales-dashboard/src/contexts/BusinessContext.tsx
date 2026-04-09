@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { useListBusinesses } from "@workspace/api-client-react";
-import { useUser } from "@clerk/react";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface BusinessContextType {
   selectedBusinessId: number | null;
@@ -12,7 +12,7 @@ interface BusinessContextType {
 const BusinessContext = createContext<BusinessContextType | undefined>(undefined);
 
 export function BusinessProvider({ children }: { children: ReactNode }) {
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useAuth();
   const [selectedBusinessId, setSelectedBusinessId] = useState<number | null>(null);
   
   const { data: businesses, isLoading } = useListBusinesses({
