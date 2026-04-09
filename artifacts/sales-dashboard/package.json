@@ -75,6 +75,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@clerk/localizations": "^4.3.2",
     "@clerk/react": "^6.2.0"
   }
 }

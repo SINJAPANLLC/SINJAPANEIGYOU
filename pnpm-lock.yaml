@@ -428,6 +428,9 @@ importers:
 
   artifacts/sales-dashboard:
     dependencies:
+      '@clerk/localizations':
+        specifier: ^4.3.2
+        version: 4.3.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@clerk/react':
         specifier: ^6.2.0
         version: 6.2.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -772,6 +775,10 @@ packages:
     engines: {node: '>=20.9.0'}
     peerDependencies:
       express: ^4.17.0 || ^5.0.0
+
+  '@clerk/localizations@4.3.2':
+    resolution: {integrity: sha512-wcT1gG13/1otyx1jM2eU4cU+TmYbic/8iHA/SObXIPx9cM/+CQ/Y7rliiER6LiFs4zWgFKbgklL2kcoP1JbNcw==}
+    engines: {node: '>=20.9.0'}
 
   '@clerk/react@6.2.0':
     resolution: {integrity: sha512-+w8/5byq8qJuCABXHzO4TRZbM+QVsODBBBQN2EWb9E4KX52YCyoVeEOB6C4QOhLCJtd0VwJsAPO/H9Mjn3XlrA==}
@@ -3549,6 +3556,13 @@ snapshots:
       '@clerk/shared': 4.5.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       express: 5.2.1
       tslib: 2.8.1
+    transitivePeerDependencies:
+      - react
+      - react-dom
+
+  '@clerk/localizations@4.3.2(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      '@clerk/shared': 4.5.0(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
     transitivePeerDependencies:
       - react
       - react-dom

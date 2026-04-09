@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { ClerkProvider, Show, useClerk } from "@clerk/react";
+import { jaJP } from "@clerk/localizations";
 import { Switch, Route, Redirect, useLocation, Router as WouterRouter } from "wouter";
 import { queryClient } from "@/lib/queryClient";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -90,8 +91,16 @@ function ClerkProviderWithRoutes() {
     <ClerkProvider
       publishableKey={clerkPubKey}
       proxyUrl={clerkProxyUrl}
+      localization={jaJP}
       routerPush={(to) => setLocation(stripBase(to))}
       routerReplace={(to) => setLocation(stripBase(to), { replace: true })}
+      appearance={{
+        elements: {
+          socialButtonsBlock: { display: "none" },
+          dividerRow: { display: "none" },
+          socialButtonsProviderIcon: { display: "none" },
+        },
+      }}
     >
       <QueryClientProvider client={queryClient}>
         <ClerkQueryClientCacheInvalidator />
