@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter, FileText, ChevronDown } from "lucide-react";
+import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter, FileText, ChevronDown, CheckSquare, Square, Minus } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -46,6 +47,7 @@ export default function LeadsPage() {
   const { toast } = useToast();
   
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
+  const [checkedLeadIds, setCheckedLeadIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState<string>("all");
   
   const [isGenerating, setIsGenerating] = useState(false);
@@ -85,6 +87,11 @@ export default function LeadsPage() {
     setEmailSubject(selectedLead ? `提案: ${selectedLead.companyName}様へ` : "");
     setEmailBody(selectedLead ? `<p>${selectedLead.companyName}様</p>\n<p>はじめまして。</p>` : "");
   }, [selectedLeadId]);
+
+  useEffect(() => {
+    setCheckedLeadIds(new Set());
+    setSelectedLeadId(null);
+  }, [selectedBusinessId]);
 
   const handleSearch = () => {
     if (!selectedBusinessId || !searchKeyword) return;
@@ -128,6 +135,24 @@ export default function LeadsPage() {
         }
       }
     );
+  };
+
+  const toggleCheck = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCheckedLeadIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (!leads) return;
+    if (checkedLeadIds.size === leads.length) {
+      setCheckedLeadIds(new Set());
+    } else {
+      setCheckedLeadIds(new Set(leads.map(l => l.id)));
+    }
   };
 
   const handleApplyTemplate = async (templateId: number) => {
@@ -252,8 +277,14 @@ export default function LeadsPage() {
             </DialogContent>
           </Dialog>
           
-          <Button size="sm" className="rounded-none h-8 text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90" data-testid="btn-bulk-send">
-            <Send className="w-3 h-3 mr-2" /> 一括送信
+          <Button
+            size="sm"
+            className="rounded-none h-8 text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
+            disabled={checkedLeadIds.size === 0}
+            data-testid="btn-bulk-send"
+          >
+            <Send className="w-3 h-3 mr-2" />
+            {checkedLeadIds.size > 0 ? `${checkedLeadIds.size}件を一括送信` : "一括送信"}
           </Button>
         </div>
       </div>
@@ -261,8 +292,30 @@ export default function LeadsPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* 左カラム: リード一覧 */}
         <div className="w-1/4 min-w-[300px] border-r border-border bg-card flex flex-col">
-          <div className="p-3 border-b border-border bg-muted/20">
-            <Input placeholder="リードを絞り込む..." className="h-8 rounded-none border-border text-xs" />
+          <div className="border-b border-border bg-muted/20">
+            <div className="p-3 pb-2">
+              <Input placeholder="リードを絞り込む..." className="h-8 rounded-none border-border text-xs" />
+            </div>
+            {/* 全選択バー */}
+            {leads && leads.length > 0 && (
+              <div
+                className="px-3 pb-2 flex items-center gap-2 cursor-pointer select-none"
+                onClick={toggleAll}
+              >
+                <div className="flex items-center justify-center w-4 h-4 shrink-0">
+                  {checkedLeadIds.size === 0 ? (
+                    <Square className="w-4 h-4 text-muted-foreground" />
+                  ) : checkedLeadIds.size === leads.length ? (
+                    <CheckSquare className="w-4 h-4 text-foreground" />
+                  ) : (
+                    <Minus className="w-4 h-4 text-foreground" />
+                  )}
+                </div>
+                <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
+                  {checkedLeadIds.size > 0 ? `${checkedLeadIds.size}件選択中` : "全て選択"}
+                </span>
+              </div>
+            )}
           </div>
           <ScrollArea className="flex-1">
             {leadsLoading ? (
@@ -279,22 +332,34 @@ export default function LeadsPage() {
                   <div 
                     key={lead.id}
                     onClick={() => setSelectedLeadId(lead.id)}
-                    className={`p-3 cursor-pointer transition-colors group ${selectedLeadId === lead.id ? 'bg-muted border-l-2 border-l-foreground' : 'hover:bg-muted/50 border-l-2 border-l-transparent'}`}
+                    className={`p-3 cursor-pointer transition-colors group flex items-start gap-2.5 ${selectedLeadId === lead.id ? 'bg-muted border-l-2 border-l-foreground' : 'hover:bg-muted/50 border-l-2 border-l-transparent'} ${checkedLeadIds.has(lead.id) ? 'bg-primary/5' : ''}`}
                     data-testid={`lead-item-${lead.id}`}
                   >
-                    <div className="flex items-start justify-between mb-1">
-                      <h4 className="font-bold text-sm truncate pr-2 group-hover:text-foreground">{lead.companyName || '社名不明'}</h4>
-                      <span className={`text-[10px] px-1.5 py-0.5 border font-mono uppercase tracking-wider whitespace-nowrap shrink-0 ${STATUS_COLORS[lead.status]}`}>
-                        {STATUS_LABELS[lead.status]}
-                      </span>
+                    {/* チェックボックス */}
+                    <div
+                      className="mt-0.5 shrink-0"
+                      onClick={(e) => toggleCheck(lead.id, e)}
+                    >
+                      <Checkbox
+                        checked={checkedLeadIds.has(lead.id)}
+                        className="rounded-none border-border data-[state=checked]:bg-foreground data-[state=checked]:border-foreground"
+                      />
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
-                      {lead.score !== null && lead.score !== undefined && (
-                        <span className="flex items-center text-primary/70">
-                          <Sparkles className="w-3 h-3 mr-1" /> {lead.score}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between mb-1">
+                        <h4 className="font-bold text-sm truncate pr-2 group-hover:text-foreground">{lead.companyName || '社名不明'}</h4>
+                        <span className={`text-[10px] px-1.5 py-0.5 border font-mono uppercase tracking-wider whitespace-nowrap shrink-0 ${STATUS_COLORS[lead.status]}`}>
+                          {STATUS_LABELS[lead.status]}
                         </span>
-                      )}
-                      {lead.websiteUrl && <span className="truncate max-w-[100px]">{lead.websiteUrl.replace(/^https?:\/\//, '')}</span>}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
+                        {lead.score !== null && lead.score !== undefined && (
+                          <span className="flex items-center text-primary/70">
+                            <Sparkles className="w-3 h-3 mr-1" /> {lead.score}
+                          </span>
+                        )}
+                        {lead.websiteUrl && <span className="truncate max-w-[100px]">{lead.websiteUrl.replace(/^https?:\/\//, '')}</span>}
+                      </div>
                     </div>
                   </div>
                 ))}
