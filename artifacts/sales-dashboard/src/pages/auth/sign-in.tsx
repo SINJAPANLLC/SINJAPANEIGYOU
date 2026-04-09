@@ -12,45 +12,29 @@ export default function SignInPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!signIn || !setActive) {
-      setError("認証システムを初期化中です。しばらくお待ちください。");
-      return;
-    }
+    if (!signIn || !setActive || !isLoaded) return;
     setError("");
     setLoading(true);
 
     try {
-      // Step 1: Verify credentials on our backend, get a Clerk sign-in token
-      const res = await fetch(`${basePath}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        credentials: "include",
-      });
-
-      const data = await res.json() as { token?: string; error?: string };
-
-      if (!res.ok || !data.token) {
-        setError(data.error ?? "ログインに失敗しました。");
-        return;
-      }
-
-      // Step 2: Use the token to create a Clerk session
       const result = await signIn.create({
-        strategy: "ticket",
-        ticket: data.token,
+        identifier: email,
+        password,
       });
 
-      if (result.status === "complete" && result.createdSessionId) {
+      if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
         window.location.replace(`${basePath}/dashboard`);
-        return;
+      } else {
+        setError("ログインできませんでした。もう一度お試しください。");
       }
-
-      setError("セッションの作成に失敗しました。もう一度お試しください。");
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e?.message ?? "ログインできませんでした。もう一度お試しください。");
+      const clerkError = err as { errors?: { message?: string; longMessage?: string }[] };
+      const msg =
+        clerkError?.errors?.[0]?.longMessage ??
+        clerkError?.errors?.[0]?.message ??
+        "ログインできませんでした。";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -74,30 +58,26 @@ export default function SignInPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <input
-              type="email"
-              placeholder="メールアドレス"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              autoComplete="email"
-              disabled={!isLoaded || loading}
-              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
-            />
-          </div>
-          <div>
-            <input
-              type="password"
-              placeholder="パスワード"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-              disabled={!isLoaded || loading}
-              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
-            />
-          </div>
+          <input
+            type="email"
+            placeholder="メールアドレス"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            autoComplete="email"
+            disabled={!isLoaded || loading}
+            className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
+          />
+          <input
+            type="password"
+            placeholder="パスワード"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+            disabled={!isLoaded || loading}
+            className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
+          />
 
           {error && (
             <p className="text-red-400 text-xs leading-relaxed">{error}</p>
@@ -108,7 +88,7 @@ export default function SignInPage() {
             disabled={loading || !isLoaded}
             className="w-full bg-white text-black text-sm font-medium py-3 rounded-sm hover:bg-white/90 transition-colors disabled:opacity-40 mt-2"
           >
-            {!isLoaded ? "読み込み中..." : loading ? "ログイン中..." : "ログイン"}
+            {loading ? "ログイン中..." : "ログイン"}
           </button>
         </form>
       </div>
