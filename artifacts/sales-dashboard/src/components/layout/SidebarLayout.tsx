@@ -1,12 +1,14 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { useBusiness } from "@/contexts/BusinessContext";
 import {
   Building2,
   Users,
   FileText,
   History,
   LogOut,
+  ChevronDown,
 } from "lucide-react";
 import {
   Sidebar,
@@ -17,6 +19,12 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const navigation = [
   { name: "ビジネス", href: "/businesses", icon: Building2 },
@@ -28,13 +36,48 @@ const navigation = [
 export function SidebarLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const { signOut } = useAuth();
+  const { businesses, selectedBusinessId, setSelectedBusinessId, isLoading } = useBusiness();
+
+  const selectedBusiness = businesses?.find(b => b.id === selectedBusinessId);
 
   return (
     <SidebarProvider>
       <div className="flex min-h-screen w-full bg-background text-foreground">
         <Sidebar className="border-r border-border">
           <SidebarContent className="px-3 py-4">
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-4 px-2">メニュー</div>
+            {/* ビジネス切替 */}
+            <div className="mb-5">
+              <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-2 px-2">ビジネス</div>
+              {isLoading ? (
+                <div className="h-9 animate-pulse bg-muted/40 border border-border rounded-none" />
+              ) : businesses && businesses.length > 0 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="w-full flex items-center justify-between px-3 py-2 border border-border bg-muted/20 hover:bg-muted/50 transition-colors text-sm font-medium">
+                      <span className="truncate">{selectedBusiness?.name ?? "未選択"}</span>
+                      <ChevronDown className="w-3.5 h-3.5 shrink-0 ml-2 text-muted-foreground" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="rounded-none border-border w-[--radix-dropdown-menu-trigger-width]" align="start">
+                    {businesses.map(b => (
+                      <DropdownMenuItem
+                        key={b.id}
+                        onClick={() => setSelectedBusinessId(b.id)}
+                        className={`rounded-none cursor-pointer text-sm ${b.id === selectedBusinessId ? "font-bold bg-muted" : ""}`}
+                      >
+                        {b.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <Link href="/businesses" className="block px-3 py-2 text-xs text-muted-foreground border border-dashed border-border hover:border-foreground transition-colors">
+                  ビジネスを作成 →
+                </Link>
+              )}
+            </div>
+
+            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-2 px-2">メニュー</div>
             <SidebarMenu>
               {navigation.map((item) => {
                 const isActive = location === item.href;

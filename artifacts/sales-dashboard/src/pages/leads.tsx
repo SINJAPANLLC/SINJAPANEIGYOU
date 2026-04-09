@@ -3,6 +3,7 @@ import {
   useListLeads, 
   useSearchLeads,
   useGenerateAiEmail,
+  useListTemplates,
   getListLeadsQueryKey 
 } from "@workspace/api-client-react";
 import { queryClient } from "@/lib/queryClient";
@@ -11,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter } from "lucide-react";
+import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter, FileText, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -55,6 +56,8 @@ export default function LeadsPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchLocation, setSearchLocation] = useState("");
   const [searchLimit, setSearchLimit] = useState([10]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
+  const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
 
   const { data: leads, isLoading: leadsLoading } = useListLeads(
     { businessId: selectedBusinessId ?? undefined, status: statusFilter !== "all" ? statusFilter : undefined },
@@ -69,14 +72,19 @@ export default function LeadsPage() {
   const searchMutation = useSearchLeads();
   const generateEmailMutation = useGenerateAiEmail();
 
+  const { data: templates } = useListTemplates(
+    { businessId: selectedBusinessId ?? undefined },
+    { query: { enabled: !!selectedBusinessId } }
+  );
+  const selectedTemplate = templates?.find(t => t.id === selectedTemplateId);
+
   const selectedLead = leads?.find(l => l.id === selectedLeadId);
 
   useEffect(() => {
-    if (selectedLead && (!emailSubject || !emailBody)) {
-      setEmailSubject(`提案: ${selectedLead.companyName}様へ`);
-      setEmailBody(`<p>${selectedLead.companyName}様</p>\n<p>はじめまして。</p>`);
-    }
-  }, [selectedLeadId, selectedLead]);
+    setSelectedTemplateId(null);
+    setEmailSubject(selectedLead ? `提案: ${selectedLead.companyName}様へ` : "");
+    setEmailBody(selectedLead ? `<p>${selectedLead.companyName}様</p>\n<p>はじめまして。</p>` : "");
+  }, [selectedLeadId]);
 
   const handleSearch = () => {
     if (!selectedBusinessId || !searchKeyword) return;
@@ -120,6 +128,37 @@ export default function LeadsPage() {
         }
       }
     );
+  };
+
+  const handleApplyTemplate = async (templateId: number) => {
+    const tmpl = templates?.find(t => t.id === templateId);
+    if (!tmpl || !selectedLead) return;
+    setIsApplyingTemplate(true);
+    try {
+      const res = await fetch(`/api/templates/${templateId}/generate-ai`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ leadId: selectedLeadId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEmailSubject(data.subject);
+        setEmailBody(data.html);
+        toast({ title: `「${tmpl.name}」を適用しました` });
+      } else {
+        // fallback: simple substitution
+        const company = selectedLead.companyName ?? "御社";
+        setEmailSubject(tmpl.subjectTemplate.replace(/{{company_name}}/g, company));
+        setEmailBody(tmpl.htmlTemplate.replace(/{{company_name}}/g, company));
+        toast({ title: `「${tmpl.name}」を適用しました` });
+      }
+      setSelectedTemplateId(templateId);
+    } catch {
+      toast({ title: "テンプレートの適用に失敗しました", variant: "destructive" });
+    } finally {
+      setIsApplyingTemplate(false);
+    }
   };
 
   if (!selectedBusinessId) {
@@ -269,18 +308,53 @@ export default function LeadsPage() {
           {selectedLeadId ? (
             <>
               <div className="h-12 border-b border-border flex items-center justify-between px-4 shrink-0 bg-muted/10">
-                <div className="text-xs font-mono font-bold tracking-widest uppercase">作成中</div>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={handleGenerateAi}
-                  disabled={isGenerating}
-                  className="h-7 rounded-none text-[10px] uppercase tracking-widest border-primary/20 text-primary hover:bg-primary/5"
-                  data-testid="btn-ai-generate"
-                >
-                  <Sparkles className="w-3 h-3 mr-2" />
-                  {isGenerating ? "生成中..." : "AIで生成"}
-                </Button>
+                <div className="text-xs font-mono font-bold tracking-widest uppercase">メール作成</div>
+                <div className="flex items-center gap-2">
+                  {/* テンプレート選択 */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isApplyingTemplate || !templates?.length}
+                        className="h-7 rounded-none text-[10px] uppercase tracking-widest border-border"
+                      >
+                        <FileText className="w-3 h-3 mr-1.5" />
+                        {isApplyingTemplate ? "適用中..." : selectedTemplate ? selectedTemplate.name : "テンプレート"}
+                        <ChevronDown className="w-3 h-3 ml-1.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="rounded-none border-border max-w-[240px]">
+                      {templates?.length === 0 && (
+                        <DropdownMenuItem disabled className="text-xs text-muted-foreground rounded-none">
+                          テンプレートがありません
+                        </DropdownMenuItem>
+                      )}
+                      {templates?.map(t => (
+                        <DropdownMenuItem
+                          key={t.id}
+                          onClick={() => handleApplyTemplate(t.id)}
+                          className={`rounded-none cursor-pointer text-xs ${t.id === selectedTemplateId ? "font-bold bg-muted" : ""}`}
+                        >
+                          <FileText className="w-3 h-3 mr-2 shrink-0" />
+                          <span className="truncate">{t.name}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={handleGenerateAi}
+                    disabled={isGenerating}
+                    className="h-7 rounded-none text-[10px] uppercase tracking-widest border-primary/20 text-primary hover:bg-primary/5"
+                    data-testid="btn-ai-generate"
+                  >
+                    <Sparkles className="w-3 h-3 mr-1.5" />
+                    {isGenerating ? "生成中..." : "AI生成"}
+                  </Button>
+                </div>
               </div>
               <div className="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
                 <div className="space-y-1 shrink-0">
@@ -303,7 +377,10 @@ export default function LeadsPage() {
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-muted-foreground p-8 text-center font-mono text-xs uppercase tracking-widest">
-              リードを選択してメールを作成
+              <div className="space-y-3">
+                <Mail className="w-8 h-8 mx-auto opacity-20" />
+                <p>リードを選択してメールを作成</p>
+              </div>
             </div>
           )}
         </div>
