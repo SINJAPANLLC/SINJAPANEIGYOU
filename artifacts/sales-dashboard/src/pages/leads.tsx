@@ -94,7 +94,7 @@ export default function LeadsPage() {
         onSuccess: (res) => {
           queryClient.invalidateQueries({ queryKey: getListLeadsQueryKey() });
           setIsSearchOpen(false);
-          toast({ title: `${res.saved}件の新規リードを収集しました（発見: ${res.found}件）` });
+          toast({ title: `${res.saved}件の新規リストを収集しました（発見: ${res.found}件）` });
         },
         onError: () => toast({ title: "リスト収集に失敗しました", variant: "destructive" })
       }
@@ -128,7 +128,7 @@ export default function LeadsPage() {
         <div className="text-center space-y-4 max-w-md border border-dashed border-border p-12">
           <Building2 className="w-8 h-8 text-muted-foreground mx-auto" />
           <h2 className="text-lg font-bold">ビジネスを選択してください</h2>
-          <p className="text-muted-foreground text-sm">リードを管理するには、ビジネスワークスペースを選択してください。</p>
+          <p className="text-muted-foreground text-sm">リストを管理するには、ビジネスワークスペースを選択してください。</p>
         </div>
       </div>
     );
@@ -138,7 +138,7 @@ export default function LeadsPage() {
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
       <div className="h-14 border-b border-border flex items-center justify-between px-4 shrink-0 bg-card">
         <div className="flex items-center gap-4">
-          <h1 className="font-bold tracking-tight text-sm uppercase font-mono">リード / 見込み客</h1>
+          <h1 className="font-bold tracking-tight text-sm uppercase font-mono">リスト</h1>
           
           <div className="h-4 w-px bg-border mx-2"></div>
           

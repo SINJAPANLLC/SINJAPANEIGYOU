@@ -13,7 +13,6 @@ import DashboardPage from "@/pages/dashboard";
 import BusinessesPage from "@/pages/businesses";
 import LeadsPage from "@/pages/leads";
 import TemplatesPage from "@/pages/templates";
-import CampaignsPage from "@/pages/campaigns";
 import EmailLogsPage from "@/pages/email-logs";
 import NotFound from "@/pages/not-found";
 
@@ -44,7 +43,6 @@ function AppRoutes() {
       <Route path="/businesses"><ProtectedRoute component={BusinessesPage} /></Route>
       <Route path="/leads"><ProtectedRoute component={LeadsPage} /></Route>
       <Route path="/templates"><ProtectedRoute component={TemplatesPage} /></Route>
-      <Route path="/campaigns"><ProtectedRoute component={CampaignsPage} /></Route>
       <Route path="/email-logs"><ProtectedRoute component={EmailLogsPage} /></Route>
 
       <Route component={NotFound} />

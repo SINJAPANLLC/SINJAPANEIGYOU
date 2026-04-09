@@ -6,7 +6,6 @@ import {
   Building2,
   Users,
   FileText,
-  Send,
   History,
   LogOut,
 } from "lucide-react";
@@ -23,9 +22,8 @@ import {
 const navigation = [
   { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
   { name: "ビジネス", href: "/businesses", icon: Building2 },
-  { name: "リード", href: "/leads", icon: Users },
+  { name: "リスト", href: "/leads", icon: Users },
   { name: "テンプレート", href: "/templates", icon: FileText },
-  { name: "キャンペーン", href: "/campaigns", icon: Send },
   { name: "送信ログ", href: "/email-logs", icon: History },
 ];
 
