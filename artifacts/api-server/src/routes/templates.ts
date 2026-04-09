@@ -12,7 +12,7 @@ import {
   GenerateAiEmailParams,
   GenerateAiEmailBody,
 } from "@workspace/api-zod";
-import { generateSalesEmail } from "../lib/ai";
+import { generateSalesEmail, generateEmailTemplate } from "../lib/ai";
 
 const router: IRouter = Router();
 
@@ -22,6 +22,22 @@ async function ownsBusiness(userId: string, businessId: number) {
   );
   return b;
 }
+
+router.post("/ai/generate-template", requireAuth, async (req, res): Promise<void> => {
+  const { description } = req.body;
+  if (!description || typeof description !== "string" || description.trim().length < 5) {
+    res.status(400).json({ error: "説明文を入力してください" });
+    return;
+  }
+
+  const result = await generateEmailTemplate({ description: description.trim() });
+  if (!result) {
+    res.status(500).json({ error: "AI生成に失敗しました。しばらくしてから再試行してください。" });
+    return;
+  }
+
+  res.json(result);
+});
 
 router.get("/templates", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { FileText, Plus, Building2, Trash2 } from "lucide-react";
+import { FileText, Plus, Building2, Trash2, Sparkles, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -35,6 +35,9 @@ export default function TemplatesPage() {
   
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isAiOpen, setIsAiOpen] = useState(false);
+  const [aiDescription, setAiDescription] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
   const [previewMode, setPreviewMode] = useState<"code" | "preview" | "split">("split");
 
   const { data: templates, isLoading } = useListTemplates(
@@ -61,6 +64,38 @@ export default function TemplatesPage() {
       htmlTemplate: "",
     },
   });
+
+  const handleAiGenerate = async () => {
+    if (!aiDescription.trim() || aiDescription.trim().length < 5) {
+      toast({ title: "説明文を5文字以上入力してください", variant: "destructive" });
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const res = await fetch("/api/ai/generate-template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ description: aiDescription }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "生成失敗");
+
+      form.reset({
+        name: data.name,
+        subjectTemplate: data.subjectTemplate,
+        htmlTemplate: data.htmlTemplate,
+      });
+      setIsAiOpen(false);
+      setAiDescription("");
+      setIsCreateOpen(true);
+      toast({ title: "AIがテンプレートを生成しました。内容を確認して保存してください。" });
+    } catch (err: any) {
+      toast({ title: err.message || "AI生成に失敗しました", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   const onCreateSubmit = (data: TemplateFormValues) => {
     if (!selectedBusinessId) return;
@@ -126,65 +161,110 @@ export default function TemplatesPage() {
           <h1 className="font-bold tracking-tight text-sm uppercase font-mono">メールテンプレート</h1>
         </div>
 
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="rounded-none h-8 text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90">
-              <Plus className="w-3 h-3 mr-2" /> 新規テンプレート
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="rounded-none border-border">
-            <DialogHeader>
-              <DialogTitle className="font-bold">テンプレートを作成</DialogTitle>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onCreateSubmit)} className="space-y-4 mt-4">
-                <FormField
-                  control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs uppercase font-mono">テンプレート名</FormLabel>
-                      <FormControl>
-                        <Input placeholder="例: 初回アプローチv1" className="rounded-none border-border" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
+        <div className="flex items-center gap-2">
+          {/* AI生成ダイアログ */}
+          <Dialog open={isAiOpen} onOpenChange={setIsAiOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="rounded-none h-8 text-xs uppercase tracking-widest border-border">
+                <Sparkles className="w-3 h-3 mr-2" /> AI生成
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-none border-border max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="font-bold flex items-center gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  AIでテンプレートを生成
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-4">
+                <div className="space-y-2">
+                  <Label className="text-xs uppercase font-mono">どんなメールを作りたいか説明してください</Label>
+                  <Textarea
+                    value={aiDescription}
+                    onChange={e => setAiDescription(e.target.value)}
+                    placeholder="例: SaaS営業ツールを中小企業に紹介する初回アプローチメール。丁寧で押しつけがましくない感じで。無料トライアルへの誘導を含める。"
+                    className="rounded-none border-border text-sm h-32 resize-none"
+                    disabled={isGenerating}
+                  />
+                  <p className="text-xs text-muted-foreground">業種・トーン・目的などを具体的に書くほど精度が上がります</p>
+                </div>
+              </div>
+              <DialogFooter className="mt-4">
+                <Button type="button" variant="outline" onClick={() => { setIsAiOpen(false); setAiDescription(""); }} className="rounded-none text-xs uppercase tracking-widest" disabled={isGenerating}>
+                  キャンセル
+                </Button>
+                <Button onClick={handleAiGenerate} disabled={isGenerating || aiDescription.trim().length < 5} className="rounded-none text-xs uppercase tracking-widest">
+                  {isGenerating ? (
+                    <><Loader2 className="w-3 h-3 mr-2 animate-spin" />生成中...</>
+                  ) : (
+                    <><Sparkles className="w-3 h-3 mr-2" />生成する</>
                   )}
-                />
-                <FormField
-                  control={form.control}
-                  name="subjectTemplate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs uppercase font-mono">件名テンプレート</FormLabel>
-                      <FormControl>
-                        <Input placeholder="{{companyName}}様へ特別なご提案" className="rounded-none border-border" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="htmlTemplate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs uppercase font-mono">HTML本文</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="<p>こんにちは...</p>" className="rounded-none border-border font-mono text-xs h-32" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)} className="rounded-none text-xs uppercase tracking-widest">キャンセル</Button>
-                  <Button type="submit" disabled={createMutation.isPending} className="rounded-none text-xs uppercase tracking-widest">作成する</Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* 手動作成ダイアログ */}
+          <Dialog open={isCreateOpen} onOpenChange={(open) => { setIsCreateOpen(open); if (!open) form.reset(); }}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="rounded-none h-8 text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90">
+                <Plus className="w-3 h-3 mr-2" /> 新規テンプレート
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-none border-border max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="font-bold">テンプレートを作成</DialogTitle>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onCreateSubmit)} className="space-y-4 mt-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs uppercase font-mono">テンプレート名</FormLabel>
+                        <FormControl>
+                          <Input placeholder="例: 初回アプローチv1" className="rounded-none border-border" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="subjectTemplate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs uppercase font-mono">件名テンプレート</FormLabel>
+                        <FormControl>
+                          <Input placeholder="{{companyName}}様へ特別なご提案" className="rounded-none border-border" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="htmlTemplate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs uppercase font-mono">HTML本文</FormLabel>
+                        <FormControl>
+                          <Textarea placeholder="<p>こんにちは...</p>" className="rounded-none border-border font-mono text-xs h-40 resize-none" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter>
+                    <Button type="button" variant="outline" onClick={() => { setIsCreateOpen(false); form.reset(); }} className="rounded-none text-xs uppercase tracking-widest">キャンセル</Button>
+                    <Button type="submit" disabled={createMutation.isPending} className="rounded-none text-xs uppercase tracking-widest">作成する</Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">

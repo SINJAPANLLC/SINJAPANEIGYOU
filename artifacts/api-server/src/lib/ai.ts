@@ -2,9 +2,59 @@ import OpenAI from "openai";
 import { logger } from "./logger";
 
 function getClient() {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const baseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  return new OpenAI({ apiKey });
+  return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+}
+
+export async function generateEmailTemplate(opts: {
+  description: string;
+}): Promise<{ name: string; subjectTemplate: string; htmlTemplate: string } | null> {
+  const client = getClient();
+  if (!client) {
+    logger.warn("No OpenAI API key available");
+    return null;
+  }
+
+  try {
+    const prompt = `あなたは営業メールのプロです。以下の説明に基づいて、日本語の営業メールテンプレートを作成してください。
+
+説明: ${opts.description}
+
+以下のルールに従ってください:
+- テンプレートは{{company_name}}（相手企業名）、{{service_name}}（自社サービス名）、{{service_url}}（自社URL）というプレースホルダーを使用できます
+- HTMLは完結したメール本文のみ（<html>/<body>タグ不要）
+- 件名は簡潔で開封率が高いものに
+- 本文はスパムに見えない、自然な日本語で
+- 価値提案が明確で、CTA（行動喚起）を含める
+
+以下のJSON形式で返してください:
+{
+  "name": "テンプレート名（簡潔な識別名）",
+  "subjectTemplate": "メール件名（プレースホルダー使用可）",
+  "htmlTemplate": "<p>HTML本文（プレースホルダー使用可）</p>"
+}`;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-5-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return null;
+
+    const parsed = JSON.parse(content);
+    return {
+      name: parsed.name,
+      subjectTemplate: parsed.subjectTemplate,
+      htmlTemplate: parsed.htmlTemplate,
+    };
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "AI template generation failed");
+    return null;
+  }
 }
 
 export async function generateSalesEmail(opts: {
@@ -16,7 +66,7 @@ export async function generateSalesEmail(opts: {
 }): Promise<{ subject: string; html: string } | null> {
   const client = getClient();
   if (!client) {
-    logger.warn("OPENAI_API_KEY not set, skipping AI generation");
+    logger.warn("No OpenAI API key available, skipping AI generation");
     return null;
   }
 
@@ -42,10 +92,9 @@ export async function generateSalesEmail(opts: {
 }`;
 
     const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
-      temperature: 0.7,
     });
 
     const content = response.choices[0]?.message?.content;
