@@ -35,6 +35,7 @@ export default function TemplatesPage() {
   
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<"code" | "preview" | "split">("split");
 
   const { data: templates, isLoading } = useListTemplates(
     { businessId: selectedBusinessId ?? undefined },
@@ -275,23 +276,51 @@ export default function TemplatesPage() {
               </div>
 
               <div className="space-y-2 flex-1 flex flex-col min-h-0">
-                <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">HTML本文</Label>
-                <div className="flex-1 flex border border-border">
-                  <Textarea 
-                    value={selectedTemplate.htmlTemplate}
-                    onChange={e => {
-                      const newTemplates = [...(templates || [])];
-                      const idx = newTemplates.findIndex(t => t.id === selectedTemplate.id);
-                      if (idx !== -1) {
-                        newTemplates[idx] = { ...newTemplates[idx], htmlTemplate: e.target.value };
-                        queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), newTemplates);
-                      }
-                    }}
-                    className="flex-1 resize-none rounded-none border-0 font-mono text-xs p-4 shadow-none focus-visible:ring-0 leading-relaxed bg-muted/10"
-                  />
-                  <div className="w-1/2 border-l border-border bg-card p-4 overflow-y-auto prose prose-sm dark:prose-invert max-w-none text-sm">
-                    <div dangerouslySetInnerHTML={{ __html: selectedTemplate.htmlTemplate || '<div class="text-muted-foreground text-xs font-mono">プレビュー</div>' }} />
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">HTML本文</Label>
+                  <div className="flex text-xs border border-border">
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode("code")}
+                      className={`px-3 py-1 font-mono uppercase tracking-widest transition-colors ${previewMode === "code" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                    >コード</button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode("preview")}
+                      className={`px-3 py-1 font-mono uppercase tracking-widest transition-colors ${previewMode === "preview" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                    >プレビュー</button>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode("split")}
+                      className={`px-3 py-1 font-mono uppercase tracking-widest transition-colors ${previewMode === "split" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
+                    >分割</button>
                   </div>
+                </div>
+                <div className="flex-1 flex border border-border min-h-0">
+                  {(previewMode === "code" || previewMode === "split") && (
+                    <Textarea
+                      value={selectedTemplate.htmlTemplate}
+                      onChange={e => {
+                        const newTemplates = [...(templates || [])];
+                        const idx = newTemplates.findIndex(t => t.id === selectedTemplate.id);
+                        if (idx !== -1) {
+                          newTemplates[idx] = { ...newTemplates[idx], htmlTemplate: e.target.value };
+                          queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), newTemplates);
+                        }
+                      }}
+                      className={`resize-none rounded-none border-0 font-mono text-xs p-4 shadow-none focus-visible:ring-0 leading-relaxed bg-muted/10 ${previewMode === "split" ? "w-1/2" : "flex-1"}`}
+                    />
+                  )}
+                  {(previewMode === "preview" || previewMode === "split") && (
+                    <div className={`${previewMode === "split" ? "w-1/2 border-l border-border" : "flex-1"} bg-white overflow-hidden`}>
+                      <iframe
+                        srcDoc={selectedTemplate.htmlTemplate || "<p style='color:#999;font-family:sans-serif;padding:16px'>HTMLを入力するとここにプレビューが表示されます</p>"}
+                        title="メールプレビュー"
+                        className="w-full h-full border-0"
+                        sandbox="allow-same-origin"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
