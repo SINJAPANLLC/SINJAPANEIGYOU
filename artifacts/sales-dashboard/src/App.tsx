@@ -9,7 +9,6 @@ import { BusinessProvider } from "@/contexts/BusinessContext";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
 
 import SignInPage from "@/pages/auth/sign-in";
-import DashboardPage from "@/pages/dashboard";
 import BusinessesPage from "@/pages/businesses";
 import LeadsPage from "@/pages/leads";
 import TemplatesPage from "@/pages/templates";
@@ -19,7 +18,7 @@ import NotFound from "@/pages/not-found";
 function HomeRedirect() {
   const { isSignedIn, isLoaded } = useAuth();
   if (!isLoaded) return null;
-  return isSignedIn ? <Redirect to="/dashboard" /> : <Redirect to="/sign-in" />;
+  return isSignedIn ? <Redirect to="/businesses" /> : <Redirect to="/sign-in" />;
 }
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
@@ -39,7 +38,6 @@ function AppRoutes() {
       <Route path="/" component={HomeRedirect} />
       <Route path="/sign-in" component={SignInPage} />
 
-      <Route path="/dashboard"><ProtectedRoute component={DashboardPage} /></Route>
       <Route path="/businesses"><ProtectedRoute component={BusinessesPage} /></Route>
       <Route path="/leads"><ProtectedRoute component={LeadsPage} /></Route>
       <Route path="/templates"><ProtectedRoute component={TemplatesPage} /></Route>

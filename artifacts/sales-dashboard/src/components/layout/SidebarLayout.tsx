@@ -2,7 +2,6 @@ import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  LayoutDashboard,
   Building2,
   Users,
   FileText,
@@ -20,7 +19,6 @@ import {
 } from "@/components/ui/sidebar";
 
 const navigation = [
-  { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
   { name: "ビジネス", href: "/businesses", icon: Building2 },
   { name: "リスト", href: "/leads", icon: Users },
   { name: "テンプレート", href: "/templates", icon: FileText },
