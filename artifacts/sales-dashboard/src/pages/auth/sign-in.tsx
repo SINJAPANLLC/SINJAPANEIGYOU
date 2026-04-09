@@ -1,10 +1,10 @@
 import { useSignIn } from "@clerk/react";
 import { useState } from "react";
-import { useLocation } from "wouter";
+
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function SignInPage() {
   const { signIn, setActive, isLoaded } = useSignIn();
-  const [, navigate] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -12,41 +12,45 @@ export default function SignInPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!isLoaded || !signIn) return;
+    if (!signIn || !setActive) {
+      setError("認証システムを初期化中です。しばらくお待ちください。");
+      return;
+    }
     setError("");
     setLoading(true);
+
     try {
-      const result = await signIn.create({
-        identifier: email,
-        password,
+      // Step 1: Verify credentials on our backend, get a Clerk sign-in token
+      const res = await fetch(`${basePath}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+        credentials: "include",
       });
 
-      if (result.status === "complete") {
+      const data = await res.json() as { token?: string; error?: string };
+
+      if (!res.ok || !data.token) {
+        setError(data.error ?? "ログインに失敗しました。");
+        return;
+      }
+
+      // Step 2: Use the token to create a Clerk session
+      const result = await signIn.create({
+        strategy: "ticket",
+        ticket: data.token,
+      });
+
+      if (result.status === "complete" && result.createdSessionId) {
         await setActive({ session: result.createdSessionId });
-        navigate("/dashboard");
-      } else if (result.status === "needs_first_factor") {
-        // Fallback: attempt password factor explicitly
-        const r2 = await result.attemptFirstFactor({ strategy: "password", password });
-        if (r2.status === "complete") {
-          await setActive({ session: r2.createdSessionId });
-          navigate("/dashboard");
-        } else {
-          setError("ログインに失敗しました。もう一度お試しください。");
-        }
-      } else {
-        setError("ログインに失敗しました。もう一度お試しください。");
+        window.location.replace(`${basePath}/dashboard`);
+        return;
       }
+
+      setError("セッションの作成に失敗しました。もう一度お試しください。");
     } catch (err: unknown) {
-      const clerkErr = err as { errors?: { message?: string; longMessage?: string }[] };
-      const msg = clerkErr?.errors?.[0]?.longMessage
-        ?? clerkErr?.errors?.[0]?.message;
-      if (msg?.includes("password") || msg?.includes("incorrect")) {
-        setError("メールアドレスまたはパスワードが正しくありません。");
-      } else if (msg) {
-        setError(msg);
-      } else {
-        setError("ログインできませんでした。もう一度お試しください。");
-      }
+      const e = err as { message?: string };
+      setError(e?.message ?? "ログインできませんでした。もう一度お試しください。");
     } finally {
       setLoading(false);
     }
@@ -78,7 +82,8 @@ export default function SignInPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors"
+              disabled={!isLoaded || loading}
+              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
             />
           </div>
           <div>
@@ -89,7 +94,8 @@ export default function SignInPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               autoComplete="current-password"
-              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors"
+              disabled={!isLoaded || loading}
+              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
             />
           </div>
 
@@ -99,10 +105,10 @@ export default function SignInPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isLoaded}
             className="w-full bg-white text-black text-sm font-medium py-3 rounded-sm hover:bg-white/90 transition-colors disabled:opacity-40 mt-2"
           >
-            {loading ? "ログイン中..." : "ログイン"}
+            {!isLoaded ? "読み込み中..." : loading ? "ログイン中..." : "ログイン"}
           </button>
         </form>
       </div>
