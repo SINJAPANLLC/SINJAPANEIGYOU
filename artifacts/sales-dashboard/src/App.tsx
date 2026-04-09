@@ -13,6 +13,7 @@ import BusinessesPage from "@/pages/businesses";
 import LeadsPage from "@/pages/leads";
 import TemplatesPage from "@/pages/templates";
 import EmailLogsPage from "@/pages/email-logs";
+import SchedulePage from "@/pages/schedule";
 import NotFound from "@/pages/not-found";
 
 function HomeRedirect() {
@@ -42,6 +43,7 @@ function AppRoutes() {
       <Route path="/leads"><ProtectedRoute component={LeadsPage} /></Route>
       <Route path="/templates"><ProtectedRoute component={TemplatesPage} /></Route>
       <Route path="/email-logs"><ProtectedRoute component={EmailLogsPage} /></Route>
+      <Route path="/schedule"><ProtectedRoute component={SchedulePage} /></Route>
 
       <Route component={NotFound} />
     </Switch>

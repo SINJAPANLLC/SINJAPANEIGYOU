@@ -9,6 +9,7 @@ import emailLogsRouter from "./email-logs";
 import searchRouter from "./search";
 import dashboardRouter from "./dashboard";
 import unsubscribeRouter from "./unsubscribe";
+import cronJobsRouter from "./cron-jobs";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(emailLogsRouter);
 router.use(searchRouter);
 router.use(dashboardRouter);
 router.use(unsubscribeRouter);
+router.use(cronJobsRouter);
 
 export default router;
