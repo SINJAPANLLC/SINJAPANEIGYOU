@@ -389,7 +389,7 @@ export default function LeadsPage() {
                         <ChevronDown className="w-3 h-3 ml-1.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="rounded-none border-border max-w-[240px]">
+                    <DropdownMenuContent align="end" className="rounded-none border-border max-w-[240px] max-h-[300px] overflow-y-auto">
                       {templates?.length === 0 && (
                         <DropdownMenuItem disabled className="text-xs text-muted-foreground rounded-none">
                           テンプレートがありません
