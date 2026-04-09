@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { FileText, Plus, Building2, Trash2, Sparkles, Loader2, ChevronDown, ChevronUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -867,13 +868,34 @@ export default function TemplatesPage() {
                       <h4 className="font-bold text-sm truncate">{template.name}</h4>
                       <p className="text-xs text-muted-foreground truncate mt-1">{template.subjectTemplate}</p>
                     </div>
-                    <Button
-                      variant="ghost" size="icon"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 opacity-0 group-hover:opacity-100 hover:text-destructive"
-                      onClick={(e) => { e.stopPropagation(); handleDelete(template.id); }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost" size="icon"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-none"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="rounded-none border-border">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="font-bold">テンプレートを削除しますか？</AlertDialogTitle>
+                          <AlertDialogDescription className="text-muted-foreground">
+                            「{template.name}」を削除します。この操作は元に戻せません。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="rounded-none text-xs uppercase tracking-widest">キャンセル</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(template.id)}
+                            className="rounded-none text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            削除する
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 ))}
               </div>
@@ -885,19 +907,51 @@ export default function TemplatesPage() {
         <div className="flex-1 flex flex-col bg-background">
           {selectedTemplateId && selectedTemplate ? (
             <div className="flex-1 flex flex-col p-6 gap-6 overflow-hidden">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold tracking-tight">テンプレートを編集</h2>
-                <Button
-                  onClick={() => handleUpdate(selectedTemplate.id, {
-                    name: selectedTemplate.name,
-                    subjectTemplate: selectedTemplate.subjectTemplate,
-                    htmlTemplate: selectedTemplate.htmlTemplate
-                  })}
-                  disabled={updateMutation.isPending}
-                  className="rounded-none text-xs uppercase tracking-widest h-8"
-                >
-                  {updateMutation.isPending ? "保存中..." : "変更を保存"}
-                </Button>
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-xl font-bold tracking-tight truncate">{selectedTemplate.name}</h2>
+                <div className="flex items-center gap-2 shrink-0">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="rounded-none text-xs uppercase tracking-widest h-8 border-border text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                        削除
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="rounded-none border-border">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle className="font-bold">テンプレートを削除しますか？</AlertDialogTitle>
+                        <AlertDialogDescription className="text-muted-foreground">
+                          「{selectedTemplate.name}」を削除します。この操作は元に戻せません。
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="rounded-none text-xs uppercase tracking-widest">キャンセル</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleDelete(selectedTemplate.id)}
+                          className="rounded-none text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          削除する
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                  <Button
+                    onClick={() => handleUpdate(selectedTemplate.id, {
+                      name: selectedTemplate.name,
+                      subjectTemplate: selectedTemplate.subjectTemplate,
+                      htmlTemplate: selectedTemplate.htmlTemplate
+                    })}
+                    disabled={updateMutation.isPending}
+                    size="sm"
+                    className="rounded-none text-xs uppercase tracking-widest h-8"
+                  >
+                    {updateMutation.isPending ? "保存中..." : "変更を保存"}
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2 shrink-0">
