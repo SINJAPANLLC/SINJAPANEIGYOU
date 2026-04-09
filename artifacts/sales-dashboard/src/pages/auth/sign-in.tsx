@@ -1,29 +1,94 @@
-import { SignIn } from "@clerk/react";
-
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
-const hideGoogleAppearance = {
-  elements: {
-    socialButtonsBlock: { display: "none" },
-    socialButtonsBlockButton: { display: "none" },
-    socialButtonsBlockButtonArrow: { display: "none" },
-    dividerRow: { display: "none" },
-    dividerLine: { display: "none" },
-    dividerText: { display: "none" },
-  },
-};
+import { useSignIn } from "@clerk/react";
+import { useState } from "react";
+import { useLocation } from "wouter";
 
 export default function SignInPage() {
+  const { signIn, setActive, isLoaded } = useSignIn();
+  const [, navigate] = useLocation();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!isLoaded) return;
+    setError("");
+    setLoading(true);
+    try {
+      const result = await signIn.create({
+        identifier: email,
+        password,
+      });
+      if (result.status === "complete") {
+        await setActive({ session: result.createdSessionId });
+        navigate("/dashboard");
+      } else {
+        setError("ログインに失敗しました。");
+      }
+    } catch (err: unknown) {
+      const clerkErr = err as { errors?: { message?: string }[] };
+      if (clerkErr?.errors?.[0]?.message) {
+        setError(clerkErr.errors[0].message);
+      } else {
+        setError("メールアドレスまたはパスワードが正しくありません。");
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-background p-4 relative overflow-hidden">
-      <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none"></div>
-      <div className="relative z-10 w-full max-w-md">
-        <SignIn
-          routing="path"
-          path={`${basePath}/sign-in`}
-          signUpUrl={`${basePath}/sign-up`}
-          appearance={hideGoogleAppearance}
-        />
+    <div className="min-h-[100dvh] flex items-center justify-center bg-black">
+      <div className="w-full max-w-sm px-8">
+        <div className="mb-10 text-center">
+          <div className="inline-flex items-center justify-center w-10 h-10 bg-white rounded-sm mb-6">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <rect x="0" y="0" width="8" height="8" fill="black" />
+              <rect x="10" y="0" width="8" height="8" fill="black" />
+              <rect x="0" y="10" width="8" height="8" fill="black" />
+              <rect x="10" y="10" width="8" height="8" fill="black" opacity="0.3" />
+            </svg>
+          </div>
+          <h1 className="text-white text-lg font-medium tracking-tight">
+            営業自動化ダッシュボード
+          </h1>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <input
+              type="email"
+              placeholder="メールアドレス"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors"
+            />
+          </div>
+          <div>
+            <input
+              type="password"
+              placeholder="パスワード"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors"
+            />
+          </div>
+
+          {error && (
+            <p className="text-red-400 text-xs">{error}</p>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-white text-black text-sm font-medium py-3 rounded-sm hover:bg-white/90 transition-colors disabled:opacity-50 mt-2"
+          >
+            {loading ? "ログイン中..." : "ログイン"}
+          </button>
+        </form>
       </div>
     </div>
   );
