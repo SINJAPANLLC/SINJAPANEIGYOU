@@ -12,7 +12,7 @@ export default function SignInPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!isLoaded) return;
+    if (!isLoaded || !signIn) return;
     setError("");
     setLoading(true);
     try {
@@ -20,18 +20,32 @@ export default function SignInPage() {
         identifier: email,
         password,
       });
+
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
         navigate("/dashboard");
+      } else if (result.status === "needs_first_factor") {
+        // Fallback: attempt password factor explicitly
+        const r2 = await result.attemptFirstFactor({ strategy: "password", password });
+        if (r2.status === "complete") {
+          await setActive({ session: r2.createdSessionId });
+          navigate("/dashboard");
+        } else {
+          setError("ログインに失敗しました。もう一度お試しください。");
+        }
       } else {
-        setError("ログインに失敗しました。");
+        setError("ログインに失敗しました。もう一度お試しください。");
       }
     } catch (err: unknown) {
-      const clerkErr = err as { errors?: { message?: string }[] };
-      if (clerkErr?.errors?.[0]?.message) {
-        setError(clerkErr.errors[0].message);
-      } else {
+      const clerkErr = err as { errors?: { message?: string; longMessage?: string }[] };
+      const msg = clerkErr?.errors?.[0]?.longMessage
+        ?? clerkErr?.errors?.[0]?.message;
+      if (msg?.includes("password") || msg?.includes("incorrect")) {
         setError("メールアドレスまたはパスワードが正しくありません。");
+      } else if (msg) {
+        setError(msg);
+      } else {
+        setError("ログインできませんでした。もう一度お試しください。");
       }
     } finally {
       setLoading(false);
@@ -63,6 +77,7 @@ export default function SignInPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              autoComplete="email"
               className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors"
             />
           </div>
@@ -73,18 +88,19 @@ export default function SignInPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              autoComplete="current-password"
               className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors"
             />
           </div>
 
           {error && (
-            <p className="text-red-400 text-xs">{error}</p>
+            <p className="text-red-400 text-xs leading-relaxed">{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-white text-black text-sm font-medium py-3 rounded-sm hover:bg-white/90 transition-colors disabled:opacity-50 mt-2"
+            className="w-full bg-white text-black text-sm font-medium py-3 rounded-sm hover:bg-white/90 transition-colors disabled:opacity-40 mt-2"
           >
             {loading ? "ログイン中..." : "ログイン"}
           </button>
