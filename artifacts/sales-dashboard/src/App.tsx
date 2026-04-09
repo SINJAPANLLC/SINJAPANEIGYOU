@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ClerkProvider, SignIn, SignUp, Show, useClerk } from "@clerk/react";
+import { ClerkProvider, Show, useClerk } from "@clerk/react";
 import { Switch, Route, Redirect, useLocation, Router as WouterRouter } from "wouter";
 import { queryClient } from "@/lib/queryClient";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -9,7 +9,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { BusinessProvider } from "@/contexts/BusinessContext";
 import { SidebarLayout } from "@/components/layout/SidebarLayout";
 
-import LandingPage from "@/pages/landing";
 import SignInPage from "@/pages/auth/sign-in";
 import SignUpPage from "@/pages/auth/sign-up";
 import DashboardPage from "@/pages/dashboard";
@@ -63,7 +62,7 @@ function HomeRedirect() {
         <Redirect to="/dashboard" />
       </Show>
       <Show when="signed-out">
-        <LandingPage />
+        <Redirect to="/sign-in" />
       </Show>
     </>
   );
@@ -78,7 +77,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
         </SidebarLayout>
       </Show>
       <Show when="signed-out">
-        <Redirect to="/" />
+        <Redirect to="/sign-in" />
       </Show>
     </>
   );
