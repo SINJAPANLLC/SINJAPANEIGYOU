@@ -26,7 +26,7 @@ export default function SignInPage() {
         return;
       }
 
-      window.location.href = "/dashboard";
+      window.location.href = "/businesses";
     } catch {
       setError("サーバーに接続できませんでした。");
     } finally {
