@@ -101,7 +101,7 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
     <p style="font-size:14px;line-height:2.1;color:#5c4e42;margin:0 0 40px;">貴社のご状況に合わせた最適なプランをご提案できますため、ぜひ一度ご覧いただけますと幸いでございます。</p>
     <div style="background:#fff;border:1px solid #e8ddd0;padding:28px 32px;margin-bottom:36px;">
       <p style="font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:#9b8b7a;font-family:'Helvetica Neue',sans-serif;margin:0 0 16px;">ご提案の要点</p>
-      <p style="font-size:13px;line-height:2;color:#5c4e42;margin:0;">✦ &nbsp;貴社専用のカスタマイズプラン<br>✦ &nbsp;専任担当者による伴走サポート<br>✦ &nbsp;初月無料でリスクなく開始可能</p>
+      <p style="font-size:13px;line-height:2;color:#5c4e42;margin:0;">— &nbsp;貴社専用のカスタマイズプラン<br>— &nbsp;専任担当者による伴走サポート<br>— &nbsp;初月無料でリスクなく開始可能</p>
     </div>
     <div style="text-align:center;margin-bottom:40px;">
       <a href="{{service_url}}" style="display:inline-block;background:#2c2218;color:#f8f5f0;text-decoration:none;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;padding:16px 48px;font-family:'Helvetica Neue',sans-serif;font-weight:600;">詳細はこちら</a>
@@ -226,9 +226,9 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
     <div style="border:1px solid #3d3000;padding:28px 32px;margin-bottom:40px;background:#0f0c02;">
       <div style="font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:#8a6d00;margin-bottom:16px;">限定特典</div>
       <div style="font-size:13px;color:#c4b89a;line-height:2.1;">
-        ◆ &nbsp;専任アカウントマネージャー配置<br>
-        ◆ &nbsp;初月利用料100%オフ<br>
-        ◆ &nbsp;カスタム機能開発（最大3件）無料
+        — &nbsp;専任アカウントマネージャー配置<br>
+        — &nbsp;初月利用料100%オフ<br>
+        — &nbsp;カスタム機能開発（最大3件）無料
       </div>
     </div>
     <a href="{{service_url}}" style="display:block;background:linear-gradient(135deg,#b8860b,#ffd700,#b8860b);color:#0c0a06;text-decoration:none;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;padding:20px;text-align:center;font-weight:900;">特別オファーを確認する →</a>
@@ -305,7 +305,7 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
 </div>`,
   },
   {
-    label: "✨ アニメ：パルスネオン",
+    label: "アニメ：パルスネオン",
     name: "パルスネオン提案",
     subjectTemplate: "{{company_name}}様、光る未来へ — {{service_name}}",
     htmlTemplate: `<!DOCTYPE html>
@@ -355,7 +355,7 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
   <!-- Header -->
   <div style="padding:56px 48px 40px;text-align:center;position:relative;overflow:hidden;">
     <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#8b5cf6,#60a5fa,#8b5cf6,transparent);"></div>
-    <div class="float-icon" style="font-size:48px;margin-bottom:16px;">⚡</div>
+    <div class="float-icon" style="width:40px;height:40px;border:1px solid rgba(139,92,246,0.5);border-radius:50%;margin:0 auto 20px;background:radial-gradient(circle,rgba(139,92,246,0.3),transparent);"></div>
     <div style="font-size:10px;letter-spacing:0.3em;text-transform:uppercase;color:rgba(139,92,246,0.7);margin-bottom:20px;">{{service_name}}</div>
     <h1 style="font-size:36px;font-weight:900;line-height:1.1;margin:0;letter-spacing:-0.03em;">
       <span class="shimmer-text">{{company_name}}様へ、<br>特別なご提案</span>
@@ -395,7 +395,7 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
 </html>`,
   },
   {
-    label: "✨ アニメ：オーロラ",
+    label: "アニメ：オーロラ",
     name: "オーロラグロー提案",
     subjectTemplate: "{{company_name}}様、{{service_name}}からの輝くご提案",
     htmlTemplate: `<!DOCTYPE html>
@@ -459,18 +459,15 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
     <!-- Feature cards with animation delay -->
     <div style="display:flex;gap:12px;margin-bottom:40px;flex-wrap:wrap;">
       <div class="fade-up" style="flex:1;min-width:140px;padding:20px;background:linear-gradient(135deg,#fdf4ff,#fce7f3);border-radius:12px;border:1px solid #f0abfc;text-align:center;">
-        <div style="font-size:28px;margin-bottom:8px;">🚀</div>
-        <div style="font-size:13px;font-weight:700;color:#86198f;margin-bottom:4px;">即日導入</div>
+        <div style="font-size:13px;font-weight:700;color:#86198f;margin-bottom:4px;padding-top:4px;">即日導入</div>
         <div style="font-size:11px;color:#a21caf;">セットアップ15分</div>
       </div>
       <div class="fade-up" style="flex:1;min-width:140px;padding:20px;background:linear-gradient(135deg,#eff6ff,#dbeafe);border-radius:12px;border:1px solid #93c5fd;text-align:center;">
-        <div style="font-size:28px;margin-bottom:8px;">💡</div>
-        <div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:4px;">AI自動化</div>
+        <div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:4px;padding-top:4px;">AI自動化</div>
         <div style="font-size:11px;color:#2563eb;">工数70%削減</div>
       </div>
       <div class="fade-up" style="flex:1;min-width:140px;padding:20px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:12px;border:1px solid #86efac;text-align:center;">
-        <div style="font-size:28px;margin-bottom:8px;">📈</div>
-        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:4px;">成果保証</div>
+        <div style="font-size:13px;font-weight:700;color:#15803d;margin-bottom:4px;padding-top:4px;">成果保証</div>
         <div style="font-size:11px;color:#16a34a;">30日返金OK</div>
       </div>
     </div>
@@ -486,7 +483,7 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
 </html>`,
   },
   {
-    label: "✨ アニメ：タイプライター",
+    label: "アニメ：タイプライター",
     name: "タイプライター演出提案",
     subjectTemplate: "{{company_name}}様、{{service_name}}よりメッセージ",
     htmlTemplate: `<!DOCTYPE html>
@@ -762,7 +759,7 @@ export default function TemplatesPage() {
           <Dialog open={showStarters} onOpenChange={setShowStarters}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline" className="rounded-none h-8 text-xs uppercase tracking-widest border-border">
-                サンプルから選ぶ
+                テンプレートから選ぶ
               </Button>
             </DialogTrigger>
             <DialogContent className="rounded-none border-border max-w-4xl">
@@ -856,7 +853,7 @@ export default function TemplatesPage() {
               <div className="p-8 text-center space-y-3">
                 <FileText className="w-6 h-6 text-muted-foreground mx-auto opacity-30" />
                 <p className="text-sm text-muted-foreground">テンプレートがありません</p>
-                <p className="text-xs text-muted-foreground">「サンプルから選ぶ」または「AI生成」で始めましょう</p>
+                <p className="text-xs text-muted-foreground">「テンプレートから選ぶ」または「AI生成」で始めましょう</p>
               </div>
             ) : (
               <div className="divide-y divide-border border-b border-border">
