@@ -34,12 +34,12 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Businesses", href: "/businesses", icon: Building2 },
-  { name: "Leads", href: "/leads", icon: Users },
-  { name: "Templates", href: "/templates", icon: FileText },
-  { name: "Campaigns", href: "/campaigns", icon: Send },
-  { name: "Email Logs", href: "/email-logs", icon: History },
+  { name: "ダッシュボード", href: "/dashboard", icon: LayoutDashboard },
+  { name: "ビジネス", href: "/businesses", icon: Building2 },
+  { name: "リード", href: "/leads", icon: Users },
+  { name: "テンプレート", href: "/templates", icon: FileText },
+  { name: "キャンペーン", href: "/campaigns", icon: Send },
+  { name: "送信ログ", href: "/email-logs", icon: History },
 ];
 
 export function SidebarLayout({ children }: { children: ReactNode }) {
@@ -65,10 +65,10 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
                     </Avatar>
                     <div className="flex flex-col">
                       <span className="text-sm font-bold leading-tight">
-                        {isLoading ? "Loading..." : selectedBusiness?.name || "No Business"}
+                        {isLoading ? "読込中..." : selectedBusiness?.name || "未選択"}
                       </span>
                       <span className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
-                        Workspace
+                        ワークスペース
                       </span>
                     </div>
                   </div>
@@ -76,7 +76,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
                 </div>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" className="w-[240px] rounded-none border-border">
-                <DropdownMenuLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Select Business</DropdownMenuLabel>
+                <DropdownMenuLabel className="font-mono text-xs uppercase tracking-widest text-muted-foreground">ビジネスを選択</DropdownMenuLabel>
                 <DropdownMenuSeparator className="bg-border" />
                 {businesses?.map((business) => (
                   <DropdownMenuItem
@@ -97,7 +97,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
                 <Link href="/businesses">
                   <DropdownMenuItem className="cursor-pointer rounded-none text-muted-foreground">
                     <Plus className="w-4 h-4 mr-2" />
-                    <span className="text-sm">Manage Businesses</span>
+                    <span className="text-sm">ビジネスを管理</span>
                   </DropdownMenuItem>
                 </Link>
               </DropdownMenuContent>
@@ -105,7 +105,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
           </SidebarHeader>
 
           <SidebarContent className="px-3 py-4">
-            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-4 px-2">Navigation</div>
+            <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-4 px-2">メニュー</div>
             <SidebarMenu>
               {navigation.map((item) => {
                 const isActive = location === item.href;
@@ -119,7 +119,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
                             ? "bg-foreground text-background font-medium" 
                             : "hover:bg-muted text-muted-foreground hover:text-foreground"
                         }`}
-                        data-testid={`nav-${item.name.toLowerCase()}`}
+                        data-testid={`nav-${item.name}`}
                       >
                         <item.icon className="w-4 h-4" />
                         <span>{item.name}</span>
@@ -138,7 +138,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
               data-testid="btn-signout"
             >
               <LogOut className="w-4 h-4" />
-              <span>Sign Out</span>
+              <span>ログアウト</span>
             </button>
           </SidebarFooter>
         </Sidebar>

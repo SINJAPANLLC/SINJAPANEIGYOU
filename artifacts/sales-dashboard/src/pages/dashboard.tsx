@@ -1,9 +1,10 @@
 import { useBusiness } from "@/contexts/BusinessContext";
 import { useGetDashboardStats, useGetRecentActivity, getGetDashboardStatsQueryKey, getGetRecentActivityQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Send, Reply, TrendingUp, Activity, ArrowRight } from "lucide-react";
+import { Users, Send, Reply, TrendingUp, Activity } from "lucide-react";
 import { motion } from "framer-motion";
 import { format } from "date-fns";
+import { ja } from "date-fns/locale";
 
 export default function DashboardPage() {
   const { selectedBusinessId } = useBusiness();
@@ -29,9 +30,9 @@ export default function DashboardPage() {
           <div className="w-12 h-12 border border-border mx-auto flex items-center justify-center">
             <Activity className="w-6 h-6 text-muted-foreground" />
           </div>
-          <h2 className="text-xl font-bold tracking-tight">No Business Selected</h2>
+          <h2 className="text-xl font-bold tracking-tight">ビジネスが未選択です</h2>
           <p className="text-muted-foreground text-sm leading-relaxed">
-            Please select or create a business workspace to view dashboard statistics and activities.
+            ダッシュボードを表示するには、左のメニューからビジネスを選択または作成してください。
           </p>
         </div>
       </div>
@@ -40,28 +41,28 @@ export default function DashboardPage() {
 
   const statCards = [
     {
-      title: "Total Leads",
+      title: "総リード数",
       value: stats?.totalLeads ?? "-",
       icon: Users,
-      description: "All collected leads"
+      description: "収集済みリードの合計"
     },
     {
-      title: "Sent Emails",
+      title: "送信済みメール",
       value: stats?.totalEmailsSent ?? "-",
       icon: Send,
-      description: "Total emails dispatched"
+      description: "配信したメールの総数"
     },
     {
-      title: "Replied",
+      title: "返信数",
       value: stats?.repliedLeads ?? "-",
       icon: Reply,
-      description: "Positive or negative replies"
+      description: "返信があったリード数"
     },
     {
-      title: "Reply Rate",
+      title: "返信率",
       value: stats?.replyRate ? `${stats.replyRate.toFixed(1)}%` : "-",
       icon: TrendingUp,
-      description: "Conversion percentage"
+      description: "コンバージョン率"
     }
   ];
 
@@ -69,8 +70,8 @@ export default function DashboardPage() {
     <div className="flex-1 overflow-auto p-8 bg-background">
       <div className="max-w-6xl mx-auto space-y-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Dashboard</h1>
-          <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">System Overview / Performance Metrics</p>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">ダッシュボード</h1>
+          <p className="text-muted-foreground font-mono text-xs uppercase tracking-widest">システム概要 / パフォーマンス指標</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -109,15 +110,15 @@ export default function DashboardPage() {
             className="lg:col-span-2 space-y-4"
           >
             <div className="flex items-center justify-between border-b border-border pb-2">
-              <h2 className="text-lg font-bold tracking-tight">Recent Activity</h2>
-              <div className="text-xs font-mono text-muted-foreground uppercase">Live Feed</div>
+              <h2 className="text-lg font-bold tracking-tight">最近のアクティビティ</h2>
+              <div className="text-xs font-mono text-muted-foreground uppercase">ライブフィード</div>
             </div>
             
             <div className="space-y-0 border border-border">
               {activityLoading ? (
-                <div className="p-8 text-center text-sm text-muted-foreground font-mono">LOADING_DATA...</div>
+                <div className="p-8 text-center text-sm text-muted-foreground font-mono">データ読込中...</div>
               ) : activity?.length === 0 ? (
-                <div className="p-8 text-center text-sm text-muted-foreground">No recent activity found.</div>
+                <div className="p-8 text-center text-sm text-muted-foreground">アクティビティはまだありません。</div>
               ) : (
                 activity?.map((item, i) => (
                   <div 
@@ -129,17 +130,17 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">
-                        {item.type === 'email_sent' ? `Email sent to ${item.companyName || 'Unknown'}` : `Lead ${item.companyName} added`}
+                        {item.type === 'email_sent' ? `${item.companyName || '不明'}にメール送信` : `リード「${item.companyName}」を追加`}
                       </p>
                       {item.subject && (
-                        <p className="text-xs text-muted-foreground truncate mt-1">"{item.subject}"</p>
+                        <p className="text-xs text-muted-foreground truncate mt-1">「{item.subject}」</p>
                       )}
                       <div className="flex items-center gap-2 mt-2">
                         <span className="text-[10px] font-mono px-2 py-0.5 border border-border uppercase tracking-wider text-muted-foreground">
                           {item.status}
                         </span>
                         <span className="text-[10px] text-muted-foreground font-mono">
-                          {format(new Date(item.createdAt), 'MMM d, HH:mm')}
+                          {format(new Date(item.createdAt), 'M月d日 HH:mm', { locale: ja })}
                         </span>
                       </div>
                     </div>
@@ -156,33 +157,33 @@ export default function DashboardPage() {
             className="space-y-4"
           >
             <div className="flex items-center justify-between border-b border-border pb-2">
-              <h2 className="text-lg font-bold tracking-tight">System Status</h2>
+              <h2 className="text-lg font-bold tracking-tight">システム状態</h2>
             </div>
             
             <Card className="rounded-none border-border shadow-none bg-primary text-primary-foreground">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <div className="text-sm font-mono uppercase tracking-widest">Status</div>
+                  <div className="text-sm font-mono uppercase tracking-widest">ステータス</div>
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-xs font-mono">OPERATIONAL</span>
+                    <span className="text-xs font-mono">稼働中</span>
                   </div>
                 </div>
                 
                 <div className="space-y-4">
                   <div>
-                    <div className="text-xs text-primary-foreground/70 mb-1">Queue Pipeline</div>
+                    <div className="text-xs text-primary-foreground/70 mb-1">送信待ちリード</div>
                     <div className="flex justify-between items-end border-b border-primary-foreground/20 pb-1">
                       <span className="text-2xl font-bold font-mono">{stats?.unsentLeads ?? 0}</span>
-                      <span className="text-xs font-mono pb-1">Pending</span>
+                      <span className="text-xs font-mono pb-1">件</span>
                     </div>
                   </div>
                   
                   <div>
-                    <div className="text-xs text-primary-foreground/70 mb-1">Active Campaigns</div>
+                    <div className="text-xs text-primary-foreground/70 mb-1">アクティブキャンペーン</div>
                     <div className="flex justify-between items-end border-b border-primary-foreground/20 pb-1">
                       <span className="text-2xl font-bold font-mono">{stats?.totalCampaigns ?? 0}</span>
-                      <span className="text-xs font-mono pb-1">Running</span>
+                      <span className="text-xs font-mono pb-1">件</span>
                     </div>
                   </div>
                 </div>

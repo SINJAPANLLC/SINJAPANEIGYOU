@@ -1,9 +1,8 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useListBusinesses, useCreateBusiness, useUpdateBusiness, useDeleteBusiness, getListBusinessesQueryKey } from "@workspace/api-client-react";
 import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -17,11 +16,11 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useUser } from "@clerk/react";
 
 const businessSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "名前は必須です"),
   companyName: z.string().optional().nullable(),
-  serviceUrl: z.string().url("Must be a valid URL").optional().nullable().or(z.literal('')),
+  serviceUrl: z.string().url("有効なURLを入力してください").optional().nullable().or(z.literal('')),
   senderName: z.string().optional().nullable(),
-  senderEmail: z.string().email("Must be a valid email").optional().nullable().or(z.literal('')),
+  senderEmail: z.string().email("有効なメールアドレスを入力してください").optional().nullable().or(z.literal('')),
   signatureHtml: z.string().optional().nullable(),
 });
 
@@ -65,9 +64,9 @@ export default function BusinessesPage() {
             queryClient.invalidateQueries({ queryKey: getListBusinessesQueryKey() });
             setIsCreateOpen(false);
             setEditingBusinessId(null);
-            toast({ title: "Business updated successfully" });
+            toast({ title: "ビジネスを更新しました" });
           },
-          onError: () => toast({ title: "Failed to update business", variant: "destructive" })
+          onError: () => toast({ title: "更新に失敗しました", variant: "destructive" })
         }
       );
     } else {
@@ -77,9 +76,9 @@ export default function BusinessesPage() {
           onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: getListBusinessesQueryKey() });
             setIsCreateOpen(false);
-            toast({ title: "Business created successfully" });
+            toast({ title: "ビジネスを作成しました" });
           },
-          onError: () => toast({ title: "Failed to create business", variant: "destructive" })
+          onError: () => toast({ title: "作成に失敗しました", variant: "destructive" })
         }
       );
     }
@@ -104,9 +103,9 @@ export default function BusinessesPage() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListBusinessesQueryKey() });
-          toast({ title: "Business deleted" });
+          toast({ title: "ビジネスを削除しました" });
         },
-        onError: () => toast({ title: "Failed to delete business", variant: "destructive" })
+        onError: () => toast({ title: "削除に失敗しました", variant: "destructive" })
       }
     );
   };
@@ -132,19 +131,19 @@ export default function BusinessesPage() {
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
       <div className="border-b border-border p-6 shrink-0 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Businesses</h1>
-          <p className="text-muted-foreground text-sm font-mono uppercase tracking-widest mt-1">Manage Workspaces & Identities</p>
+          <h1 className="text-2xl font-bold tracking-tight">ビジネス</h1>
+          <p className="text-muted-foreground text-sm font-mono uppercase tracking-widest mt-1">ワークスペース・送信者情報の管理</p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={handleOpenChange}>
           <DialogTrigger asChild>
             <Button className="rounded-none tracking-widest text-xs uppercase h-10 px-6">
-              <Plus className="w-4 h-4 mr-2" /> New Business
+              <Plus className="w-4 h-4 mr-2" /> 新規作成
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[600px] rounded-none border-border">
             <DialogHeader>
               <DialogTitle className="font-bold tracking-tight">
-                {editingBusinessId ? "Edit Business" : "Create New Business"}
+                {editingBusinessId ? "ビジネスを編集" : "新規ビジネスを作成"}
               </DialogTitle>
             </DialogHeader>
             <Form {...form}>
@@ -155,9 +154,9 @@ export default function BusinessesPage() {
                     name="name"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs uppercase tracking-wider font-mono">Workspace Name *</FormLabel>
+                        <FormLabel className="text-xs uppercase tracking-wider font-mono">ワークスペース名 *</FormLabel>
                         <FormControl>
-                          <Input placeholder="e.g. Sales Team Alpha" className="rounded-none border-border" {...field} />
+                          <Input placeholder="例: 営業チームA" className="rounded-none border-border" {...field} />
                         </FormControl>
                         <FormMessage className="text-[10px]" />
                       </FormItem>
@@ -168,9 +167,9 @@ export default function BusinessesPage() {
                     name="companyName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs uppercase tracking-wider font-mono">Company Name</FormLabel>
+                        <FormLabel className="text-xs uppercase tracking-wider font-mono">会社名</FormLabel>
                         <FormControl>
-                          <Input placeholder="Acme Corp" className="rounded-none border-border" {...field} value={field.value || ''} />
+                          <Input placeholder="例: 株式会社サンプル" className="rounded-none border-border" {...field} value={field.value || ''} />
                         </FormControl>
                         <FormMessage className="text-[10px]" />
                       </FormItem>
@@ -181,9 +180,9 @@ export default function BusinessesPage() {
                     name="serviceUrl"
                     render={({ field }) => (
                       <FormItem className="col-span-2">
-                        <FormLabel className="text-xs uppercase tracking-wider font-mono">Service URL</FormLabel>
+                        <FormLabel className="text-xs uppercase tracking-wider font-mono">サービスURL</FormLabel>
                         <FormControl>
-                          <Input placeholder="https://example.com" type="url" className="rounded-none border-border" {...field} value={field.value || ''} />
+                          <Input placeholder="https://example.co.jp" type="url" className="rounded-none border-border" {...field} value={field.value || ''} />
                         </FormControl>
                         <FormMessage className="text-[10px]" />
                       </FormItem>
@@ -194,9 +193,9 @@ export default function BusinessesPage() {
                     name="senderName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs uppercase tracking-wider font-mono">Sender Name</FormLabel>
+                        <FormLabel className="text-xs uppercase tracking-wider font-mono">送信者名</FormLabel>
                         <FormControl>
-                          <Input placeholder="John Doe" className="rounded-none border-border" {...field} value={field.value || ''} />
+                          <Input placeholder="例: 山田 太郎" className="rounded-none border-border" {...field} value={field.value || ''} />
                         </FormControl>
                         <FormMessage className="text-[10px]" />
                       </FormItem>
@@ -207,9 +206,9 @@ export default function BusinessesPage() {
                     name="senderEmail"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs uppercase tracking-wider font-mono">Sender Email</FormLabel>
+                        <FormLabel className="text-xs uppercase tracking-wider font-mono">送信者メール</FormLabel>
                         <FormControl>
-                          <Input placeholder="john@example.com" type="email" className="rounded-none border-border" {...field} value={field.value || ''} />
+                          <Input placeholder="yamada@example.co.jp" type="email" className="rounded-none border-border" {...field} value={field.value || ''} />
                         </FormControl>
                         <FormMessage className="text-[10px]" />
                       </FormItem>
@@ -220,10 +219,10 @@ export default function BusinessesPage() {
                     name="signatureHtml"
                     render={({ field }) => (
                       <FormItem className="col-span-2">
-                        <FormLabel className="text-xs uppercase tracking-wider font-mono">Email Signature (HTML)</FormLabel>
+                        <FormLabel className="text-xs uppercase tracking-wider font-mono">メール署名 (HTML)</FormLabel>
                         <FormControl>
                           <Textarea 
-                            placeholder="<p>Best regards,<br/>John Doe</p>" 
+                            placeholder="<p>よろしくお願いします。<br/>山田 太郎</p>" 
                             className="rounded-none border-border font-mono text-xs h-32" 
                             {...field} 
                             value={field.value || ''}
@@ -236,10 +235,10 @@ export default function BusinessesPage() {
                 </div>
                 <DialogFooter className="pt-4">
                   <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)} className="rounded-none text-xs uppercase tracking-widest">
-                    Cancel
+                    キャンセル
                   </Button>
                   <Button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="rounded-none text-xs uppercase tracking-widest">
-                    {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save Business"}
+                    {createMutation.isPending || updateMutation.isPending ? "保存中..." : "保存する"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -258,10 +257,10 @@ export default function BusinessesPage() {
         ) : businesses?.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center space-y-4 border border-dashed border-border p-12">
             <Building2 className="w-12 h-12 text-muted-foreground" />
-            <h3 className="text-lg font-bold">No businesses found</h3>
-            <p className="text-sm text-muted-foreground max-w-sm">Create your first business workspace to start managing leads and campaigns.</p>
+            <h3 className="text-lg font-bold">ビジネスがありません</h3>
+            <p className="text-sm text-muted-foreground max-w-sm">最初のビジネスワークスペースを作成して、リードとキャンペーンの管理を始めましょう。</p>
             <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-none mt-4 text-xs tracking-widest uppercase">
-              Create Workspace
+              ワークスペースを作成
             </Button>
           </div>
         ) : (
@@ -280,7 +279,7 @@ export default function BusinessesPage() {
                     <div className="space-y-1">
                       <h3 className="font-bold text-lg leading-tight truncate pr-4">{business.name}</h3>
                       <p className="text-xs text-muted-foreground font-mono uppercase tracking-wider truncate">
-                        {business.companyName || 'No Company Name'}
+                        {business.companyName || '会社名未設定'}
                       </p>
                     </div>
                     <div className="w-8 h-8 shrink-0 bg-primary text-primary-foreground flex items-center justify-center font-mono text-xs font-bold">
@@ -312,29 +311,29 @@ export default function BusinessesPage() {
 
                 <div className="border-t border-border p-3 bg-muted/10 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <Button variant="ghost" size="sm" onClick={() => handleEdit(business)} className="rounded-none text-xs" data-testid={`btn-edit-${business.id}`}>
-                    <Edit2 className="w-4 h-4 mr-2" /> Edit
+                    <Edit2 className="w-4 h-4 mr-2" /> 編集
                   </Button>
                   
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="ghost" size="sm" className="rounded-none text-xs text-destructive hover:bg-destructive/10 hover:text-destructive" data-testid={`btn-delete-${business.id}`}>
-                        <Trash2 className="w-4 h-4 mr-2" /> Delete
+                        <Trash2 className="w-4 h-4 mr-2" /> 削除
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent className="rounded-none border-border">
                       <AlertDialogHeader>
-                        <AlertDialogTitle className="font-bold">Are you sure?</AlertDialogTitle>
+                        <AlertDialogTitle className="font-bold">本当に削除しますか？</AlertDialogTitle>
                         <AlertDialogDescription>
-                          This will permanently delete the business "{business.name}" and all associated data.
+                          ビジネス「{business.name}」と関連するすべてのデータが完全に削除されます。この操作は元に戻せません。
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel className="rounded-none text-xs uppercase tracking-widest">Cancel</AlertDialogCancel>
+                        <AlertDialogCancel className="rounded-none text-xs uppercase tracking-widest">キャンセル</AlertDialogCancel>
                         <AlertDialogAction 
                           onClick={() => handleDelete(business.id)}
                           className="rounded-none text-xs uppercase tracking-widest bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
-                          Delete
+                          削除する
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>

@@ -20,6 +20,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { format } from "date-fns";
+import { ja } from "date-fns/locale";
 
 const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
   draft: "下書き",
@@ -29,8 +30,8 @@ const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
 };
 
 const campaignSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  templateId: z.coerce.number().min(1, "Template is required"),
+  name: z.string().min(1, "名前は必須です"),
+  templateId: z.coerce.number().min(1, "テンプレートは必須です"),
 });
 
 type CampaignFormValues = z.infer<typeof campaignSchema>;
@@ -80,10 +81,10 @@ export default function CampaignsPage() {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
           setIsCreateOpen(false);
-          toast({ title: "Campaign created" });
+          toast({ title: "キャンペーンを作成しました" });
           form.reset();
         },
-        onError: () => toast({ title: "Failed to create campaign", variant: "destructive" })
+        onError: () => toast({ title: "キャンペーンの作成に失敗しました", variant: "destructive" })
       }
     );
   };
@@ -94,9 +95,9 @@ export default function CampaignsPage() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
-          toast({ title: `Campaign status updated to ${CAMPAIGN_STATUS_LABELS[status]}` });
+          toast({ title: `ステータスを「${CAMPAIGN_STATUS_LABELS[status]}」に更新しました` });
         },
-        onError: () => toast({ title: "Failed to update status", variant: "destructive" })
+        onError: () => toast({ title: "ステータスの更新に失敗しました", variant: "destructive" })
       }
     );
   };
@@ -108,11 +109,11 @@ export default function CampaignsPage() {
         onSuccess: (res) => {
           queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
           toast({ 
-            title: "Campaign dispatched", 
-            description: `Sent: ${res.sent}, Failed: ${res.failed}, Skipped: ${res.skipped}` 
+            title: "キャンペーンを送信しました", 
+            description: `送信: ${res.sent}件 / 失敗: ${res.failed}件 / スキップ: ${res.skipped}件` 
           });
         },
-        onError: () => toast({ title: "Failed to dispatch campaign", variant: "destructive" })
+        onError: () => toast({ title: "キャンペーン送信に失敗しました", variant: "destructive" })
       }
     );
   };
@@ -122,8 +123,8 @@ export default function CampaignsPage() {
       <div className="flex-1 flex items-center justify-center p-8 bg-background">
         <div className="text-center space-y-4 max-w-md border border-dashed border-border p-12">
           <Building2 className="w-8 h-8 text-muted-foreground mx-auto" />
-          <h2 className="text-lg font-bold">Select a Business Workspace</h2>
-          <p className="text-muted-foreground text-sm">Select a business to manage campaigns.</p>
+          <h2 className="text-lg font-bold">ビジネスを選択してください</h2>
+          <p className="text-muted-foreground text-sm">キャンペーンを管理するには、ビジネスを選択してください。</p>
         </div>
       </div>
     );
@@ -133,19 +134,19 @@ export default function CampaignsPage() {
     <div className="flex-1 flex flex-col h-full bg-background overflow-hidden">
       <div className="border-b border-border p-6 shrink-0 flex items-center justify-between bg-card">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Campaigns</h1>
-          <p className="text-muted-foreground text-sm font-mono uppercase tracking-widest mt-1">Batch Operations Control</p>
+          <h1 className="text-2xl font-bold tracking-tight">キャンペーン</h1>
+          <p className="text-muted-foreground text-sm font-mono uppercase tracking-widest mt-1">一括送信オペレーション管理</p>
         </div>
         
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button className="rounded-none tracking-widest text-xs uppercase h-10 px-6 bg-foreground text-background hover:bg-foreground/90">
-              New Campaign
+              新規キャンペーン
             </Button>
           </DialogTrigger>
           <DialogContent className="rounded-none border-border">
             <DialogHeader>
-              <DialogTitle className="font-bold">Initialize Campaign</DialogTitle>
+              <DialogTitle className="font-bold">キャンペーンを作成</DialogTitle>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-4">
@@ -154,9 +155,9 @@ export default function CampaignsPage() {
                   name="name"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs uppercase font-mono">Campaign Code</FormLabel>
+                      <FormLabel className="text-xs uppercase font-mono">キャンペーン名</FormLabel>
                       <FormControl>
-                        <Input placeholder="e.g. Q3_OUTREACH_BATCH_1" className="rounded-none border-border font-mono text-sm" {...field} />
+                        <Input placeholder="例: Q3_アウトリーチ_第1弾" className="rounded-none border-border font-mono text-sm" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -167,11 +168,11 @@ export default function CampaignsPage() {
                   name="templateId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs uppercase font-mono">Message Template</FormLabel>
+                      <FormLabel className="text-xs uppercase font-mono">使用テンプレート</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value ? field.value.toString() : undefined}>
                         <FormControl>
                           <SelectTrigger className="rounded-none border-border">
-                            <SelectValue placeholder="Select a template" />
+                            <SelectValue placeholder="テンプレートを選択" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent className="rounded-none border-border">
@@ -179,7 +180,7 @@ export default function CampaignsPage() {
                             <SelectItem key={t.id} value={t.id.toString()} className="rounded-none cursor-pointer">{t.name}</SelectItem>
                           ))}
                           {(!templates || templates.length === 0) && (
-                            <SelectItem value="0" disabled>No templates available</SelectItem>
+                            <SelectItem value="0" disabled>テンプレートがありません</SelectItem>
                           )}
                         </SelectContent>
                       </Select>
@@ -188,8 +189,8 @@ export default function CampaignsPage() {
                   )}
                 />
                 <DialogFooter className="pt-4">
-                  <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)} className="rounded-none text-xs uppercase tracking-widest">Cancel</Button>
-                  <Button type="submit" disabled={createMutation.isPending} className="rounded-none text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90">Initialize</Button>
+                  <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)} className="rounded-none text-xs uppercase tracking-widest">キャンセル</Button>
+                  <Button type="submit" disabled={createMutation.isPending} className="rounded-none text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90">作成する</Button>
                 </DialogFooter>
               </form>
             </Form>
@@ -204,7 +205,7 @@ export default function CampaignsPage() {
           </div>
         ) : campaigns?.length === 0 ? (
           <div className="h-full flex items-center justify-center text-center text-muted-foreground font-mono text-sm">
-            NO_CAMPAIGNS_ACTIVE
+            キャンペーンがありません
           </div>
         ) : (
           <div className="space-y-4 max-w-5xl mx-auto">
@@ -227,10 +228,10 @@ export default function CampaignsPage() {
                     <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground font-mono">
                       <div className="flex items-center gap-1.5">
                         <FileText className="w-3.5 h-3.5" />
-                        <span className="truncate max-w-[200px]">{template?.name || `Template #${campaign.templateId}`}</span>
+                        <span className="truncate max-w-[200px]">{template?.name || `テンプレート #${campaign.templateId}`}</span>
                       </div>
                       <div>
-                        INIT: {format(new Date(campaign.createdAt), 'yyyy.MM.dd HH:mm')}
+                        作成: {format(new Date(campaign.createdAt), 'yyyy年M月d日 HH:mm', { locale: ja })}
                       </div>
                     </div>
                   </div>
@@ -243,7 +244,7 @@ export default function CampaignsPage() {
                         onClick={() => handleStatusChange(campaign.id, 'running')}
                         className="rounded-none h-8 text-xs border-border uppercase tracking-widest"
                       >
-                        <Play className="w-3 h-3 mr-2" /> Start
+                        <Play className="w-3 h-3 mr-2" /> 開始
                       </Button>
                     )}
                     {campaign.status === 'running' && (
@@ -254,7 +255,7 @@ export default function CampaignsPage() {
                           onClick={() => handleStatusChange(campaign.id, 'paused')}
                           className="rounded-none h-8 text-xs border-border uppercase tracking-widest"
                         >
-                          <Pause className="w-3 h-3 mr-2" /> Pause
+                          <Pause className="w-3 h-3 mr-2" /> 一時停止
                         </Button>
                         <Button 
                           size="sm" 
@@ -262,7 +263,7 @@ export default function CampaignsPage() {
                           disabled={sendMutation.isPending}
                           className="rounded-none h-8 text-xs uppercase tracking-widest bg-primary text-primary-foreground hover:bg-primary/90"
                         >
-                          <Send className="w-3 h-3 mr-2" /> Dispatch Now
+                          <Send className="w-3 h-3 mr-2" /> 今すぐ送信
                         </Button>
                       </>
                     )}
@@ -273,7 +274,7 @@ export default function CampaignsPage() {
                         onClick={() => handleStatusChange(campaign.id, 'running')}
                         className="rounded-none h-8 text-xs border-border uppercase tracking-widest"
                       >
-                        <Play className="w-3 h-3 mr-2" /> Resume
+                        <Play className="w-3 h-3 mr-2" /> 再開
                       </Button>
                     )}
                     {(campaign.status === 'running' || campaign.status === 'paused') && (
@@ -283,7 +284,7 @@ export default function CampaignsPage() {
                         onClick={() => handleStatusChange(campaign.id, 'completed')}
                         className="rounded-none h-8 text-xs text-muted-foreground hover:text-foreground uppercase tracking-widest"
                       >
-                        <CheckCircle2 className="w-3 h-3 mr-2" /> Mark Complete
+                        <CheckCircle2 className="w-3 h-3 mr-2" /> 完了にする
                       </Button>
                     )}
                   </div>
