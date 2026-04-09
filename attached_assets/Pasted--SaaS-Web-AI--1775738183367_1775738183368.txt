@@ -1,0 +1,234 @@
+フルスタックのSaaS型Webアプリを構築してください。
+このアプリは「営業リスト収集・AIメール生成・メール配信」を行う営業支援ツールです。
+
+# 🧠 コンセプト
+白黒でミニマルかつスタイリッシュなUIの営業自動化ダッシュボード。
+
+機能は以下：
+1. 検索APIで企業サイトを取得
+2. フィルタ＆スコアリングで精度の高いリストを生成
+3. クローラーで会社情報・問い合わせ先を抽出
+4. OpenAIで営業メールを自動生成
+5. SMTPでメール送信
+6. ステータス・履歴管理
+
+# 🧩 技術スタック
+
+フロントエンド:
+- Next.js 14（App Router）
+- TypeScript
+- Tailwind CSS（白黒ミニマルデザイン）
+- shadcn/ui
+
+バックエンド:
+- Next.js API Routes または Route Handlers
+- Prisma ORM
+- Neon PostgreSQL
+
+認証:
+- NextAuth（メール＆パスワード）
+
+メール送信:
+- Nodemailer（Hostinger SMTP使用）
+
+AI:
+- OpenAI API（gpt-4o-mini または最新モデル）
+
+クローラー:
+- Axios + Cheerio（高速スクレイピング）
+- Playwright（JSレンダリングページ対応）
+
+検索:
+- Brave Search API（メイン）
+- 将来的にGoogle APIに差し替え可能な構造にする
+
+キュー:
+- cron + 非同期処理（Redis不要の軽量構成）
+
+# 🔐 環境変数
+
+以下を.envに設定してください：
+
+DATABASE_URL=
+NEXTAUTH_SECRET=
+SMTP_HOST=smtp.hostinger.com
+SMTP_PORT=465
+SMTP_USER=
+SMTP_PASS=
+OPENAI_API_KEY=
+BRAVE_API_KEY=
+
+# 🧱 データベース設計
+
+User:
+- id
+- email
+- password_hash
+- created_at
+
+Business（事業単位）:
+- id
+- user_id
+- name（事業名）
+- service_url
+- company_name
+- sender_name
+- sender_email
+- signature_html
+
+Lead（リスト）:
+- id
+- business_id
+- company_name
+- website_url
+- email
+- contact_url
+- phone
+- address
+- status（未送信 / 送信済 / 返信 / NG / 配信停止）
+- score
+- created_at
+
+Template（テンプレ）:
+- id
+- business_id
+- subject_template
+- html_template
+
+Campaign:
+- id
+- business_id
+- template_id
+- status
+- scheduled_at
+
+EmailLog:
+- id
+- lead_id
+- subject
+- html
+- status
+- sent_at
+- error
+
+Unsubscribe:
+- id
+- lead_id
+- token
+
+# 🔍 検索ロジック
+
+事業ごとに検索クエリを生成する：
+
+例：
+"会社概要" 軽貨物 東京
+"お問い合わせ" 美容クリニック 渋谷
+"会社情報" 建設会社 神奈川
+
+以下の除外を必ず行う：
+- 求人サイト
+- ランキングサイト
+- 比較サイト
+- 大手ポータル
+
+# 🧠 スコアリングロジック
+
+各サイトにスコアをつける：
+
++3 /contact がある
++3 /company or /about がある
++3 独自ドメイン
++2 .co.jp または .jp
+-5 求人サイト
+-5 比較サイト
+
+5点以上のみ保存
+
+# 🕷 クローラー
+
+各サイトから以下を取得：
+- メール（mailto含む）
+- 問い合わせページURL
+- 会社名
+- 電話番号
+- 住所
+
+優先探索：
+/contact
+/company
+/about
+/privacy
+
+# 🤖 AIメール生成（OpenAI）
+
+以下の変数を使って営業メールを生成：
+
+- company_name
+- service_name
+- service_url
+
+自然で営業感の強い文章を生成すること。
+
+# 📧 メール送信
+
+- Nodemailerを使用
+- 1通ずつ送信（スパム対策）
+- 送信間隔を設ける（例：10秒）
+- 配信停止リンクを必ず挿入
+
+# 🎨 UI構成
+
+画面は3カラム：
+
+左：
+- リスト一覧（会社名、ステータス、スコア）
+
+中央：
+- メール編集（件名・本文）
+
+右：
+- HTMLプレビュー（リアルタイム）
+
+上部：
+- 事業選択
+- テンプレ選択
+- 一括送信ボタン
+
+# 🎨 デザイン
+
+- 完全白黒
+- 余白多め
+- 細いボーダー
+- シンプルで高級感あるUI
+
+# 🔐 必須機能
+
+- ログイン機能
+- 配信停止管理
+- 送信履歴
+- 重複送信防止
+
+# 🚀 優先実装順
+
+Phase1:
+- ログイン
+- 事業作成
+- リスト表示
+- テンプレ編集
+- プレビュー
+- テスト送信
+
+Phase2:
+- 検索→リスト取得
+- スコアリング
+- クローラー
+
+Phase3:
+- AIメール生成
+- 一括送信
+- 履歴管理
+
+# 🎯 最終目標
+
+営業リスト収集 → AIメール生成 → 自動営業
+まで一貫して行えるツールを完成させること。
