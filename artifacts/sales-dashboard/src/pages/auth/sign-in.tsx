@@ -4,7 +4,7 @@ import { useState } from "react";
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function SignInPage() {
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn, setActive } = useSignIn();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -12,10 +12,14 @@ export default function SignInPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!signIn || !setActive || !isLoaded) return;
     setError("");
-    setLoading(true);
 
+    if (!signIn || !setActive) {
+      setError("認証システムを初期化中です。少し待ってからお試しください。");
+      return;
+    }
+
+    setLoading(true);
     try {
       const result = await signIn.create({
         identifier: email,
@@ -65,7 +69,7 @@ export default function SignInPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            disabled={!isLoaded || loading}
+            disabled={loading}
             className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
           />
           <input
@@ -75,7 +79,7 @@ export default function SignInPage() {
             onChange={(e) => setPassword(e.target.value)}
             required
             autoComplete="current-password"
-            disabled={!isLoaded || loading}
+            disabled={loading}
             className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
           />
 
@@ -85,7 +89,7 @@ export default function SignInPage() {
 
           <button
             type="submit"
-            disabled={loading || !isLoaded}
+            disabled={loading}
             className="w-full bg-white text-black text-sm font-medium py-3 rounded-sm hover:bg-white/90 transition-colors disabled:opacity-40 mt-2"
           >
             {loading ? "ログイン中..." : "ログイン"}
