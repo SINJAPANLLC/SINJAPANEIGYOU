@@ -1,8 +1,6 @@
 import { useSignIn } from "@clerk/react";
 import { useState } from "react";
 
-const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 export default function SignInPage() {
   const { signIn, setActive } = useSignIn();
   const [email, setEmail] = useState("");
@@ -12,43 +10,52 @@ export default function SignInPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
-
     if (!signIn || !setActive) {
-      setError("認証システムを初期化中です。少し待ってからお試しください。");
+      setError("少し待ってからお試しください。");
       return;
     }
-
+    setError("");
     setLoading(true);
+
     try {
+      // Step 1: Backend verifies credentials and returns a Clerk sign-in token
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json() as { token?: string; error?: string };
+
+      if (!res.ok || !data.token) {
+        setError(data.error ?? "メールアドレスまたはパスワードが正しくありません。");
+        return;
+      }
+
+      // Step 2: Use the token to create a Clerk session (no MFA/factor-one)
       const result = await signIn.create({
-        identifier: email,
-        password,
+        strategy: "ticket",
+        ticket: data.token,
       });
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        window.location.replace(`${basePath}/dashboard`);
+        window.location.href = "/dashboard";
       } else {
-        setError("ログインできませんでした。もう一度お試しください。");
+        setError("ログインに失敗しました。もう一度お試しください。");
       }
     } catch (err: unknown) {
-      const clerkError = err as { errors?: { message?: string; longMessage?: string }[] };
-      const msg =
-        clerkError?.errors?.[0]?.longMessage ??
-        clerkError?.errors?.[0]?.message ??
-        "ログインできませんでした。";
-      setError(msg);
+      const e = err as { errors?: { message?: string }[]; message?: string };
+      setError(e?.errors?.[0]?.message ?? e?.message ?? "ログインに失敗しました。");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="min-h-[100dvh] flex items-center justify-center bg-black">
-      <div className="w-full max-w-sm px-8">
-        <div className="mb-10 text-center">
-          <div className="inline-flex items-center justify-center w-10 h-10 bg-white rounded-sm mb-6">
+    <div style={{ minHeight: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", background: "#000" }}>
+      <div style={{ width: "100%", maxWidth: 360, padding: "0 32px" }}>
+        <div style={{ textAlign: "center", marginBottom: 40 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, background: "#fff", borderRadius: 4, marginBottom: 20 }}>
             <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
               <rect x="0" y="0" width="8" height="8" fill="black" />
               <rect x="10" y="0" width="8" height="8" fill="black" />
@@ -56,12 +63,10 @@ export default function SignInPage() {
               <rect x="10" y="10" width="8" height="8" fill="black" opacity="0.3" />
             </svg>
           </div>
-          <h1 className="text-white text-lg font-medium tracking-tight">
-            営業自動化ダッシュボード
-          </h1>
+          <h1 style={{ color: "#fff", fontSize: 16, fontWeight: 500, margin: 0 }}>営業自動化ダッシュボード</h1>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <input
             type="email"
             placeholder="メールアドレス"
@@ -70,7 +75,16 @@ export default function SignInPage() {
             required
             autoComplete="email"
             disabled={loading}
-            className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              color: "#fff",
+              borderRadius: 3,
+              padding: "12px 16px",
+              fontSize: 14,
+              outline: "none",
+              opacity: loading ? 0.5 : 1,
+            }}
           />
           <input
             type="password"
@@ -80,17 +94,36 @@ export default function SignInPage() {
             required
             autoComplete="current-password"
             disabled={loading}
-            className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-sm px-4 py-3 text-sm outline-none focus:border-white/40 transition-colors disabled:opacity-50"
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              color: "#fff",
+              borderRadius: 3,
+              padding: "12px 16px",
+              fontSize: 14,
+              outline: "none",
+              opacity: loading ? 0.5 : 1,
+            }}
           />
 
           {error && (
-            <p className="text-red-400 text-xs leading-relaxed">{error}</p>
+            <p style={{ color: "#f87171", fontSize: 12, margin: 0 }}>{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-white text-black text-sm font-medium py-3 rounded-sm hover:bg-white/90 transition-colors disabled:opacity-40 mt-2"
+            style={{
+              background: loading ? "rgba(255,255,255,0.6)" : "#fff",
+              color: "#000",
+              border: "none",
+              borderRadius: 3,
+              padding: "12px 16px",
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: loading ? "not-allowed" : "pointer",
+              marginTop: 4,
+            }}
           >
             {loading ? "ログイン中..." : "ログイン"}
           </button>
