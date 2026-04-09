@@ -35,96 +35,272 @@ const STARTER_TEMPLATES: Array<{ label: string; name: string; subjectTemplate: s
     name: "ミニマル初回アプローチ",
     subjectTemplate: "{{company_name}}様へ — {{service_name}}のご紹介",
     htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#ffffff;color:#111111;">
-  <div style="padding:48px 48px 0;">
-    <div style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:#999;margin-bottom:40px;">{{service_name}}</div>
-    <h1 style="font-size:28px;font-weight:700;line-height:1.2;margin:0 0 24px;letter-spacing:-0.02em;">{{company_name}}様、<br>はじめまして。</h1>
-    <p style="font-size:15px;line-height:1.8;color:#444;margin:0 0 20px;">突然のご連絡、失礼いたします。<br>私どもは<strong>{{service_name}}</strong>を提供しております。</p>
-    <p style="font-size:15px;line-height:1.8;color:#444;margin:0 0 32px;">貴社の営業活動をより効率的にするために、一度お話しさせていただけますでしょうか。</p>
-    <a href="{{service_url}}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;padding:14px 32px;margin-bottom:48px;">詳細を見る →</a>
+  <div style="padding:56px 56px 0;">
+    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#bbb;margin-bottom:48px;">{{service_name}}</div>
+    <h1 style="font-size:36px;font-weight:800;line-height:1.1;margin:0 0 28px;letter-spacing:-0.03em;">{{company_name}}様、<br>はじめまして。</h1>
+    <div style="width:32px;height:3px;background:#111;margin-bottom:32px;"></div>
+    <p style="font-size:15px;line-height:1.9;color:#555;margin:0 0 20px;">突然のご連絡、失礼いたします。私どもは<strong style="color:#111;">{{service_name}}</strong>を提供しております。</p>
+    <p style="font-size:15px;line-height:1.9;color:#555;margin:0 0 40px;">貴社の営業活動をより効率的にするために、一度お話しさせていただけますでしょうか。</p>
+    <a href="{{service_url}}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;padding:16px 40px;margin-bottom:56px;">詳細を見る →</a>
   </div>
-  <div style="border-top:1px solid #eee;padding:24px 48px;font-size:11px;color:#bbb;letter-spacing:0.05em;">
-    {{service_name}} | <a href="{{service_url}}" style="color:#bbb;">{{service_url}}</a>
+  <div style="border-top:1px solid #f0f0f0;padding:24px 56px;font-size:10px;color:#ccc;letter-spacing:0.08em;display:flex;justify-content:space-between;">
+    <span>{{service_name}}</span>
+    <a href="#unsubscribe" style="color:#ccc;text-decoration:none;">配信停止</a>
   </div>
 </div>`,
   },
   {
-    label: "グラデーション・モダン",
-    name: "モダングラデーション提案",
+    label: "ダーク・グラデーション",
+    name: "ダークグラデーション提案",
     subjectTemplate: "【{{service_name}}】{{company_name}}様の課題を解決する方法",
-    htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#0a0a0a;color:#ffffff;">
-  <div style="background:linear-gradient(135deg,#1a1a2e 0%,#16213e 50%,#0f3460 100%);padding:60px 48px;text-align:center;">
-    <div style="display:inline-block;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);padding:6px 16px;border-radius:20px;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:rgba(255,255,255,0.7);margin-bottom:28px;">{{service_name}}</div>
-    <h1 style="font-size:32px;font-weight:800;line-height:1.15;margin:0 0 16px;letter-spacing:-0.03em;">{{company_name}}様へ<br><span style="background:linear-gradient(90deg,#a78bfa,#60a5fa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">特別なご提案</span></h1>
-    <p style="font-size:15px;color:rgba(255,255,255,0.6);margin:0;line-height:1.7;">貴社の成長をサポートする<br>ソリューションをご紹介します</p>
+    htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#080810;color:#ffffff;">
+  <div style="background:linear-gradient(135deg,#0d0d1a 0%,#1a0533 40%,#0a1628 100%);padding:64px 48px;text-align:center;position:relative;overflow:hidden;">
+    <div style="position:absolute;top:-60px;right:-60px;width:200px;height:200px;background:radial-gradient(circle,rgba(139,92,246,0.3) 0%,transparent 70%);pointer-events:none;"></div>
+    <div style="position:absolute;bottom:-40px;left:-40px;width:160px;height:160px;background:radial-gradient(circle,rgba(59,130,246,0.2) 0%,transparent 70%);pointer-events:none;"></div>
+    <div style="display:inline-block;border:1px solid rgba(139,92,246,0.4);padding:5px 16px;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(167,139,250,0.9);margin-bottom:32px;">{{service_name}}</div>
+    <h1 style="font-size:38px;font-weight:900;line-height:1.1;margin:0 0 16px;letter-spacing:-0.03em;">{{company_name}}様へ<br><span style="background:linear-gradient(90deg,#c084fc,#60a5fa,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">特別なご提案</span></h1>
+    <p style="font-size:15px;color:rgba(255,255,255,0.5);margin:0;line-height:1.7;">貴社の成長をサポートするソリューション</p>
   </div>
-  <div style="padding:48px;background:#111;">
-    <p style="font-size:15px;line-height:1.8;color:#ccc;margin:0 0 24px;">突然のご連絡、失礼いたします。私どもは<strong style="color:#fff;">{{service_name}}</strong>を運営しております。</p>
-    <p style="font-size:15px;line-height:1.8;color:#ccc;margin:0 0 32px;">{{company_name}}様のビジネスに貢献できると確信しており、ぜひ一度詳細をご覧いただけますと幸いです。</p>
-    <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:24px;margin-bottom:32px;">
-      <div style="font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:#666;margin-bottom:12px;">主な特徴</div>
-      <div style="font-size:14px;color:#aaa;line-height:2;">✦ 導入企業の97%が満足と回答<br>✦ 30日間無料でお試し可能<br>✦ 専任サポートが付属</div>
+  <div style="padding:48px;background:#0d0d18;">
+    <p style="font-size:15px;line-height:1.9;color:#9ca3af;margin:0 0 28px;">突然のご連絡、失礼いたします。私どもは<strong style="color:#e5e7eb;">{{service_name}}</strong>を運営しております。</p>
+    <p style="font-size:15px;line-height:1.9;color:#9ca3af;margin:0 0 36px;">{{company_name}}様のビジネスに貢献できると確信し、ご連絡いたしました。</p>
+    <div style="margin-bottom:36px;border:1px solid #1f2937;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,rgba(139,92,246,0.1),rgba(59,130,246,0.05));padding:20px 24px;border-bottom:1px solid #1f2937;display:flex;align-items:center;gap:12px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#8b5cf6;flex-shrink:0;"></div>
+        <span style="font-size:13px;color:#d1d5db;">AIによる完全自動化で工数を<strong style="color:#c084fc;">70%削減</strong></span>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(59,130,246,0.1),rgba(16,185,129,0.05));padding:20px 24px;border-bottom:1px solid #1f2937;display:flex;align-items:center;gap:12px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#3b82f6;flex-shrink:0;"></div>
+        <span style="font-size:13px;color:#d1d5db;">30日間<strong style="color:#60a5fa;">無料トライアル</strong>で即日開始</span>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(139,92,246,0.05));padding:20px 24px;display:flex;align-items:center;gap:12px;">
+        <div style="width:8px;height:8px;border-radius:50%;background:#10b981;flex-shrink:0;"></div>
+        <span style="font-size:13px;color:#d1d5db;">導入企業<strong style="color:#34d399;">97%</strong>が継続利用</span>
+      </div>
     </div>
-    <a href="{{service_url}}" style="display:block;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;text-decoration:none;font-size:13px;letter-spacing:0.1em;text-transform:uppercase;padding:16px;text-align:center;border-radius:4px;font-weight:700;">無料で試してみる →</a>
+    <a href="{{service_url}}" style="display:block;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;text-decoration:none;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;padding:18px;text-align:center;font-weight:800;border-radius:8px;">無料で試してみる →</a>
   </div>
-  <div style="padding:24px 48px;background:#0a0a0a;text-align:center;font-size:11px;color:#444;">
-    <a href="{{service_url}}" style="color:#555;text-decoration:none;">{{service_name}}</a> &nbsp;·&nbsp; 配信停止は<a href="#unsubscribe" style="color:#555;">こちら</a>
+  <div style="padding:20px 48px;background:#080810;text-align:center;font-size:10px;color:#374151;">
+    {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:#374151;text-decoration:none;">配信停止</a>
   </div>
 </div>`,
   },
   {
-    label: "エレガント・ホワイト",
-    name: "エレガント提案メール",
+    label: "エレガント・クリーム",
+    name: "エレガント高級感メール",
     subjectTemplate: "{{company_name}}様へ — ご検討いただきたいご提案",
-    htmlTemplate: `<div style="max-width:560px;margin:0 auto;font-family:Georgia,'Times New Roman',serif;background:#faf9f7;color:#2c2c2c;">
+    htmlTemplate: `<div style="max-width:560px;margin:0 auto;font-family:Georgia,'Times New Roman',serif;background:#f8f5f0;color:#2c2218;">
   <div style="padding:56px 56px 0;text-align:center;">
-    <div style="width:40px;height:1px;background:#2c2c2c;margin:0 auto 24px;"></div>
-    <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:#888;margin-bottom:40px;">{{service_name}}</div>
-    <div style="width:40px;height:1px;background:#2c2c2c;margin:0 auto 40px;"></div>
+    <div style="font-size:9px;letter-spacing:0.35em;text-transform:uppercase;color:#9b8b7a;margin-bottom:16px;">— {{service_name}} —</div>
+    <div style="width:60px;height:1px;background:linear-gradient(90deg,transparent,#9b8b7a,transparent);margin:0 auto 48px;"></div>
   </div>
-  <div style="padding:0 56px 40px;">
-    <h2 style="font-size:13px;letter-spacing:0.15em;text-transform:uppercase;color:#888;font-weight:400;margin:0 0 16px;">{{company_name}} 御中</h2>
-    <h1 style="font-size:26px;font-weight:700;line-height:1.3;margin:0 0 28px;color:#1a1a1a;letter-spacing:-0.01em;">拝啓、貴社のご発展を<br>心よりお慶び申し上げます。</h1>
-    <p style="font-size:14px;line-height:2;color:#555;margin:0 0 20px;">この度は、弊社サービス<strong style="color:#2c2c2c;">{{service_name}}</strong>についてご案内申し上げたく、ご連絡いたしました。</p>
-    <p style="font-size:14px;line-height:2;color:#555;margin:0 0 36px;">貴社のご状況に合わせた最適なプランをご提案できますため、ぜひ一度ご覧いただけますと幸いでございます。</p>
-    <div style="border-top:1px solid #e0ddd8;border-bottom:1px solid #e0ddd8;padding:24px 0;margin-bottom:36px;text-align:center;">
-      <a href="{{service_url}}" style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#2c2c2c;text-decoration:none;font-family:'Helvetica Neue',sans-serif;font-weight:600;">詳細はこちら &nbsp; →</a>
+  <div style="padding:0 56px 48px;">
+    <p style="font-size:12px;letter-spacing:0.15em;text-transform:uppercase;color:#9b8b7a;font-family:'Helvetica Neue',sans-serif;margin:0 0 20px;">{{company_name}} 御中</p>
+    <h1 style="font-size:28px;font-weight:700;line-height:1.35;margin:0 0 32px;color:#1a140e;letter-spacing:-0.01em;">拝啓、貴社のご発展を<br>心よりお慶び申し上げます。</h1>
+    <p style="font-size:14px;line-height:2.1;color:#5c4e42;margin:0 0 20px;">この度は、弊社サービス<strong style="color:#2c2218;border-bottom:1px solid #c4a882;">{{service_name}}</strong>についてご案内申し上げたく、ご連絡いたしました。</p>
+    <p style="font-size:14px;line-height:2.1;color:#5c4e42;margin:0 0 40px;">貴社のご状況に合わせた最適なプランをご提案できますため、ぜひ一度ご覧いただけますと幸いでございます。</p>
+    <div style="background:#fff;border:1px solid #e8ddd0;padding:28px 32px;margin-bottom:36px;">
+      <p style="font-size:12px;letter-spacing:0.1em;text-transform:uppercase;color:#9b8b7a;font-family:'Helvetica Neue',sans-serif;margin:0 0 16px;">ご提案の要点</p>
+      <p style="font-size:13px;line-height:2;color:#5c4e42;margin:0;">✦ &nbsp;貴社専用のカスタマイズプラン<br>✦ &nbsp;専任担当者による伴走サポート<br>✦ &nbsp;初月無料でリスクなく開始可能</p>
     </div>
-    <p style="font-size:13px;line-height:1.8;color:#888;margin:0;">敬具<br><strong style="color:#555;">{{service_name}} 営業部</strong></p>
+    <div style="text-align:center;margin-bottom:40px;">
+      <a href="{{service_url}}" style="display:inline-block;background:#2c2218;color:#f8f5f0;text-decoration:none;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;padding:16px 48px;font-family:'Helvetica Neue',sans-serif;font-weight:600;">詳細はこちら</a>
+    </div>
+    <p style="font-size:12px;line-height:2;color:#9b8b7a;font-family:'Helvetica Neue',sans-serif;margin:0;">敬具 &nbsp;/&nbsp; {{service_name}} 営業部</p>
   </div>
-  <div style="padding:24px 56px;border-top:1px solid #e0ddd8;font-size:10px;color:#bbb;letter-spacing:0.08em;font-family:'Helvetica Neue',sans-serif;">
-    {{service_url}} &nbsp;|&nbsp; <a href="#unsubscribe" style="color:#bbb;text-decoration:none;">配信停止</a>
+  <div style="padding:20px 56px;border-top:1px solid #e8ddd0;font-size:9px;color:#c4b9ad;letter-spacing:0.1em;font-family:'Helvetica Neue',sans-serif;text-align:center;">
+    {{service_url}} &nbsp;|&nbsp; <a href="#unsubscribe" style="color:#c4b9ad;text-decoration:none;">配信停止</a>
   </div>
 </div>`,
   },
   {
-    label: "ネオン・テック",
-    name: "テック系ネオン提案",
+    label: "ネオン・サイバー",
+    name: "サイバーパンク提案",
     subjectTemplate: "{{company_name}}様、{{service_name}}で営業効率3倍へ",
     htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Courier New',Courier,monospace;background:#020617;color:#e2e8f0;">
-  <div style="padding:48px;border-bottom:1px solid #1e293b;">
-    <div style="font-size:10px;letter-spacing:0.2em;color:#22d3ee;margin-bottom:32px;">// {{service_name}}</div>
-    <h1 style="font-size:30px;font-weight:700;line-height:1.2;margin:0 0 8px;letter-spacing:-0.02em;">こんにちは、<br><span style="color:#22d3ee;">{{company_name}}</span>様。</h1>
-    <div style="width:48px;height:2px;background:linear-gradient(90deg,#22d3ee,#818cf8);margin:20px 0 28px;"></div>
+  <div style="background:#020617;border-bottom:1px solid #0e7490;padding:32px 48px;">
+    <div style="font-size:9px;letter-spacing:0.3em;color:#0e7490;margin-bottom:4px;">// INITIALIZING_SESSION</div>
+    <div style="font-size:22px;font-weight:700;color:#22d3ee;letter-spacing:0.05em;">{{service_name}}</div>
+  </div>
+  <div style="padding:48px;border-bottom:1px solid #0f172a;">
+    <h1 style="font-size:32px;font-weight:700;line-height:1.15;margin:0 0 8px;letter-spacing:-0.02em;">こんにちは、<br><span style="color:#22d3ee;">{{company_name}}</span><span style="color:#ffffff;">様。</span></h1>
+    <div style="width:100%;height:1px;background:linear-gradient(90deg,#22d3ee,#8b5cf6,transparent);margin:24px 0 28px;"></div>
     <p style="font-size:14px;line-height:1.9;color:#94a3b8;margin:0 0 20px;">私たちは<strong style="color:#e2e8f0;">{{service_name}}</strong>を通じて、B2B営業チームの効率を劇的に向上させています。</p>
     <p style="font-size:14px;line-height:1.9;color:#94a3b8;margin:0 0 36px;">30分のデモセッションで、貴社の課題に対する具体的な解決策をご提示できます。</p>
-    <div style="display:grid;margin-bottom:36px;">
-      <div style="background:#0f172a;border:1px solid #1e293b;border-left:2px solid #22d3ee;padding:16px 20px;margin-bottom:8px;">
-        <span style="font-size:11px;color:#22d3ee;">01 /</span>
+    <div style="margin-bottom:36px;">
+      <div style="background:#0f172a;border:1px solid #1e293b;border-left:3px solid #22d3ee;padding:16px 20px;margin-bottom:8px;">
+        <span style="font-size:10px;color:#22d3ee;letter-spacing:0.1em;">01 /</span>
         <span style="font-size:13px;color:#cbd5e1;margin-left:12px;">AIによる自動リード収集</span>
       </div>
-      <div style="background:#0f172a;border:1px solid #1e293b;border-left:2px solid #818cf8;padding:16px 20px;margin-bottom:8px;">
-        <span style="font-size:11px;color:#818cf8;">02 /</span>
+      <div style="background:#0f172a;border:1px solid #1e293b;border-left:3px solid #8b5cf6;padding:16px 20px;margin-bottom:8px;">
+        <span style="font-size:10px;color:#8b5cf6;letter-spacing:0.1em;">02 /</span>
         <span style="font-size:13px;color:#cbd5e1;margin-left:12px;">パーソナライズドメール自動生成</span>
       </div>
-      <div style="background:#0f172a;border:1px solid #1e293b;border-left:2px solid #f472b6;padding:16px 20px;">
-        <span style="font-size:11px;color:#f472b6;">03 /</span>
+      <div style="background:#0f172a;border:1px solid #1e293b;border-left:3px solid #f472b6;padding:16px 20px;">
+        <span style="font-size:10px;color:#f472b6;letter-spacing:0.1em;">03 /</span>
         <span style="font-size:13px;color:#cbd5e1;margin-left:12px;">リアルタイム開封・クリック追跡</span>
       </div>
     </div>
-    <a href="{{service_url}}" style="display:inline-block;border:1px solid #22d3ee;color:#22d3ee;text-decoration:none;font-size:11px;letter-spacing:0.15em;text-transform:uppercase;padding:14px 28px;">デモを予約する →</a>
+    <a href="{{service_url}}" style="display:block;border:1px solid #22d3ee;color:#22d3ee;text-decoration:none;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;padding:16px;text-align:center;">[ デモを予約する ]</a>
   </div>
-  <div style="padding:20px 48px;font-size:10px;color:#334155;letter-spacing:0.1em;">
-    {{service_name}} · <a href="{{service_url}}" style="color:#334155;text-decoration:none;">{{service_url}}</a> · <a href="#unsubscribe" style="color:#334155;text-decoration:none;">配信停止</a>
+  <div style="padding:20px 48px;font-size:9px;color:#1e293b;letter-spacing:0.15em;text-align:center;">
+    {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:#1e293b;text-decoration:none;">UNSUBSCRIBE</a>
+  </div>
+</div>`,
+  },
+  {
+    label: "ボールド・レッド",
+    name: "インパクト強調メール",
+    subjectTemplate: "{{company_name}}様だけへの限定ご提案 — {{service_name}}",
+    htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#ffffff;">
+  <div style="background:#e11d48;padding:12px 48px;text-align:right;">
+    <span style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.7);">{{service_name}}</span>
+  </div>
+  <div style="padding:64px 48px 48px;">
+    <div style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:#e11d48;margin-bottom:16px;">Limited Offer</div>
+    <h1 style="font-size:40px;font-weight:900;line-height:1.0;margin:0 0 8px;letter-spacing:-0.04em;color:#0f0f0f;">{{company_name}}様<br>だけへの</h1>
+    <h1 style="font-size:40px;font-weight:900;line-height:1.0;margin:0 0 36px;letter-spacing:-0.04em;color:#e11d48;">特別提案。</h1>
+    <p style="font-size:15px;line-height:1.9;color:#444;margin:0 0 20px;">突然のご連絡、失礼いたします。私どもは<strong>{{service_name}}</strong>を提供しております。</p>
+    <p style="font-size:15px;line-height:1.9;color:#444;margin:0 0 40px;">他社では実現できない結果を、私たちなら提供できます。まずは詳細をご確認ください。</p>
+    <div style="background:#fff5f7;border-left:4px solid #e11d48;padding:20px 24px;margin-bottom:40px;">
+      <p style="font-size:14px;font-weight:700;color:#0f0f0f;margin:0 0 8px;">今だけの特典</p>
+      <p style="font-size:13px;color:#666;line-height:1.8;margin:0;">初月完全無料 &nbsp;+&nbsp; オンボーディングサポート無料<br>さらに導入コンサルティング（通常¥50,000）を無償提供</p>
+    </div>
+    <a href="{{service_url}}" style="display:block;background:#e11d48;color:#fff;text-decoration:none;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;padding:20px;text-align:center;font-weight:800;">今すぐ確認する →</a>
+  </div>
+  <div style="padding:20px 48px;border-top:1px solid #f3f4f6;font-size:10px;color:#d1d5db;display:flex;justify-content:space-between;">
+    <span>{{service_name}}</span>
+    <a href="#unsubscribe" style="color:#d1d5db;text-decoration:none;">配信停止</a>
+  </div>
+</div>`,
+  },
+  {
+    label: "グラスモーフィズム",
+    name: "グラスモーフィズム提案",
+    subjectTemplate: "{{company_name}}様、未来の営業を体験してください — {{service_name}}",
+    htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);">
+  <div style="padding:56px 48px;">
+    <div style="background:rgba(255,255,255,0.12);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.25);border-radius:16px;padding:48px;margin-bottom:20px;">
+      <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:28px;">{{service_name}}</div>
+      <h1 style="font-size:34px;font-weight:800;line-height:1.15;margin:0 0 20px;letter-spacing:-0.02em;color:#ffffff;">{{company_name}}様、<br>営業の未来へ<br>ようこそ。</h1>
+      <p style="font-size:15px;line-height:1.9;color:rgba(255,255,255,0.75);margin:0 0 32px;">{{service_name}}は、最先端のAI技術で貴社の営業活動を変革します。</p>
+      <div style="display:flex;gap:12px;margin-bottom:36px;flex-wrap:wrap;">
+        <div style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:16px 20px;flex:1;min-width:140px;">
+          <div style="font-size:24px;font-weight:900;color:#fff;margin-bottom:4px;">97%</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.6);letter-spacing:0.05em;">顧客満足度</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:16px 20px;flex:1;min-width:140px;">
+          <div style="font-size:24px;font-weight:900;color:#fff;margin-bottom:4px;">3x</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.6);letter-spacing:0.05em;">営業効率向上</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:16px 20px;flex:1;min-width:140px;">
+          <div style="font-size:24px;font-weight:900;color:#fff;margin-bottom:4px;">30日</div>
+          <div style="font-size:11px;color:rgba(255,255,255,0.6);letter-spacing:0.05em;">無料トライアル</div>
+        </div>
+      </div>
+      <a href="{{service_url}}" style="display:block;background:#ffffff;color:#764ba2;text-decoration:none;font-size:12px;letter-spacing:0.15em;text-transform:uppercase;padding:18px;text-align:center;font-weight:800;border-radius:8px;">無料で始める →</a>
+    </div>
+    <div style="text-align:center;font-size:10px;color:rgba(255,255,255,0.35);letter-spacing:0.1em;">
+      {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:rgba(255,255,255,0.35);text-decoration:none;">配信停止</a>
+    </div>
+  </div>
+</div>`,
+  },
+  {
+    label: "ストライプ・ゴールド",
+    name: "プレミアムゴールド提案",
+    subjectTemplate: "【VIP限定】{{company_name}}様へ {{service_name}}よりご案内",
+    htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#0c0a06;color:#f5f0e8;">
+  <div style="background:linear-gradient(135deg,#1a1500 0%,#0c0a06 100%);padding:0 0 0;border-bottom:1px solid #3d3000;">
+    <div style="background:linear-gradient(90deg,#b8860b,#ffd700,#b8860b);padding:3px 0;"></div>
+    <div style="padding:40px 48px 36px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:18px;font-weight:700;letter-spacing:0.08em;color:#ffd700;">{{service_name}}</div>
+      <div style="font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:#8a6d00;border:1px solid #3d3000;padding:5px 12px;">VIP</div>
+    </div>
+  </div>
+  <div style="padding:52px 48px;">
+    <p style="font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:#8a6d00;margin:0 0 20px;">{{company_name}} 様へ</p>
+    <h1 style="font-size:32px;font-weight:800;line-height:1.2;margin:0 0 28px;letter-spacing:-0.02em;color:#f5f0e8;">選ばれた企業だけが<br>手にする、<span style="color:#ffd700;">特別な機会</span>。</h1>
+    <p style="font-size:14px;line-height:2;color:#9e9280;margin:0 0 20px;">私どもは厳選した企業様のみにご案内しております。<strong style="color:#f5f0e8;">{{service_name}}</strong>が貴社に提供できる価値をご覧ください。</p>
+    <p style="font-size:14px;line-height:2;color:#9e9280;margin:0 0 40px;">限定オファーの詳細は下記よりご確認いただけます。</p>
+    <div style="border:1px solid #3d3000;padding:28px 32px;margin-bottom:40px;background:#0f0c02;">
+      <div style="font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:#8a6d00;margin-bottom:16px;">限定特典</div>
+      <div style="font-size:13px;color:#c4b89a;line-height:2.1;">
+        ◆ &nbsp;専任アカウントマネージャー配置<br>
+        ◆ &nbsp;初月利用料100%オフ<br>
+        ◆ &nbsp;カスタム機能開発（最大3件）無料
+      </div>
+    </div>
+    <a href="{{service_url}}" style="display:block;background:linear-gradient(135deg,#b8860b,#ffd700,#b8860b);color:#0c0a06;text-decoration:none;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;padding:20px;text-align:center;font-weight:900;">特別オファーを確認する →</a>
+  </div>
+  <div style="background:linear-gradient(90deg,#b8860b,#ffd700,#b8860b);padding:1px 0;"></div>
+  <div style="padding:20px 48px;background:#080600;text-align:center;font-size:9px;color:#3d3000;letter-spacing:0.1em;">
+    {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:#3d3000;text-decoration:none;">配信停止</a>
+  </div>
+</div>`,
+  },
+  {
+    label: "スプリット・ビジュアル",
+    name: "スプリットレイアウト提案",
+    subjectTemplate: "{{company_name}}様へ — {{service_name}}からのご提案",
+    htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#ffffff;">
+  <table style="width:100%;border-collapse:collapse;">
+    <tr>
+      <td style="width:50%;background:linear-gradient(135deg,#0f0c29,#302b63,#24243e);padding:56px 36px;vertical-align:top;">
+        <div style="font-size:9px;letter-spacing:0.25em;text-transform:uppercase;color:rgba(255,255,255,0.4);margin-bottom:32px;">{{service_name}}</div>
+        <div style="font-size:42px;font-weight:900;line-height:0.9;color:#ffffff;margin-bottom:20px;letter-spacing:-0.04em;">変革の<br>時。</div>
+        <div style="width:24px;height:3px;background:linear-gradient(90deg,#a78bfa,#60a5fa);margin-bottom:24px;"></div>
+        <div style="font-size:12px;color:rgba(255,255,255,0.5);line-height:1.8;">{{company_name}}様の<br>可能性を解き放つ</div>
+      </td>
+      <td style="width:50%;background:#ffffff;padding:56px 36px;vertical-align:top;">
+        <p style="font-size:13px;line-height:2;color:#555;margin:0 0 20px;">突然のご連絡、失礼いたします。</p>
+        <p style="font-size:13px;line-height:2;color:#555;margin:0 0 28px;">私どもは<strong style="color:#111;">{{service_name}}</strong>を通じ、多くの企業様の営業効率化を支援してまいりました。</p>
+        <div style="margin-bottom:28px;">
+          <div style="font-size:11px;color:#999;letter-spacing:0.1em;margin-bottom:8px;">導入効果</div>
+          <div style="background:#f9f9f9;padding:12px 16px;margin-bottom:6px;font-size:12px;color:#333;border-left:2px solid #a78bfa;">工数 <strong>70%</strong> 削減</div>
+          <div style="background:#f9f9f9;padding:12px 16px;margin-bottom:6px;font-size:12px;color:#333;border-left:2px solid #60a5fa;">返信率 <strong>2.8倍</strong> 向上</div>
+          <div style="background:#f9f9f9;padding:12px 16px;font-size:12px;color:#333;border-left:2px solid #34d399;">ROI <strong>320%</strong> 達成</div>
+        </div>
+        <a href="{{service_url}}" style="display:block;background:#0f0c29;color:#fff;text-decoration:none;font-size:10px;letter-spacing:0.15em;text-transform:uppercase;padding:14px;text-align:center;font-weight:700;">詳細を見る →</a>
+      </td>
+    </tr>
+  </table>
+  <div style="padding:16px 48px;background:#fafafa;border-top:1px solid #f0f0f0;text-align:center;font-size:10px;color:#ccc;">
+    {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:#ccc;text-decoration:none;">配信停止</a>
+  </div>
+</div>`,
+  },
+  {
+    label: "ウェーブ・アクア",
+    name: "アクアウェーブ提案",
+    subjectTemplate: "{{company_name}}様へ、{{service_name}}が解決します",
+    htmlTemplate: `<div style="max-width:600px;margin:0 auto;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;background:#ffffff;">
+  <div style="background:linear-gradient(160deg,#0ea5e9 0%,#0284c7 40%,#075985 100%);padding:60px 48px 80px;position:relative;overflow:hidden;">
+    <div style="position:absolute;bottom:-30px;left:0;right:0;height:60px;background:#ffffff;border-radius:50% 50% 0 0;"></div>
+    <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.6);margin-bottom:28px;">{{service_name}}</div>
+    <h1 style="font-size:36px;font-weight:800;line-height:1.15;margin:0;color:#ffffff;letter-spacing:-0.02em;">{{company_name}}様の<br>課題、私たちが<br>解決します。</h1>
+  </div>
+  <div style="padding:48px;">
+    <p style="font-size:15px;line-height:1.9;color:#475569;margin:0 0 24px;">突然のご連絡、失礼いたします。<strong style="color:#0ea5e9;">{{service_name}}</strong>の営業担当でございます。</p>
+    <p style="font-size:15px;line-height:1.9;color:#475569;margin:0 0 36px;">貴社のビジネス成長に向けて、具体的な提案をご用意しております。</p>
+    <div style="display:flex;gap:16px;margin-bottom:40px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:140px;text-align:center;padding:24px 16px;background:#f0f9ff;border-radius:12px;">
+        <div style="font-size:28px;font-weight:900;color:#0284c7;margin-bottom:4px;">∞</div>
+        <div style="font-size:11px;color:#64748b;letter-spacing:0.05em;">無制限利用</div>
+      </div>
+      <div style="flex:1;min-width:140px;text-align:center;padding:24px 16px;background:#f0f9ff;border-radius:12px;">
+        <div style="font-size:28px;font-weight:900;color:#0284c7;margin-bottom:4px;">24h</div>
+        <div style="font-size:11px;color:#64748b;letter-spacing:0.05em;">サポート対応</div>
+      </div>
+      <div style="flex:1;min-width:140px;text-align:center;padding:24px 16px;background:#f0f9ff;border-radius:12px;">
+        <div style="font-size:28px;font-weight:900;color:#0284c7;margin-bottom:4px;">30日</div>
+        <div style="font-size:11px;color:#64748b;letter-spacing:0.05em;">無料体験</div>
+      </div>
+    </div>
+    <a href="{{service_url}}" style="display:block;background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;text-decoration:none;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;padding:18px;text-align:center;font-weight:800;border-radius:8px;">無料で始める →</a>
+  </div>
+  <div style="padding:20px 48px;border-top:1px solid #f1f5f9;text-align:center;font-size:10px;color:#cbd5e1;">
+    {{service_name}} &nbsp;·&nbsp; <a href="#unsubscribe" style="color:#cbd5e1;text-decoration:none;">配信停止</a>
   </div>
 </div>`,
   },
@@ -303,11 +479,11 @@ export default function TemplatesPage() {
                 サンプルから選ぶ
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-none border-border max-w-2xl">
+            <DialogContent className="rounded-none border-border max-w-4xl">
               <DialogHeader>
                 <DialogTitle className="font-bold">スターターテンプレートを選ぶ</DialogTitle>
               </DialogHeader>
-              <div className="grid grid-cols-2 gap-3 mt-4">
+              <div className="grid grid-cols-3 gap-3 mt-4">
                 {STARTER_TEMPLATES.map((s) => (
                   <button
                     key={s.label}
