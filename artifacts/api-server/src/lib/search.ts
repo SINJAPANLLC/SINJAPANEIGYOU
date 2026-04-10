@@ -1,4 +1,5 @@
 import axios from "axios";
+import * as cheerio from "cheerio";
 import { logger } from "./logger";
 import { crawlWebsite, scoreUrl } from "./crawler";
 
@@ -8,42 +9,71 @@ interface SearchResult {
   description?: string;
 }
 
-export async function searchGoogle(query: string, count = 10): Promise<SearchResult[]> {
-  const apiKey = process.env.GOOGLE_API_KEY;
-  const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
-  if (!apiKey || !cx) {
-    logger.warn("GOOGLE_API_KEY or GOOGLE_SEARCH_ENGINE_ID not set, returning empty results");
+export async function searchYahooJapan(query: string, count = 10): Promise<SearchResult[]> {
+  logger.info({ query, count }, "searchYahooJapan start");
+  try {
+    const response = await axios.get(
+      `https://search.yahoo.co.jp/search?p=${encodeURIComponent(query)}&n=20`,
+      {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        },
+        timeout: 15000,
+      }
+    );
+
+    const $ = cheerio.load(response.data);
+    const results: SearchResult[] = [];
+    const seen = new Set<string>();
+
+    // Yahoo Japan result links use .sw-Card a selector; h3 inside has the clean title
+    $(".sw-Card a").each((_, el) => {
+      if (results.length >= count) return false;
+      const href = $(el).attr("href") || "";
+      // Use h3 text for clean title, fallback to first line of full text
+      const h3Title = $(el).find("h3").text().trim();
+      const fullText = $(el).text().trim();
+      const title = h3Title || fullText.split("\n")[0].trim();
+
+      if (
+        href.startsWith("http") &&
+        !href.includes("yahoo") &&
+        !href.includes("google") &&
+        title.length > 5 &&
+        !seen.has(href)
+      ) {
+        seen.add(href);
+        results.push({ url: href, title });
+      }
+    });
+
+    // Fallback: look for any external anchor tags
+    if (results.length === 0) {
+      $("a").each((_, el) => {
+        if (results.length >= count) return false;
+        const href = $(el).attr("href") || "";
+        const title = $(el).text().trim();
+        if (
+          href.startsWith("http") &&
+          !href.includes("yahoo") &&
+          !href.includes("google") &&
+          title.length > 5 &&
+          !seen.has(href)
+        ) {
+          seen.add(href);
+          results.push({ url: href, title });
+        }
+      });
+    }
+
+    logger.info({ count: results.length, query }, "searchYahooJapan done");
+    return results;
+  } catch (err: any) {
+    logger.error({ err: err?.message, query }, "Yahoo Japan search failed");
     return [];
   }
-
-  const results: SearchResult[] = [];
-  const perPage = Math.min(count, 10);
-  const pages = Math.ceil(count / 10);
-
-  try {
-    for (let page = 0; page < pages && results.length < count; page++) {
-      const start = page * 10 + 1;
-      const response = await axios.get("https://www.googleapis.com/customsearch/v1", {
-        params: { key: apiKey, cx, q: query, num: perPage, start },
-        timeout: 10000,
-      });
-
-      const items = response.data?.items || [];
-      for (const item of items) {
-        if (results.length >= count) break;
-        results.push({
-          url: item.link,
-          title: item.title,
-          description: item.snippet,
-        });
-      }
-    }
-  } catch (err: any) {
-    const detail = err?.response?.data ? JSON.stringify(err.response.data) : err?.message;
-    logger.error({ err: detail }, "Google search failed");
-  }
-
-  return results;
 }
 
 export async function searchAndCrawlLeads(
@@ -59,10 +89,11 @@ export async function searchAndCrawlLeads(
   contactUrl?: string | null;
   score: number;
 }>> {
+  const loc = location ? ` ${location}` : "";
   const queries = [
-    `"会社概要" ${keyword}${location ? " " + location : ""}`,
-    `"お問い合わせ" ${keyword}${location ? " " + location : ""}`,
-    `"会社情報" ${keyword}${location ? " " + location : ""}`,
+    `${keyword}${loc} 会社概要`,
+    `${keyword}${loc} お問い合わせ 株式会社`,
+    `${keyword}${loc} 企業 採用`,
   ];
 
   const seen = new Set<string>();
@@ -79,7 +110,7 @@ export async function searchAndCrawlLeads(
   for (const query of queries) {
     if (results.length >= maxResults) break;
 
-    const searchResults = await searchGoogle(query, 10);
+    const searchResults = await searchYahooJapan(query, 10);
     for (const r of searchResults) {
       if (results.length >= maxResults) break;
       if (seen.has(r.url)) continue;
@@ -91,19 +122,25 @@ export async function searchAndCrawlLeads(
 
       try {
         const crawled = await crawlWebsite(r.url);
-        if (crawled.score >= 5) {
-          results.push({
-            websiteUrl: r.url,
-            companyName: crawled.companyName || r.title || null,
-            email: crawled.email || null,
-            phone: crawled.phone || null,
-            address: crawled.address || null,
-            contactUrl: crawled.contactUrl || null,
-            score: crawled.score,
-          });
-        }
+        results.push({
+          websiteUrl: r.url,
+          companyName: crawled.companyName || r.title || null,
+          email: crawled.email || null,
+          phone: crawled.phone || null,
+          address: crawled.address || null,
+          contactUrl: crawled.contactUrl || null,
+          score: Math.max(crawled.score, score + 3),
+        });
       } catch {
-        // Skip failed crawls
+        results.push({
+          websiteUrl: r.url,
+          companyName: r.title || null,
+          email: null,
+          phone: null,
+          address: null,
+          contactUrl: null,
+          score: score + 3,
+        });
       }
     }
   }

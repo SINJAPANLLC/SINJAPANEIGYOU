@@ -20,6 +20,7 @@
     "drizzle-orm": "catalog:",
     "express": "^5",
     "http-proxy-middleware": "^3.0.5",
+    "iconv-lite": "^0.7.2",
     "nodemailer": "^8.0.5",
     "openai": "^6.33.0",
     "pino": "^9",
