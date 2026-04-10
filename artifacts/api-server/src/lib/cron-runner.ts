@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import { eq, and } from "drizzle-orm";
 import { db, cronJobsTable, businessesTable, leadsTable, templatesTable, emailLogsTable, unsubscribesTable } from "@workspace/db";
-import { searchAndCrawlLeads } from "./search";
+import { searchAndCrawlLeads, detectPersona, type PersonaType } from "./search";
 import { sendEmail } from "./mailer";
 import { logger } from "./logger";
 import { v4 as uuidv4 } from "uuid";
@@ -17,15 +17,17 @@ async function runLeadSearch(jobId: number, businessId: number, config: Record<s
   const keyword = String(config.keyword || "");
   const location = config.location ? String(config.location) : null;
   const maxResults = Number(config.maxResults || 10);
+  const persona = config.persona ? String(config.persona) as PersonaType : detectPersona(keyword);
+  const targetEmailCount = Number(config.targetEmailCount || maxResults);
 
   if (!keyword) {
     logger.warn({ jobId }, "cron:lead_search skipped — no keyword");
     return;
   }
 
-  logger.info({ jobId, keyword, location, maxResults }, "cron:lead_search start");
+  logger.info({ jobId, keyword, location, maxResults, persona, targetEmailCount }, "cron:lead_search start");
   try {
-    const results = await searchAndCrawlLeads(keyword, location, maxResults);
+    const results = await searchAndCrawlLeads(keyword, location, maxResults, persona, targetEmailCount);
     let saved = 0;
     for (const r of results) {
       if (r.websiteUrl) {
@@ -119,13 +121,16 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
   const keyword = String(config.keyword || "");
   const location = config.location ? String(config.location) : null;
   const maxResults = Number(config.maxResults || 10);
+  const persona = config.persona ? String(config.persona) as PersonaType : detectPersona(keyword);
+  // メール送信するので、メールあり件数をmaxResultsに合わせて確保
+  const targetEmailCount = Number(config.targetEmailCount || maxResults);
 
   if (!keyword) {
     logger.warn({ jobId }, "cron:lead_search_and_send skipped — no keyword");
     return;
   }
 
-  logger.info({ jobId, keyword, location, maxResults }, "cron:lead_search_and_send start");
+  logger.info({ jobId, keyword, location, maxResults, persona, targetEmailCount }, "cron:lead_search_and_send start");
 
   const [business] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
   if (!business) return;
@@ -142,7 +147,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
 
   let results;
   try {
-    results = await searchAndCrawlLeads(keyword, location, maxResults);
+    results = await searchAndCrawlLeads(keyword, location, maxResults, persona, targetEmailCount);
   } catch (err) {
     logger.error({ err, jobId }, "cron:lead_search_and_send search error");
     return;
