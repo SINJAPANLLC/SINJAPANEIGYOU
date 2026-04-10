@@ -600,7 +600,72 @@ export default function TemplatesPage() {
   const [aiDescription, setAiDescription] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [showStarters, setShowStarters] = useState(false);
-  const [previewMode, setPreviewMode] = useState<"code" | "preview" | "split">("split");
+  const [previewMode, setPreviewMode] = useState<"text" | "code" | "preview" | "split">("text");
+
+  // --- Simple text extraction helpers ---
+  function extractField(html: string, cls: string): string {
+    const m = html.match(new RegExp(`class="${cls}"[^>]*>([\\s\\S]*?)<\\/p>`));
+    return m ? m[1] : "";
+  }
+  function extractFeat(html: string): string {
+    const m = html.match(/class="sin-f"[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/);
+    return m ? m[1].replace(/<br\s*\/?>/gi, "\n") : "";
+  }
+  function extractHeader(html: string): { brand: string; sub: string } {
+    const m = html.match(/<div style="background:linear-gradient[\s\S]*?<p style="color:#fff[^>]*>([\s\S]*?)<\/p>\s*<p style="color:rgba[\s\S]*?>([\s\S]*?)<\/p>/);
+    return m ? { brand: m[1], sub: m[2] } : { brand: "", sub: "" };
+  }
+  function injectField(html: string, cls: string, value: string): string {
+    return html.replace(new RegExp(`(class="${cls}"[^>]*>)[\\s\\S]*?(<\\/p>)`), `$1${value}$2`);
+  }
+  function injectFeat(html: string, value: string): string {
+    const escaped = value.replace(/\n/g, "<br>");
+    return html.replace(/(class="sin-f"[\s\S]*?<p[^>]*>)([\s\S]*?)(<\/p>)/, `$1${escaped}$3`);
+  }
+  function injectHeader(html: string, brand: string, sub: string): string {
+    let r = html.replace(
+      /(<div style="background:linear-gradient[\s\S]*?<p style="color:#fff[^>]*>)([\s\S]*?)(<\/p>)/,
+      `$1${brand}$3`
+    );
+    r = r.replace(
+      /(<p style="color:rgba\(255,255,255,\.65\)[^>]*>)([\s\S]*?)(<\/p>)/,
+      `$1${sub}$3`
+    );
+    return r;
+  }
+
+  function getSimpleFields(html: string) {
+    return {
+      brand: extractHeader(html).brand,
+      sub: extractHeader(html).sub,
+      hook: extractField(html, "sin-p1"),
+      detail1: extractField(html, "sin-p2"),
+      detail2: extractField(html, "sin-p3"),
+      feat: extractFeat(html),
+    };
+  }
+  function applySimpleField(
+    html: string,
+    key: "brand" | "sub" | "hook" | "detail1" | "detail2" | "feat",
+    value: string
+  ): string {
+    if (key === "brand") return injectHeader(html, value, extractHeader(html).sub);
+    if (key === "sub") return injectHeader(html, extractHeader(html).brand, value);
+    if (key === "hook") return injectField(html, "sin-p1", value);
+    if (key === "detail1") return injectField(html, "sin-p2", value);
+    if (key === "detail2") return injectField(html, "sin-p3", value);
+    if (key === "feat") return injectFeat(html, value);
+    return html;
+  }
+
+  function updateHtml(key: "brand" | "sub" | "hook" | "detail1" | "detail2" | "feat", value: string) {
+    if (!selectedTemplate) return;
+    const newHtml = applySimpleField(selectedTemplate.htmlTemplate, key, value);
+    const updated = (templates || []).map(t =>
+      t.id === selectedTemplate.id ? { ...t, htmlTemplate: newHtml } : t
+    );
+    queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
+  }
 
   const { data: templates, isLoading } = useListTemplates(
     { businessId: selectedBusinessId ?? undefined },
@@ -982,42 +1047,127 @@ export default function TemplatesPage() {
 
               <div className="space-y-2 flex-1 flex flex-col min-h-0">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">HTML本文</Label>
+                  <Label className="text-xs font-mono uppercase tracking-widest text-muted-foreground">本文</Label>
                   <div className="flex text-xs border border-border">
-                    {(["code", "preview", "split"] as const).map((mode) => (
+                    {(["text", "code", "preview", "split"] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => setPreviewMode(mode)}
                         className={`px-3 py-1 font-mono uppercase tracking-widest transition-colors ${previewMode === mode ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"}`}
                       >
-                        {mode === "code" ? "コード" : mode === "preview" ? "プレビュー" : "分割"}
+                        {mode === "text" ? "テキスト" : mode === "code" ? "HTML" : mode === "preview" ? "プレビュー" : "分割"}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="flex-1 flex border border-border min-h-0">
-                  {(previewMode === "code" || previewMode === "split") && (
-                    <Textarea
-                      value={selectedTemplate.htmlTemplate}
-                      onChange={e => {
-                        const updated = (templates || []).map(t => t.id === selectedTemplate.id ? { ...t, htmlTemplate: e.target.value } : t);
-                        queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
-                      }}
-                      className={`resize-none rounded-none border-0 font-mono text-xs p-4 shadow-none focus-visible:ring-0 leading-relaxed bg-muted/10 ${previewMode === "split" ? "w-1/2" : "flex-1"}`}
-                    />
-                  )}
-                  {(previewMode === "preview" || previewMode === "split") && (
-                    <div className={`${previewMode === "split" ? "w-1/2 border-l border-border" : "flex-1"} bg-white overflow-hidden`}>
-                      <iframe
-                        srcDoc={selectedTemplate.htmlTemplate || "<p style='color:#999;font-family:sans-serif;padding:16px'>HTMLを入力するとここにプレビューが表示されます</p>"}
-                        title="メールプレビュー"
-                        className="w-full h-full border-0"
-                        sandbox="allow-same-origin"
-                      />
+
+                {/* ---- テキスト編集モード ---- */}
+                {previewMode === "text" && (() => {
+                  const f = getSimpleFields(selectedTemplate.htmlTemplate);
+                  const hasFields = f.hook || f.detail1 || f.detail2 || f.feat;
+                  return (
+                    <div className="flex-1 flex border border-border min-h-0">
+                      <div className="w-1/2 overflow-y-auto p-4 space-y-4 bg-muted/5">
+                        {!hasFields && (
+                          <p className="text-xs text-muted-foreground font-mono">このテンプレートはテキスト編集に対応していません。HTMLタブで直接編集してください。</p>
+                        )}
+                        {(f.brand || f.sub) && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">ヘッダーブランド名</label>
+                            <Input
+                              value={f.brand}
+                              onChange={e => updateHtml("brand", e.target.value)}
+                              className="rounded-none border-border text-sm h-9"
+                              placeholder="合同会社SIN JAPAN"
+                            />
+                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">サブテキスト（英字）</label>
+                            <Input
+                              value={f.sub}
+                              onChange={e => updateHtml("sub", e.target.value)}
+                              className="rounded-none border-border text-xs h-8"
+                              placeholder="LIGHT CARGO / DELIVERY SERVICE"
+                            />
+                          </div>
+                        )}
+                        {f.hook && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">フック文（冒頭）</label>
+                            <Textarea
+                              value={f.hook}
+                              onChange={e => updateHtml("hook", e.target.value)}
+                              className="rounded-none border-border text-sm resize-none h-16"
+                            />
+                          </div>
+                        )}
+                        {f.detail1 && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">本文①</label>
+                            <Textarea
+                              value={f.detail1}
+                              onChange={e => updateHtml("detail1", e.target.value)}
+                              className="rounded-none border-border text-sm resize-none h-24"
+                            />
+                          </div>
+                        )}
+                        {f.detail2 && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">本文②</label>
+                            <Textarea
+                              value={f.detail2}
+                              onChange={e => updateHtml("detail2", e.target.value)}
+                              className="rounded-none border-border text-sm resize-none h-24"
+                            />
+                          </div>
+                        )}
+                        {f.feat && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">特徴リスト（改行で区切る）</label>
+                            <Textarea
+                              value={f.feat}
+                              onChange={e => updateHtml("feat", e.target.value)}
+                              className="rounded-none border-border text-sm resize-none h-28 font-mono"
+                            />
+                          </div>
+                        )}
+                      </div>
+                      <div className="w-1/2 border-l border-border bg-white overflow-hidden">
+                        <iframe
+                          srcDoc={selectedTemplate.htmlTemplate}
+                          title="メールプレビュー"
+                          className="w-full h-full border-0"
+                          sandbox="allow-same-origin"
+                        />
+                      </div>
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
+
+                {/* ---- HTMLコード / プレビュー / 分割 ---- */}
+                {previewMode !== "text" && (
+                  <div className="flex-1 flex border border-border min-h-0">
+                    {(previewMode === "code" || previewMode === "split") && (
+                      <Textarea
+                        value={selectedTemplate.htmlTemplate}
+                        onChange={e => {
+                          const updated = (templates || []).map(t => t.id === selectedTemplate.id ? { ...t, htmlTemplate: e.target.value } : t);
+                          queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
+                        }}
+                        className={`resize-none rounded-none border-0 font-mono text-xs p-4 shadow-none focus-visible:ring-0 leading-relaxed bg-muted/10 ${previewMode === "split" ? "w-1/2" : "flex-1"}`}
+                      />
+                    )}
+                    {(previewMode === "preview" || previewMode === "split") && (
+                      <div className={`${previewMode === "split" ? "w-1/2 border-l border-border" : "flex-1"} bg-white overflow-hidden`}>
+                        <iframe
+                          srcDoc={selectedTemplate.htmlTemplate || "<p style='color:#999;font-family:sans-serif;padding:16px'>HTMLを入力するとここにプレビューが表示されます</p>"}
+                          title="メールプレビュー"
+                          className="w-full h-full border-0"
+                          sandbox="allow-same-origin"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
