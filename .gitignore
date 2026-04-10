@@ -47,3 +47,6 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# 添付ファイル (APIキー等が含まれる可能性があるため除外)
+attached_assets/
