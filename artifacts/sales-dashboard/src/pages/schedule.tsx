@@ -31,6 +31,7 @@ type Template = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
+  lead_search_and_send: "収集＋メール送信",
   lead_search: "リード自動収集",
   email_send: "メール自動送信",
 };
@@ -59,7 +60,7 @@ function formatDate(dateStr: string | null) {
 
 const DEFAULT_FORM = {
   name: "",
-  type: "lead_search",
+  type: "lead_search_and_send",
   schedulePreset: "0 9 * * 1",
   cronExpression: "0 9 * * 1",
   keyword: "",
@@ -105,11 +106,12 @@ export default function SchedulePage() {
     if (!selectedBusinessId || !form.name || !form.cronExpression) return;
 
     const config: Record<string, unknown> = {};
-    if (form.type === "lead_search") {
+    if (form.type === "lead_search" || form.type === "lead_search_and_send") {
       config.keyword = form.keyword;
       config.location = form.location;
       config.maxResults = Number(form.maxResults);
-    } else if (form.type === "email_send") {
+    }
+    if (form.type === "email_send" || form.type === "lead_search_and_send") {
       if (form.templateId && form.templateId !== "none") config.templateId = Number(form.templateId);
     }
 
@@ -210,8 +212,9 @@ export default function SchedulePage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="rounded-none border-border">
-                      <SelectItem value="lead_search" className="rounded-none text-sm">リード自動収集</SelectItem>
-                      <SelectItem value="email_send" className="rounded-none text-sm">メール自動送信</SelectItem>
+                      <SelectItem value="lead_search_and_send" className="rounded-none text-sm">収集＋メール送信（おすすめ）</SelectItem>
+                      <SelectItem value="lead_search" className="rounded-none text-sm">リード自動収集のみ</SelectItem>
+                      <SelectItem value="email_send" className="rounded-none text-sm">メール自動送信のみ</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -247,7 +250,7 @@ export default function SchedulePage() {
                   )}
                 </div>
 
-                {form.type === "lead_search" && (
+                {(form.type === "lead_search" || form.type === "lead_search_and_send") && (
                   <div className="space-y-3 border border-border p-4">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">収集設定</p>
                     <div className="space-y-1.5">
@@ -284,7 +287,7 @@ export default function SchedulePage() {
                   </div>
                 )}
 
-                {form.type === "email_send" && (
+                {(form.type === "email_send" || form.type === "lead_search_and_send") && (
                   <div className="space-y-3 border border-border p-4">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">送信設定</p>
                     <div className="space-y-1.5">
@@ -311,7 +314,10 @@ export default function SchedulePage() {
                       <p className="text-[10px] text-muted-foreground font-mono">未選択の場合は最初のテンプレートが使われます</p>
                     </div>
                     <div className="bg-muted/30 border border-border p-3 text-[11px] font-mono text-muted-foreground space-y-1">
-                      <p>対象: 未送信リード（email あり）</p>
+                      {form.type === "lead_search_and_send"
+                        ? <p>対象: 今回収集した新規リード（email あり）に即時送信</p>
+                        : <p>対象: 未送信リード（email あり）</p>
+                      }
                       <p>変数: {"{{company_name}}"} が会社名に自動置換されます</p>
                     </div>
                   </div>
@@ -382,7 +388,7 @@ export default function SchedulePage() {
                       {config.maxResults && (
                         <span>最大: <span className="text-foreground">{config.maxResults}件</span></span>
                       )}
-                      {job.type === "email_send" && (
+                      {(job.type === "email_send" || job.type === "lead_search_and_send") && (
                         <span className="flex items-center gap-1">
                           <Mail className="w-3 h-3" />
                           テンプレート: <span className="text-foreground">{templateName ?? "最初のテンプレート"}</span>
