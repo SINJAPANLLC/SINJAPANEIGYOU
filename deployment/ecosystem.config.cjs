@@ -1,21 +1,20 @@
 // PM2 ecosystem config for SIN JAPAN 営業自動化ダッシュボード
-// 使い方: pm2 start deployment/ecosystem.config.cjs
+// Node.js 20.6+ の --env-file フラグで .env を直接読み込む
 
-const path = require("path");
 const APP_DIR = "/var/www/sinjapan-sales";
 
 module.exports = {
   apps: [
     {
       name: "sinjapan-sales-api",
-      script: path.join(APP_DIR, "artifacts/api-server/dist/index.mjs"),
+      script: `${APP_DIR}/artifacts/api-server/dist/index.mjs`,
       cwd: APP_DIR,
       instances: 1,
       exec_mode: "fork",
-      node_args: [],
+      // Node.js 20.6+ の --env-file で .env を読み込む
+      node_args: [`--env-file=${APP_DIR}/.env`],
       env: {
         NODE_ENV: "production",
-        PORT: "6050",
       },
       restart_delay: 3000,
       max_restarts: 10,
