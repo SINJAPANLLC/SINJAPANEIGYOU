@@ -1,0 +1,288 @@
+Last login: Fri Apr 10 09:41:38 on console
+kazuyaotani@Mac ~ % ssh root@212.85.24.206
+root@212.85.24.206's password: 
+Welcome to Ubuntu 24.04.4 LTS (GNU/Linux 6.8.0-106-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Fri Apr 10 11:07:01 UTC 2026
+
+  System load:  0.06                Processes:             160
+  Usage of /:   16.3% of 192.69GB   Users logged in:       0
+  Memory usage: 18%                 IPv4 address for eth0: 212.85.24.206
+  Swap usage:   0%                  IPv6 address for eth0: 2a02:4780:59:cc86::1
+
+ * Strictly confined Kubernetes makes edge and IoT secure. Learn how MicroK8s
+   just raised the bar for easy, resilient and secure K8s cluster deployment.
+
+   https://ubuntu.com/engage/secure-kubernetes-at-the-edge
+
+Expanded Security Maintenance for Applications is not enabled.
+
+25 updates can be applied immediately.
+To see these additional updates run: apt list --upgradable
+
+13 additional security updates can be applied with ESM Apps.
+Learn more about enabling ESM Apps service at https://ubuntu.com/esm
+
+
+1 updates could not be installed automatically. For more details,
+see /var/log/unattended-upgrades/unattended-upgrades.log
+
+*** System restart required ***
+Last login: Wed Apr  8 08:25:09 2026 from 182.249.42.4
+root@srv1087935:~# pm2 list
+┌────┬────────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name               │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼────────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 4  │ aiagent            │ fork     │ 4    │ online    │ 0%       │ 182.9mb  │
+│ 3  │ keimatch           │ fork     │ 0    │ online    │ 0%       │ 596.7mb  │
+│ 12 │ keisaiyou          │ fork     │ 6    │ online    │ 0%       │ 340.3mb  │
+│ 2  │ menz-esthe-town    │ fork     │ 0    │ online    │ 0%       │ 143.4mb  │
+│ 11 │ onlyu              │ fork     │ 0    │ online    │ 0%       │ 129.9mb  │
+│ 7  │ sinjapan-crm-api   │ fork     │ 0    │ online    │ 0%       │ 133.1mb  │
+│ 0  │ sinjapan-manager   │ fork     │ 0    │ online    │ 0%       │ 61.9mb   │
+│ 1  │ sinjapan-onlinesc… │ fork     │ 0    │ online    │ 0%       │ 99.0mb   │
+│ 5  │ sinjapanai         │ fork     │ 0    │ online    │ 0%       │ 107.4mb  │
+│ 6  │ sinjapanailive-api │ fork     │ 0    │ online    │ 0%       │ 106.2mb  │
+│ 9  │ sinjapanaisite-api │ fork     │ 0    │ online    │ 0%       │ 192.5mb  │
+│ 10 │ tiktokshindan      │ fork     │ 0    │ online    │ 0%       │ 159.3mb  │
+│ 8  │ tramatch           │ fork     │ 0    │ online    │ 0%       │ 226.2mb  │
+└────┴────────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+root@srv1087935:~# ss -tlnp | grep LISTEN | awk '{print $4}' | cut -d: -f2 | sort -n
+
+
+
+
+22
+53
+53
+80
+443
+3001
+3002
+3009
+3010
+3100
+4000
+4111
+5000
+5002
+5003
+5004
+5005
+5006
+5050
+5432
+7880
+7881
+8008
+8099
+20000
+root@srv1087935:~# git clone https://github.com/SINJAPANLLC/SINJAPANEIGYOU.git /var/www/sinjapan-sales
+Cloning into '/var/www/sinjapan-sales'...
+remote: Enumerating objects: 759, done.
+remote: Counting objects: 100% (759/759), done.
+remote: Compressing objects: 100% (293/293), done.
+remote: Total 759 (delta 445), reused 757 (delta 443), pack-reused 0 (from 0)
+Receiving objects: 100% (759/759), 886.75 KiB | 1.96 MiB/s, done.
+Resolving deltas: 100% (445/445), done.
+root@srv1087935:~# cat > /var/www/sinjapan-sales/.env << 'EOF'
+NODE_ENV=production
+PORT=6050
+APP_URL=https://sinjapan-sales.site
+
+NEON_DATABASE_URL=postgresql://neondb_owner:npg_PqkRcLaro78F@ep-bitter-snow-amfwjboo-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+OPENAI_API_KEY=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
+SMTP_USER=info@sinjapan-sales.site
+SMTP_PASS=@Kazuya8008
+SESSION_SECRET=syzv9ZHzVYzDKtdk+yGLA2GH4irb2Bi4g19m9WTeO1eD+mpFes0ZQWtszpXWWffJaJ+BHBT6PVPYhR7q2pelhA==
+GOOGLE_API_KEY=AIzaSyCtqcTeTePNWusVXZANwvAE_mH_neNDFmM
+GOOGLE_SEARCH_ENGINE_ID=52e56ac9d4d3c4b9c
+EOF
+root@srv1087935:~# cat /var/www/sinjapan-sales/.env
+NODE_ENV=production
+PORT=6050
+APP_URL=https://sinjapan-sales.site
+
+NEON_DATABASE_URL=postgresql://neondb_owner:npg_PqkRcLaro78F@ep-bitter-snow-amfwjboo-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+OPENAI_API_KEY=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
+SMTP_USER=info@sinjapan-sales.site
+SMTP_PASS=@Kazuya8008
+SESSION_SECRET=syzv9ZHzVYzDKtdk+yGLA2GH4irb2Bi4g19m9WTeO1eD+mpFes0ZQWtszpXWWffJaJ+BHBT6PVPYhR7q2pelhA==
+GOOGLE_API_KEY=AIzaSyCtqcTeTePNWusVXZANwvAE_mH_neNDFmM
+GOOGLE_SEARCH_ENGINE_ID=52e56ac9d4d3c4b9c
+root@srv1087935:~# bash /var/www/sinjapan-sales/deployment/deploy.sh
+============================================
+  ポート競合チェック (使用中ポート)
+============================================
+使用中: 22 53 80 443 3001 3002 3009 3010 3100 4000 4111 5000 5002 5003 5004 5005 5006 5050 5432 7880 7881 8008 8099 20000 
+
+✓  ポート 6050 は使用可能です
+
+============================================
+  Node.js / pnpm / PM2 確認
+============================================
+v20.20.0
+10.33.0
+6.0.14
+
+============================================
+  リポジトリ クローン / 更新
+============================================
+既存リポジトリを最新に更新...
+From https://github.com/SINJAPANLLC/SINJAPANEIGYOU
+ * branch            main       -> FETCH_HEAD
+Already up to date.
+
+============================================
+  .env ファイル確認
+============================================
+✓  .env の PORT = 6050 を確認
+
+============================================
+  依存関係インストール
+============================================
+Scope: all 9 workspace projects
+Lockfile is up to date, resolution step is skipped
+Packages: +543
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+Downloading @clerk/localizations@4.3.2: 6.21 MB/6.21 MB, done
+Progress: resolved 543, reused 503, downloaded 40, added 543, done
+
+devDependencies:
++ prettier 3.8.1
++ typescript 5.9.3
+
+. preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_use…
+└─ Done in 20ms
+╭ Warning ─────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│   Ignored build scripts: @clerk/shared@4.5.0.                                │
+│   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+│   to run scripts.                                                            │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+Done in 6.8s using pnpm v10.33.0
+
+============================================
+  ライブラリ型定義ビルド
+============================================
+  ✓ @workspace/db
+  ✓ @workspace/api-zod
+
+============================================
+  APIサーバービルド
+============================================
+
+> @workspace/api-server@0.0.0 build /var/www/sinjapan-sales/artifacts/api-server
+> node ./build.mjs
+
+
+  dist/index.mjs                       5.1mb ⚠️
+  dist/pino-worker.mjs               153.4kb
+  dist/pino-file.mjs                 142.1kb
+  dist/pino-pretty.mjs               114.6kb
+  dist/thread-stream-worker.mjs        7.3kb
+  dist/index.mjs.map                   9.5mb
+  dist/pino-worker.mjs.map           256.9kb
+  dist/pino-file.mjs.map             229.0kb
+  dist/pino-pretty.mjs.map           203.9kb
+  dist/thread-stream-worker.mjs.map   12.0kb
+
+⚡ Done in 467ms
+✓  dist/index.mjs 生成完了
+
+============================================
+  フロントエンドビルド
+============================================
+
+> @workspace/sales-dashboard@0.0.0 build /var/www/sinjapan-sales/artifacts/sales-dashboard
+> vite build --config vite.config.ts
+
+vite v7.3.1 building client environment for production...
+src/components/ui/tooltip.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/dropdown-menu.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/sidebar.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/label.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/select.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+src/components/ui/sheet.tsx (2:0): Error when using sourcemap for reporting an error: Can't resolve original location of error.
+✓ 3092 modules transformed.
+dist/public/index.html                   0.76 kB │ gzip:   0.46 kB
+dist/public/assets/index-BHSF1_3d.css  127.00 kB │ gzip:  19.66 kB
+dist/public/assets/index-ibg6AewL.js   794.97 kB │ gzip: 238.98 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 4.82s
+✓  静的ファイル: /var/www/sinjapan-sales/artifacts/sales-dashboard/dist/public/
+
+============================================
+  PM2 起動
+============================================
+[PM2][WARN] Applications sinjapan-sales-api not running, starting...
+[PM2] App [sinjapan-sales-api] launched (1 instances)
+┌────┬────────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name               │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼────────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 4  │ aiagent            │ fork     │ 4    │ online    │ 0%       │ 182.9mb  │
+│ 3  │ keimatch           │ fork     │ 0    │ online    │ 0%       │ 596.2mb  │
+│ 12 │ keisaiyou          │ fork     │ 6    │ online    │ 0%       │ 339.8mb  │
+│ 2  │ menz-esthe-town    │ fork     │ 0    │ online    │ 0%       │ 143.2mb  │
+│ 11 │ onlyu              │ fork     │ 0    │ online    │ 0%       │ 130.0mb  │
+│ 7  │ sinjapan-crm-api   │ fork     │ 0    │ online    │ 0%       │ 133.1mb  │
+│ 0  │ sinjapan-manager   │ fork     │ 0    │ online    │ 0%       │ 62.2mb   │
+│ 1  │ sinjapan-onlinesc… │ fork     │ 0    │ online    │ 0%       │ 98.9mb   │
+│ 13 │ sinjapan-sales-api │ fork     │ 0    │ online    │ 0%       │ 19.6mb   │
+│ 5  │ sinjapanai         │ fork     │ 0    │ online    │ 0%       │ 107.8mb  │
+│ 6  │ sinjapanailive-api │ fork     │ 0    │ online    │ 0%       │ 106.5mb  │
+│ 9  │ sinjapanaisite-api │ fork     │ 0    │ online    │ 0%       │ 192.1mb  │
+│ 10 │ tiktokshindan      │ fork     │ 0    │ online    │ 0%       │ 159.0mb  │
+│ 8  │ tramatch           │ fork     │ 0    │ online    │ 0%       │ 226.5mb  │
+└────┴────────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+[PM2] Saving current process list...
+[PM2] Successfully saved in /root/.pm2/dump.pm2
+✓  PM2 起動完了
+
+============================================
+  nginx 設定
+============================================
+
+1. 設定ファイルをコピー:
+   cp /var/www/sinjapan-sales/deployment/nginx.conf /etc/nginx/sites-available/sinjapan-sales
+
+2. 有効化 & リロード:
+   ln -sf /etc/nginx/sites-available/sinjapan-sales /etc/nginx/sites-enabled/
+   nginx -t && systemctl reload nginx
+
+3. SSL証明書 (Let's Encrypt):
+   certbot --nginx -d sinjapan-sales.site -d www.sinjapan-sales.site
+
+============================================
+  ✅ デプロイ完了！
+============================================
+┌────┬────────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name               │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼────────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 4  │ aiagent            │ fork     │ 4    │ online    │ 0%       │ 182.9mb  │
+│ 3  │ keimatch           │ fork     │ 0    │ online    │ 0%       │ 596.2mb  │
+│ 12 │ keisaiyou          │ fork     │ 6    │ online    │ 0%       │ 339.8mb  │
+│ 2  │ menz-esthe-town    │ fork     │ 0    │ online    │ 0%       │ 143.2mb  │
+│ 11 │ onlyu              │ fork     │ 0    │ online    │ 0%       │ 130.0mb  │
+│ 7  │ sinjapan-crm-api   │ fork     │ 0    │ online    │ 0%       │ 133.1mb  │
+│ 0  │ sinjapan-manager   │ fork     │ 0    │ online    │ 0%       │ 62.2mb   │
+│ 1  │ sinjapan-onlinesc… │ fork     │ 0    │ online    │ 0%       │ 98.9mb   │
+│ 13 │ sinjapan-sales-api │ fork     │ 0    │ online    │ 0%       │ 88.7mb   │
+│ 5  │ sinjapanai         │ fork     │ 0    │ online    │ 0%       │ 107.8mb  │
+│ 6  │ sinjapanailive-api │ fork     │ 0    │ online    │ 0%       │ 106.5mb  │
+│ 9  │ sinjapanaisite-api │ fork     │ 0    │ online    │ 0%       │ 192.6mb  │
+│ 10 │ tiktokshindan      │ fork     │ 0    │ online    │ 0%       │ 159.0mb  │
+│ 8  │ tramatch           │ fork     │ 0    │ online    │ 0%       │ 226.5mb  │
+└────┴────────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+
+動作確認: curl -I http://127.0.0.1:6050/api/health
+root@srv1087935:~# 
