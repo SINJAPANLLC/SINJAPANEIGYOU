@@ -19,22 +19,30 @@ async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Yahoo Japan scraping - most reliable from server IPs
-export async function searchYahooJapan(query: string, count = 20): Promise<SearchResult[]> {
-  logger.info({ query, count }, "searchYahooJapan start");
+// Yahoo Japan scraping - support multiple pages
+export async function searchYahooJapan(
+  query: string,
+  count = 20,
+  page = 1,
+): Promise<SearchResult[]> {
+  logger.info({ query, count, page }, "searchYahooJapan start");
   try {
-    await sleep(700 + Math.random() * 700);
+    await sleep(600 + Math.random() * 800);
 
-    const response = await axios.get(
-      `https://search.yahoo.co.jp/search?p=${encodeURIComponent(query)}&n=20`,
-      { headers: SEARCH_HEADERS, timeout: 18000 }
-    );
+    // Yahoo Japan paging: b=1,21,41...
+    const b = (page - 1) * 20 + 1;
+    const url = `https://search.yahoo.co.jp/search?p=${encodeURIComponent(query)}&n=20&b=${b}`;
+
+    const response = await axios.get(url, {
+      headers: SEARCH_HEADERS,
+      timeout: 18000,
+    });
 
     const $ = cheerio.load(response.data);
     const results: SearchResult[] = [];
     const seen = new Set<string>();
 
-    // Primary: use .sw-Card anchor links (Yahoo Japan's current HTML structure)
+    // Primary: .sw-Card anchor links
     $(".sw-Card a").each((_, el): false | void => {
       if (results.length >= count) return false;
       const href = $(el).attr("href") || "";
@@ -76,28 +84,30 @@ export async function searchYahooJapan(query: string, count = 20): Promise<Searc
       });
     }
 
-    logger.info({ count: results.length, query }, "searchYahooJapan done");
+    logger.info({ count: results.length, query, page }, "searchYahooJapan done");
     return results;
   } catch (err: any) {
-    logger.error({ err: err?.message, query }, "Yahoo Japan search failed");
+    logger.error({ err: err?.message, query, page }, "Yahoo Japan search failed");
     return [];
   }
 }
 
-// Build multiple SME-focused query variations
+// Build SME-focused query variations
 function buildSmeQueries(keyword: string, location: string | null): string[] {
   const loc = location ? ` ${location}` : "";
   return [
-    `${keyword}${loc} 中小企業 お問い合わせ`,
-    `${keyword}${loc} 株式会社 会社概要`,
+    `${keyword}${loc} 中小企業 お問い合わせ メール`,
+    `${keyword}${loc} 株式会社 会社概要 連絡先`,
     `${keyword}${loc} 有限会社 合同会社 問い合わせ`,
     `${keyword}${loc} 企業 メールアドレス contact`,
-    `${keyword}${loc} 荷主 案件 会社`,
+    `${keyword}${loc} 荷主 案件 会社 email`,
     `${keyword}${loc} site:co.jp 会社概要`,
+    `${keyword}${loc} 中小 企業 電話番号 会社`,
+    `${keyword}${loc} 業者 会社 問い合わせ先`,
   ];
 }
 
-// Retry wrapper for crawling individual URLs
+// Retry wrapper
 async function crawlWithRetry(url: string, retries = 2): Promise<Awaited<ReturnType<typeof crawlWebsite>>> {
   for (let i = 0; i <= retries; i++) {
     try {
@@ -149,7 +159,7 @@ async function crawlBatch(
       if (urlScore < 0 || seen.has(item.url)) continue;
       seen.add(item.url);
 
-      await sleep(300 + Math.random() * 500);
+      await sleep(300 + Math.random() * 400);
 
       const crawled = await crawlWithRetry(item.url);
 
@@ -189,32 +199,49 @@ export async function searchAndCrawlLeads(
   const seen = new Set<string>();
   const allSearchResults: SearchResult[] = [];
 
-  // Collect URLs from all query variations
+  // Collect from all query variations, up to 2 pages each
   for (const query of queries) {
-    // Gather more than needed so crawl filtering doesn't leave us short
-    if (allSearchResults.filter(r => !seen.has(r.url)).length >= maxResults * 5) break;
+    if (allSearchResults.length >= maxResults * 8) break;
+
+    // Page 1
     try {
-      const res = await searchYahooJapan(query, 20);
+      const res = await searchYahooJapan(query, 20, 1);
       let added = 0;
       for (const r of res) {
-        const urlScore = scoreUrl(r.url);
-        if (urlScore >= 0 && !seen.has(r.url)) {
+        if (scoreUrl(r.url) >= 0 && !seen.has(r.url)) {
           allSearchResults.push(r);
           seen.add(r.url);
           added++;
         }
       }
-      logger.info({ query, added, total: allSearchResults.length }, "Query complete");
-      await sleep(600 + Math.random() * 400);
+      logger.info({ query, page: 1, added, total: allSearchResults.length }, "Query p1 complete");
+      await sleep(500 + Math.random() * 400);
     } catch (err: any) {
-      logger.warn({ query, err: err?.message }, "Search query failed, continuing");
+      logger.warn({ query, err: err?.message }, "Search query p1 failed");
+    }
+
+    // Page 2 (only if still need more candidates)
+    if (allSearchResults.length < maxResults * 5) {
+      try {
+        const res2 = await searchYahooJapan(query, 20, 2);
+        let added2 = 0;
+        for (const r of res2) {
+          if (scoreUrl(r.url) >= 0 && !seen.has(r.url)) {
+            allSearchResults.push(r);
+            seen.add(r.url);
+            added2++;
+          }
+        }
+        logger.info({ query, page: 2, added: added2, total: allSearchResults.length }, "Query p2 complete");
+        await sleep(400 + Math.random() * 400);
+      } catch (err: any) {
+        logger.warn({ query, err: err?.message }, "Search query p2 failed");
+      }
     }
   }
 
   logger.info({ total: allSearchResults.length, maxResults }, "Starting parallel crawl");
 
-  // Reset seen for crawl deduplication
   seen.clear();
-
   return crawlBatch(allSearchResults, seen, maxResults, 4);
 }
