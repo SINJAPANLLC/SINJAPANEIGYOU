@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { 
   useListTemplates, 
   useCreateTemplate, 
@@ -602,69 +602,78 @@ export default function TemplatesPage() {
   const [showStarters, setShowStarters] = useState(false);
   const [previewMode, setPreviewMode] = useState<"text" | "code" | "preview" | "split">("text");
 
-  // --- Simple text extraction helpers ---
-  function extractField(html: string, cls: string): string {
-    const m = html.match(new RegExp(`class="${cls}"[^>]*>([\\s\\S]*?)<\\/p>`));
-    return m ? m[1] : "";
+  // ---- Simple text field local state ----
+  type SF = { brand: string; sub: string; hook: string; detail1: string; detail2: string; feat: string };
+  const [sf, setSf] = useState<SF>({ brand: "", sub: "", hook: "", detail1: "", detail2: "", feat: "" });
+  const [sfBaseHtml, setSfBaseHtml] = useState("");
+
+  // --- Helpers ---
+  function xField(html: string, cls: string) {
+    return html.match(new RegExp(`class="${cls}"[^>]*>([\\s\\S]*?)<\\/p>`))?.[1] ?? "";
   }
-  function extractFeat(html: string): string {
-    const m = html.match(/class="sin-f"[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/);
-    return m ? m[1].replace(/<br\s*\/?>/gi, "\n") : "";
+  function xFeat(html: string) {
+    return (html.match(/class="sin-f"[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/)?.[1] ?? "").replace(/<br\s*\/?>/gi, "\n");
   }
-  function extractHeader(html: string): { brand: string; sub: string } {
+  function xHeader(html: string) {
     const m = html.match(/<div style="background:linear-gradient[\s\S]*?<p style="color:#fff[^>]*>([\s\S]*?)<\/p>\s*<p style="color:rgba[\s\S]*?>([\s\S]*?)<\/p>/);
     return m ? { brand: m[1], sub: m[2] } : { brand: "", sub: "" };
   }
-  function injectField(html: string, cls: string, value: string): string {
-    return html.replace(new RegExp(`(class="${cls}"[^>]*>)[\\s\\S]*?(<\\/p>)`), `$1${value}$2`);
+  function iField(html: string, cls: string, v: string) {
+    return html.replace(new RegExp(`(class="${cls}"[^>]*>)[\\s\\S]*?(<\\/p>)`), `$1${v}$2`);
   }
-  function injectFeat(html: string, value: string): string {
-    const escaped = value.replace(/\n/g, "<br>");
-    return html.replace(/(class="sin-f"[\s\S]*?<p[^>]*>)([\s\S]*?)(<\/p>)/, `$1${escaped}$3`);
+  function iFeat(html: string, v: string) {
+    return html.replace(/(class="sin-f"[\s\S]*?<p[^>]*>)([\s\S]*?)(<\/p>)/, `$1${v.replace(/\n/g, "<br>")}$3`);
   }
-  function injectHeader(html: string, brand: string, sub: string): string {
-    let r = html.replace(
-      /(<div style="background:linear-gradient[\s\S]*?<p style="color:#fff[^>]*>)([\s\S]*?)(<\/p>)/,
-      `$1${brand}$3`
-    );
-    r = r.replace(
-      /(<p style="color:rgba\(255,255,255,\.65\)[^>]*>)([\s\S]*?)(<\/p>)/,
-      `$1${sub}$3`
-    );
-    return r;
+  function iHeader(html: string, brand: string, sub: string) {
+    let r = html.replace(/(<div style="background:linear-gradient[\s\S]*?<p style="color:#fff[^>]*>)([\s\S]*?)(<\/p>)/, `$1${brand}$3`);
+    return r.replace(/(<p style="color:rgba\(255,255,255,\.65\)[^>]*>)([\s\S]*?)(<\/p>)/, `$1${sub}$3`);
   }
-
-  function getSimpleFields(html: string) {
-    return {
-      brand: extractHeader(html).brand,
-      sub: extractHeader(html).sub,
-      hook: extractField(html, "sin-p1"),
-      detail1: extractField(html, "sin-p2"),
-      detail2: extractField(html, "sin-p3"),
-      feat: extractFeat(html),
-    };
-  }
-  function applySimpleField(
-    html: string,
-    key: "brand" | "sub" | "hook" | "detail1" | "detail2" | "feat",
-    value: string
-  ): string {
-    if (key === "brand") return injectHeader(html, value, extractHeader(html).sub);
-    if (key === "sub") return injectHeader(html, extractHeader(html).brand, value);
-    if (key === "hook") return injectField(html, "sin-p1", value);
-    if (key === "detail1") return injectField(html, "sin-p2", value);
-    if (key === "detail2") return injectField(html, "sin-p3", value);
-    if (key === "feat") return injectFeat(html, value);
-    return html;
+  function buildHtmlFromSf(base: string, fields: SF) {
+    let h = iHeader(base, fields.brand, fields.sub);
+    h = iField(h, "sin-p1", fields.hook);
+    h = iField(h, "sin-p2", fields.detail1);
+    h = iField(h, "sin-p3", fields.detail2);
+    h = iFeat(h, fields.feat);
+    return h;
   }
 
-  function updateHtml(key: "brand" | "sub" | "hook" | "detail1" | "detail2" | "feat", value: string) {
-    if (!selectedTemplate) return;
-    const newHtml = applySimpleField(selectedTemplate.htmlTemplate, key, value);
-    const updated = (templates || []).map(t =>
+  // Live preview HTML derived from local state
+  const sfPreviewHtml = useMemo(() => {
+    if (!sfBaseHtml) return "";
+    return buildHtmlFromSf(sfBaseHtml, sf);
+  }, [sf, sfBaseHtml]);
+
+  // When template selection changes, init local state
+  useEffect(() => {
+    if (!selectedTemplateId) return;
+    const tpl = (queryClient.getQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId ?? undefined })) as any[])?.find((t: any) => t.id === selectedTemplateId);
+    if (!tpl) return;
+    const hdr = xHeader(tpl.htmlTemplate);
+    setSf({
+      brand: hdr.brand,
+      sub: hdr.sub,
+      hook: xField(tpl.htmlTemplate, "sin-p1"),
+      detail1: xField(tpl.htmlTemplate, "sin-p2"),
+      detail2: xField(tpl.htmlTemplate, "sin-p3"),
+      feat: xFeat(tpl.htmlTemplate),
+    });
+    setSfBaseHtml(tpl.htmlTemplate);
+  }, [selectedTemplateId]);
+
+  function handleSfChange(key: keyof SF, value: string) {
+    setSf(prev => ({ ...prev, [key]: value }));
+  }
+
+  // Commit simple-field changes to queryClient (called on save)
+  function commitSfToHtml() {
+    if (!selectedTemplate || !sfBaseHtml) return;
+    const newHtml = buildHtmlFromSf(sfBaseHtml, sf);
+    const updated = ((templates || []) as any[]).map((t: any) =>
       t.id === selectedTemplate.id ? { ...t, htmlTemplate: newHtml } : t
     );
     queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
+    setSfBaseHtml(newHtml);
+    return newHtml;
   }
 
   const { data: templates, isLoading } = useListTemplates(
@@ -1007,11 +1016,14 @@ export default function TemplatesPage() {
                     </AlertDialogContent>
                   </AlertDialog>
                   <Button
-                    onClick={() => handleUpdate(selectedTemplate.id, {
-                      name: selectedTemplate.name,
-                      subjectTemplate: selectedTemplate.subjectTemplate,
-                      htmlTemplate: selectedTemplate.htmlTemplate
-                    })}
+                    onClick={() => {
+                      const finalHtml = previewMode === "text" ? (commitSfToHtml() ?? selectedTemplate.htmlTemplate) : selectedTemplate.htmlTemplate;
+                      handleUpdate(selectedTemplate.id, {
+                        name: selectedTemplate.name,
+                        subjectTemplate: selectedTemplate.subjectTemplate,
+                        htmlTemplate: finalHtml,
+                      });
+                    }}
                     disabled={updateMutation.isPending}
                     size="sm"
                     className="rounded-none text-xs uppercase tracking-widest h-8"
@@ -1063,85 +1075,81 @@ export default function TemplatesPage() {
                 </div>
 
                 {/* ---- テキスト編集モード ---- */}
-                {previewMode === "text" && (() => {
-                  const f = getSimpleFields(selectedTemplate.htmlTemplate);
-                  const hasFields = f.hook || f.detail1 || f.detail2 || f.feat;
-                  return (
-                    <div className="flex-1 flex border border-border min-h-0">
-                      <div className="w-1/2 overflow-y-auto p-4 space-y-4 bg-muted/5">
-                        {!hasFields && (
-                          <p className="text-xs text-muted-foreground font-mono">このテンプレートはテキスト編集に対応していません。HTMLタブで直接編集してください。</p>
-                        )}
-                        {(f.brand || f.sub) && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">ヘッダーブランド名</label>
-                            <Input
-                              value={f.brand}
-                              onChange={e => updateHtml("brand", e.target.value)}
-                              className="rounded-none border-border text-sm h-9"
-                              placeholder="合同会社SIN JAPAN"
-                            />
-                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">サブテキスト（英字）</label>
-                            <Input
-                              value={f.sub}
-                              onChange={e => updateHtml("sub", e.target.value)}
-                              className="rounded-none border-border text-xs h-8"
-                              placeholder="LIGHT CARGO / DELIVERY SERVICE"
-                            />
-                          </div>
-                        )}
-                        {f.hook && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">フック文（冒頭）</label>
-                            <Textarea
-                              value={f.hook}
-                              onChange={e => updateHtml("hook", e.target.value)}
-                              className="rounded-none border-border text-sm resize-none h-16"
-                            />
-                          </div>
-                        )}
-                        {f.detail1 && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">本文①</label>
-                            <Textarea
-                              value={f.detail1}
-                              onChange={e => updateHtml("detail1", e.target.value)}
-                              className="rounded-none border-border text-sm resize-none h-24"
-                            />
-                          </div>
-                        )}
-                        {f.detail2 && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">本文②</label>
-                            <Textarea
-                              value={f.detail2}
-                              onChange={e => updateHtml("detail2", e.target.value)}
-                              className="rounded-none border-border text-sm resize-none h-24"
-                            />
-                          </div>
-                        )}
-                        {f.feat && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">特徴リスト（改行で区切る）</label>
-                            <Textarea
-                              value={f.feat}
-                              onChange={e => updateHtml("feat", e.target.value)}
-                              className="rounded-none border-border text-sm resize-none h-28 font-mono"
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className="w-1/2 border-l border-border bg-white overflow-hidden">
-                        <iframe
-                          srcDoc={selectedTemplate.htmlTemplate}
-                          title="メールプレビュー"
-                          className="w-full h-full border-0"
-                          sandbox="allow-same-origin"
-                        />
-                      </div>
+                {previewMode === "text" && (
+                  <div className="flex-1 flex border border-border min-h-0">
+                    <div className="w-1/2 overflow-y-auto p-4 space-y-4 bg-muted/5">
+                      {!(sf.hook || sf.detail1 || sf.detail2 || sf.feat) && (
+                        <p className="text-xs text-muted-foreground font-mono">このテンプレートはテキスト編集に対応していません。HTMLタブで直接編集してください。</p>
+                      )}
+                      {(sf.brand || sf.sub) && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">ヘッダーブランド名</label>
+                          <Input
+                            value={sf.brand}
+                            onChange={e => handleSfChange("brand", e.target.value)}
+                            className="rounded-none border-border text-sm h-9"
+                            placeholder="合同会社SIN JAPAN"
+                          />
+                          <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">サブテキスト（英字）</label>
+                          <Input
+                            value={sf.sub}
+                            onChange={e => handleSfChange("sub", e.target.value)}
+                            className="rounded-none border-border text-xs h-8"
+                            placeholder="LIGHT CARGO / DELIVERY SERVICE"
+                          />
+                        </div>
+                      )}
+                      {sf.hook && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">フック文（冒頭）</label>
+                          <Textarea
+                            value={sf.hook}
+                            onChange={e => handleSfChange("hook", e.target.value)}
+                            className="rounded-none border-border text-sm resize-none h-16"
+                          />
+                        </div>
+                      )}
+                      {sf.detail1 && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">本文①</label>
+                          <Textarea
+                            value={sf.detail1}
+                            onChange={e => handleSfChange("detail1", e.target.value)}
+                            className="rounded-none border-border text-sm resize-none h-24"
+                          />
+                        </div>
+                      )}
+                      {sf.detail2 && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">本文②</label>
+                          <Textarea
+                            value={sf.detail2}
+                            onChange={e => handleSfChange("detail2", e.target.value)}
+                            className="rounded-none border-border text-sm resize-none h-24"
+                          />
+                        </div>
+                      )}
+                      {sf.feat && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">特徴リスト（改行で区切る）</label>
+                          <Textarea
+                            value={sf.feat}
+                            onChange={e => handleSfChange("feat", e.target.value)}
+                            className="rounded-none border-border text-sm resize-none h-28 font-mono"
+                          />
+                        </div>
+                      )}
                     </div>
-                  );
-                })()}
+                    <div className="w-1/2 border-l border-border bg-white overflow-hidden">
+                      <iframe
+                        srcDoc={sfPreviewHtml || selectedTemplate.htmlTemplate}
+                        title="メールプレビュー"
+                        className="w-full h-full border-0"
+                        sandbox="allow-same-origin"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 {/* ---- HTMLコード / プレビュー / 分割 ---- */}
                 {previewMode !== "text" && (
