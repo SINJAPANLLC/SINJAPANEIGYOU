@@ -6,32 +6,32 @@
 set -e
 
 APP_DIR="/var/www/sinjapan-sales"
-API_PORT=6050   # ← ポートが競合する場合は変更 (例: 6051, 6052)
+API_PORT=6050
+DOMAIN="sinjapan-sales.site"
 GITHUB_REPO="https://github.com/SINJAPANLLC/SINJAPANEIGYOU.git"
 
 echo "============================================"
-echo "  ポート競合チェック"
+echo "  ポート競合チェック (使用中ポート)"
 echo "============================================"
-echo "現在使用中のポート:"
-ss -tlnp | grep LISTEN | awk '{print $4}' | cut -d: -f2 | sort -n | uniq | tr '\n' ' '
+USED_PORTS=$(ss -tlnp | grep LISTEN | awk '{print $4}' | cut -d: -f2 | sort -n | uniq)
+echo "使用中: $(echo $USED_PORTS | tr '\n' ' ')"
 echo ""
 
-if ss -tlnp 2>/dev/null | grep -q ":${API_PORT} "; then
-  echo ""
+if echo "$USED_PORTS" | grep -qx "${API_PORT}"; then
   echo "⛔  ポート ${API_PORT} はすでに使用中です！"
-  echo "    deploy.sh の API_PORT を別の番号に変更してください"
-  echo "    例: API_PORT=6051"
+  echo "    別のポートを選んで API_PORT を変更してください"
+  echo "    空きポート例: 6051, 6052, 6100"
   exit 1
 fi
 echo "✓  ポート ${API_PORT} は使用可能です"
 
 echo ""
 echo "============================================"
-echo "  Node.js / pnpm バージョン確認"
+echo "  Node.js / pnpm / PM2 確認"
 echo "============================================"
-node --version || { echo "❌ Node.jsが見つかりません。インストールしてください"; exit 1; }
+node --version || { echo "❌ Node.jsをインストールしてください"; exit 1; }
 pnpm --version 2>/dev/null || { echo "pnpmをインストール中..."; npm install -g pnpm; }
-pm2 --version || { echo "PM2をインストール中..."; npm install -g pm2; }
+pm2 --version   2>/dev/null || { echo "PM2をインストール中...";   npm install -g pm2; }
 
 echo ""
 echo "============================================"
@@ -43,7 +43,6 @@ if [ -d "$APP_DIR/.git" ]; then
   cd "$APP_DIR" && git pull origin main
 else
   git clone "$GITHUB_REPO" "$APP_DIR"
-  cd "$APP_DIR"
 fi
 cd "$APP_DIR"
 
@@ -52,12 +51,13 @@ echo "============================================"
 echo "  .env ファイル確認"
 echo "============================================"
 if [ ! -f "$APP_DIR/.env" ]; then
-  echo "⚠️  .env ファイルが存在しません。テンプレートを作成します..."
+  echo "⚠️  .env が存在しません。テンプレートを作成します..."
   cat > "$APP_DIR/.env" << ENVEOF
 NODE_ENV=production
 PORT=${API_PORT}
-APP_URL=https://YOUR_DOMAIN_HERE
+APP_URL=https://${DOMAIN}
 
+# ↓ 以下は正しい値に変更してください
 NEON_DATABASE_URL=postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
 OPENAI_API_KEY=sk-xxx
 SMTP_USER=info@sinjapan-sales.site
@@ -65,20 +65,17 @@ SMTP_PASS=YOUR_SMTP_PASSWORD
 SESSION_SECRET=$(openssl rand -hex 32)
 ENVEOF
   echo ""
-  echo "📝 .env を作成しました: $APP_DIR/.env"
-  echo "   以下の値を正しい値に編集してから、もう一度スクリプトを実行してください:"
-  echo "   - APP_URL      : 実際のドメイン (例: https://sales.sinjapan.jp)"
-  echo "   - NEON_DATABASE_URL : Neon PostgreSQL接続文字列"
-  echo "   - OPENAI_API_KEY"
-  echo "   - SMTP_PASS"
+  echo "📝 作成: $APP_DIR/.env"
+  echo "   NEON_DATABASE_URL / OPENAI_API_KEY / SMTP_PASS を編集してください:"
+  echo "   nano $APP_DIR/.env"
   echo ""
-  echo "   編集コマンド: nano $APP_DIR/.env"
+  echo "   編集後に再実行: bash $APP_DIR/deployment/deploy.sh"
   exit 1
 fi
 
-# .env の PORT を API_PORT に同期
+# PORT を API_PORT に同期
 sed -i "s/^PORT=.*/PORT=${API_PORT}/" "$APP_DIR/.env"
-echo "✓  .env の PORT を ${API_PORT} に設定しました"
+echo "✓  .env の PORT = ${API_PORT} を確認"
 
 echo ""
 echo "============================================"
@@ -90,11 +87,8 @@ echo ""
 echo "============================================"
 echo "  ライブラリ型定義ビルド"
 echo "============================================"
-echo "  → @workspace/db"
-(cd "$APP_DIR/lib/db" && npx tsc -p tsconfig.json)
-
-echo "  → @workspace/api-zod"
-(cd "$APP_DIR/lib/api-zod" && npx tsc -p tsconfig.json)
+(cd "$APP_DIR/lib/db"      && npx tsc -p tsconfig.json && echo "  ✓ @workspace/db")
+(cd "$APP_DIR/lib/api-zod" && npx tsc -p tsconfig.json && echo "  ✓ @workspace/api-zod")
 
 echo ""
 echo "============================================"
@@ -116,14 +110,15 @@ echo "  PM2 起動"
 echo "============================================"
 mkdir -p /var/log/pm2
 
-# ecosystem.config の API_PORT を更新
+# ecosystem.config の PORT を更新
 sed -i "s/\"PORT\": \"[0-9]*\"/\"PORT\": \"${API_PORT}\"/" "$APP_DIR/deployment/ecosystem.config.cjs"
 
-# 既存プロセスを停止してから起動
+# 既存プロセスを停止
 pm2 delete sinjapan-sales-api 2>/dev/null || true
 
-# .env を読み込んでPM2起動
+# .env を読み込んでPM2に渡す
 set -a
+# shellcheck source=/dev/null
 source "$APP_DIR/.env"
 set +a
 
@@ -133,24 +128,22 @@ echo "✓  PM2 起動完了"
 
 echo ""
 echo "============================================"
-echo "  nginx 設定手順 (手動)"
+echo "  nginx 設定"
 echo "============================================"
 echo ""
-echo "  1. nginx設定ファイルをコピー:"
-echo "     cp $APP_DIR/deployment/nginx.conf /etc/nginx/sites-available/sinjapan-sales"
+echo "1. 設定ファイルをコピー:"
+echo "   cp $APP_DIR/deployment/nginx.conf /etc/nginx/sites-available/sinjapan-sales"
 echo ""
-echo "  2. ドメイン名を編集:"
-echo "     nano /etc/nginx/sites-available/sinjapan-sales"
-echo "     (sales.sinjapan.jp を実際のドメインに変更)"
+echo "2. 有効化 & リロード:"
+echo "   ln -sf /etc/nginx/sites-available/sinjapan-sales /etc/nginx/sites-enabled/"
+echo "   nginx -t && systemctl reload nginx"
 echo ""
-echo "  3. 有効化:"
-echo "     ln -sf /etc/nginx/sites-available/sinjapan-sales /etc/nginx/sites-enabled/"
-echo "     nginx -t && systemctl reload nginx"
-echo ""
-echo "  4. SSL証明書 (Let's Encrypt):"
-echo "     certbot --nginx -d YOUR_DOMAIN"
+echo "3. SSL証明書 (Let's Encrypt):"
+echo "   certbot --nginx -d ${DOMAIN} -d www.${DOMAIN}"
 echo ""
 echo "============================================"
 echo "  ✅ デプロイ完了！"
 echo "============================================"
 pm2 status sinjapan-sales-api
+echo ""
+echo "動作確認: curl -I http://127.0.0.1:${API_PORT}/api/health"
