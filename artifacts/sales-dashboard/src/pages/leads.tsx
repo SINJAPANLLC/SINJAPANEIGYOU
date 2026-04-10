@@ -60,6 +60,7 @@ export default function LeadsPage() {
   const [searchLimit, setSearchLimit] = useState([10]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
+  const [isBulkSending, setIsBulkSending] = useState(false);
 
   const { data: leads, isLoading: leadsLoading } = useListLeads(
     { businessId: selectedBusinessId ?? undefined, status: statusFilter !== "all" ? statusFilter : undefined },
@@ -156,34 +157,41 @@ export default function LeadsPage() {
     }
   };
 
-  const handleApplyTemplate = async (templateId: number) => {
+  const handleApplyTemplate = (templateId: number) => {
     const tmpl = templates?.find(t => t.id === templateId);
     if (!tmpl || !selectedLead) return;
-    setIsApplyingTemplate(true);
+    const company = selectedLead.companyName ?? "御社";
+    setEmailSubject(tmpl.subjectTemplate.replace(/{{company_name}}/g, company));
+    setEmailBody(tmpl.htmlTemplate.replace(/{{company_name}}/g, company));
+    setSelectedTemplateId(templateId);
+    toast({ title: `「${tmpl.name}」を適用しました` });
+  };
+
+  const handleBulkSend = async () => {
+    if (checkedLeadIds.size === 0) return;
+    if (!emailSubject || !emailBody) {
+      toast({ title: "件名と本文を入力してください", variant: "destructive" });
+      return;
+    }
+    setIsBulkSending(true);
     try {
-      const res = await fetch(`/api/templates/${templateId}/generate-ai`, {
+      const useSubject = selectedTemplate ? selectedTemplate.subjectTemplate : emailSubject;
+      const useHtml = selectedTemplate ? selectedTemplate.htmlTemplate : emailBody;
+      const res = await fetch("/api/leads/bulk-send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ leadId: selectedLeadId }),
+        body: JSON.stringify({ leadIds: Array.from(checkedLeadIds), subject: useSubject, html: useHtml }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setEmailSubject(data.subject);
-        setEmailBody(data.html);
-        toast({ title: `「${tmpl.name}」を適用しました` });
-      } else {
-        // fallback: simple substitution
-        const company = selectedLead.companyName ?? "御社";
-        setEmailSubject(tmpl.subjectTemplate.replace(/{{company_name}}/g, company));
-        setEmailBody(tmpl.htmlTemplate.replace(/{{company_name}}/g, company));
-        toast({ title: `「${tmpl.name}」を適用しました` });
-      }
-      setSelectedTemplateId(templateId);
+      if (!res.ok) throw new Error("Send failed");
+      const data = await res.json() as { sent: number; failed: number; skipped: number };
+      toast({ title: `送信完了: ${data.sent}件成功 / ${data.failed}件失敗 / ${data.skipped}件スキップ（メールなし）` });
+      setCheckedLeadIds(new Set());
+      queryClient.invalidateQueries({ queryKey: getListLeadsQueryKey({ businessId: selectedBusinessId ?? undefined }) });
     } catch {
-      toast({ title: "テンプレートの適用に失敗しました", variant: "destructive" });
+      toast({ title: "一括送信に失敗しました", variant: "destructive" });
     } finally {
-      setIsApplyingTemplate(false);
+      setIsBulkSending(false);
     }
   };
 
@@ -281,11 +289,12 @@ export default function LeadsPage() {
           <Button
             size="sm"
             className="rounded-none h-8 text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
-            disabled={checkedLeadIds.size === 0}
+            disabled={checkedLeadIds.size === 0 || isBulkSending}
+            onClick={handleBulkSend}
             data-testid="btn-bulk-send"
           >
             <Send className="w-3 h-3 mr-2" />
-            {checkedLeadIds.size > 0 ? `${checkedLeadIds.size}件を一括送信` : "一括送信"}
+            {isBulkSending ? "送信中..." : checkedLeadIds.size > 0 ? `${checkedLeadIds.size}件を一括送信` : "一括送信"}
           </Button>
         </div>
       </div>
@@ -497,24 +506,25 @@ export default function LeadsPage() {
 
                   <div className="space-y-2">
                     <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground border-b border-border pb-1">ライブプレビュー</div>
-                    <div className="border border-border bg-white min-h-[300px] overflow-hidden">
+                    <div className="border border-border bg-white min-h-[500px]">
                       {emailBody ? (
                         <iframe
                           srcDoc={emailBody}
                           title="メールプレビュー"
-                          className="w-full border-0"
-                          style={{ minHeight: 300, height: "100%" }}
+                          className="w-full border-0 block"
+                          style={{ minHeight: 500 }}
                           sandbox="allow-same-origin"
                           onLoad={(e) => {
                             const iframe = e.currentTarget;
                             const doc = iframe.contentDocument;
                             if (doc) {
-                              iframe.style.height = doc.documentElement.scrollHeight + "px";
+                              const h = doc.documentElement.scrollHeight;
+                              iframe.style.height = Math.max(500, h) + "px";
                             }
                           }}
                         />
                       ) : (
-                        <div className="text-center text-muted-foreground text-xs font-mono py-12">本文未入力</div>
+                        <div className="text-center text-muted-foreground text-xs font-mono py-24">本文未入力</div>
                       )}
                     </div>
                   </div>
