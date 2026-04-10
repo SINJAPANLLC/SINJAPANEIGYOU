@@ -1,5 +1,5 @@
 // PM2 ecosystem config for SIN JAPAN 営業自動化ダッシュボード
-// .env を source するシェルラッパー経由で起動
+// server.mjs が .env を読み込んでから API サーバーを起動する
 
 const APP_DIR = "/var/www/sinjapan-sales";
 
@@ -7,8 +7,8 @@ module.exports = {
   apps: [
     {
       name: "sinjapan-sales-api",
-      script: `${APP_DIR}/start.sh`,
-      interpreter: "bash",
+      script: `${APP_DIR}/server.mjs`,
+      interpreter: "node",
       cwd: APP_DIR,
       instances: 1,
       exec_mode: "fork",
