@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter, FileText, ChevronDown, CheckSquare, Square, Minus } from "lucide-react";
+import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter, FileText, ChevronDown, CheckSquare, Square, Minus, Plus } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -61,6 +61,10 @@ export default function LeadsPage() {
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null);
   const [isApplyingTemplate, setIsApplyingTemplate] = useState(false);
   const [isBulkSending, setIsBulkSending] = useState(false);
+
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+  const [addForm, setAddForm] = useState({ companyName: "", email: "", websiteUrl: "", phone: "", address: "" });
 
   const { data: leads, isLoading: leadsLoading } = useListLeads(
     { businessId: selectedBusinessId ?? undefined, status: statusFilter !== "all" ? statusFilter : undefined },
@@ -157,6 +161,36 @@ export default function LeadsPage() {
     }
   };
 
+  const handleAddLead = async () => {
+    if (!selectedBusinessId || !addForm.companyName.trim()) return;
+    setIsAdding(true);
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          businessId: selectedBusinessId,
+          companyName: addForm.companyName.trim(),
+          email: addForm.email.trim() || null,
+          websiteUrl: addForm.websiteUrl.trim() || null,
+          phone: addForm.phone.trim() || null,
+          address: addForm.address.trim() || null,
+          status: "unsent",
+        }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "リードを追加しました" });
+      setAddForm({ companyName: "", email: "", websiteUrl: "", phone: "", address: "" });
+      setIsAddOpen(false);
+      queryClient.invalidateQueries({ queryKey: getListLeadsQueryKey({ businessId: selectedBusinessId ?? undefined }) });
+    } catch {
+      toast({ title: "追加に失敗しました", variant: "destructive" });
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
   const handleApplyTemplate = (templateId: number) => {
     const tmpl = templates?.find(t => t.id === templateId);
     if (!tmpl || !selectedLead) return;
@@ -232,6 +266,81 @@ export default function LeadsPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 手動追加ダイアログ */}
+          <Dialog open={isAddOpen} onOpenChange={(open) => { setIsAddOpen(open); if (!open) setAddForm({ companyName: "", email: "", websiteUrl: "", phone: "", address: "" }); }}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="rounded-none h-8 text-xs uppercase tracking-widest border-border">
+                <Plus className="w-3 h-3 mr-2" /> 手動追加
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-none border-border sm:max-w-[480px]">
+              <DialogHeader>
+                <DialogTitle className="font-bold tracking-tight">リードを手動追加</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">会社名 *</Label>
+                  <Input
+                    placeholder="例: 株式会社〇〇"
+                    value={addForm.companyName}
+                    onChange={e => setAddForm(f => ({ ...f, companyName: e.target.value }))}
+                    className="rounded-none border-border h-9"
+                    onKeyDown={e => { if (e.key === "Enter" && addForm.companyName.trim()) handleAddLead(); }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">メールアドレス</Label>
+                  <Input
+                    type="email"
+                    placeholder="例: info@example.co.jp"
+                    value={addForm.email}
+                    onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
+                    className="rounded-none border-border h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ウェブサイトURL</Label>
+                  <Input
+                    placeholder="例: https://example.co.jp"
+                    value={addForm.websiteUrl}
+                    onChange={e => setAddForm(f => ({ ...f, websiteUrl: e.target.value }))}
+                    className="rounded-none border-border h-9"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">電話番号</Label>
+                    <Input
+                      placeholder="例: 03-0000-0000"
+                      value={addForm.phone}
+                      onChange={e => setAddForm(f => ({ ...f, phone: e.target.value }))}
+                      className="rounded-none border-border h-9"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-mono uppercase tracking-wider text-muted-foreground">住所</Label>
+                    <Input
+                      placeholder="例: 東京都渋谷区"
+                      value={addForm.address}
+                      onChange={e => setAddForm(f => ({ ...f, address: e.target.value }))}
+                      className="rounded-none border-border h-9"
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddOpen(false)} className="rounded-none text-xs uppercase tracking-widest h-9">キャンセル</Button>
+                <Button
+                  onClick={handleAddLead}
+                  disabled={!addForm.companyName.trim() || isAdding}
+                  className="rounded-none text-xs uppercase tracking-widest h-9"
+                >
+                  {isAdding ? "追加中..." : "追加"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
           <Dialog open={isSearchOpen} onOpenChange={setIsSearchOpen}>
             <DialogTrigger asChild>
               <Button size="sm" variant="outline" className="rounded-none h-8 text-xs uppercase tracking-widest border-border" data-testid="btn-collect-leads">
