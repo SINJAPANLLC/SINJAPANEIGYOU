@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Plus, Trash2, Building2, Play, Pause, RefreshCw } from "lucide-react";
+import { Clock, Plus, Trash2, Building2, RefreshCw, Mail } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -22,6 +22,12 @@ type CronJob = {
   lastRunAt: string | null;
   nextRunAt: string | null;
   createdAt: string;
+};
+
+type Template = {
+  id: number;
+  name: string;
+  subjectTemplate: string;
 };
 
 const TYPE_LABELS: Record<string, string> = {
@@ -51,23 +57,27 @@ function formatDate(dateStr: string | null) {
   }).format(new Date(dateStr));
 }
 
+const DEFAULT_FORM = {
+  name: "",
+  type: "lead_search",
+  schedulePreset: "0 9 * * 1",
+  cronExpression: "0 9 * * 1",
+  keyword: "",
+  location: "",
+  maxResults: "10",
+  templateId: "",
+};
+
 export default function SchedulePage() {
   const { selectedBusinessId } = useBusiness();
   const { toast } = useToast();
 
   const [jobs, setJobs] = useState<CronJob[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const [form, setForm] = useState({
-    name: "",
-    type: "lead_search",
-    schedulePreset: "0 9 * * 1",
-    cronExpression: "0 9 * * 1",
-    keyword: "",
-    location: "",
-    maxResults: "10",
-  });
+  const [form, setForm] = useState(DEFAULT_FORM);
 
   const fetchJobs = async () => {
     if (!selectedBusinessId) return;
@@ -80,10 +90,29 @@ export default function SchedulePage() {
     }
   };
 
-  useEffect(() => { fetchJobs(); }, [selectedBusinessId]);
+  const fetchTemplates = async () => {
+    if (!selectedBusinessId) return;
+    const res = await fetch(`/api/templates?businessId=${selectedBusinessId}`, { credentials: "include" });
+    if (res.ok) setTemplates(await res.json());
+  };
+
+  useEffect(() => {
+    fetchJobs();
+    fetchTemplates();
+  }, [selectedBusinessId]);
 
   const handleCreate = async () => {
     if (!selectedBusinessId || !form.name || !form.cronExpression) return;
+
+    const config: Record<string, unknown> = {};
+    if (form.type === "lead_search") {
+      config.keyword = form.keyword;
+      config.location = form.location;
+      config.maxResults = Number(form.maxResults);
+    } else if (form.type === "email_send") {
+      if (form.templateId && form.templateId !== "none") config.templateId = Number(form.templateId);
+    }
+
     const res = await fetch("/api/cron-jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -93,18 +122,14 @@ export default function SchedulePage() {
         name: form.name,
         type: form.type,
         cronExpression: form.cronExpression,
-        config: {
-          keyword: form.keyword,
-          location: form.location,
-          maxResults: Number(form.maxResults),
-        },
+        config,
         isActive: true,
       }),
     });
     if (res.ok) {
       toast({ title: "スケジュールを作成しました" });
       setIsCreateOpen(false);
-      setForm({ name: "", type: "lead_search", schedulePreset: "0 9 * * 1", cronExpression: "0 9 * * 1", keyword: "", location: "", maxResults: "10" });
+      setForm(DEFAULT_FORM);
       fetchJobs();
     } else {
       toast({ title: "作成に失敗しました", variant: "destructive" });
@@ -158,7 +183,7 @@ export default function SchedulePage() {
           <Button size="sm" variant="outline" onClick={fetchJobs} className="rounded-none h-8 w-8 p-0 border-border">
             <RefreshCw className="w-3.5 h-3.5" />
           </Button>
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+          <Dialog open={isCreateOpen} onOpenChange={open => { setIsCreateOpen(open); if (open) fetchTemplates(); }}>
             <DialogTrigger asChild>
               <Button size="sm" className="rounded-none h-8 text-xs uppercase tracking-widest">
                 <Plus className="w-3 h-3 mr-2" /> 新規作成
@@ -180,7 +205,7 @@ export default function SchedulePage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">タスクタイプ</Label>
-                  <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
+                  <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v, templateId: "" }))}>
                     <SelectTrigger className="rounded-none border-border h-9 text-sm">
                       <SelectValue />
                     </SelectTrigger>
@@ -258,6 +283,39 @@ export default function SchedulePage() {
                     </div>
                   </div>
                 )}
+
+                {form.type === "email_send" && (
+                  <div className="space-y-3 border border-border p-4">
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">送信設定</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-mono text-muted-foreground">使用テンプレート</Label>
+                      {templates.length === 0 ? (
+                        <div className="h-9 border border-border flex items-center px-3 text-sm text-muted-foreground font-mono">
+                          テンプレートがありません
+                        </div>
+                      ) : (
+                        <Select value={form.templateId} onValueChange={v => setForm(f => ({ ...f, templateId: v }))}>
+                          <SelectTrigger className="rounded-none border-border h-9 text-sm">
+                            <SelectValue placeholder="テンプレートを選択（任意）" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-none border-border">
+                            <SelectItem value="none" className="rounded-none text-sm text-muted-foreground">指定なし（最初のテンプレートを使用）</SelectItem>
+                            {templates.map(t => (
+                              <SelectItem key={t.id} value={String(t.id)} className="rounded-none text-sm">
+                                {t.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <p className="text-[10px] text-muted-foreground font-mono">未選択の場合は最初のテンプレートが使われます</p>
+                    </div>
+                    <div className="bg-muted/30 border border-border p-3 text-[11px] font-mono text-muted-foreground space-y-1">
+                      <p>対象: 未送信リード（email あり）</p>
+                      <p>変数: {"{{company_name}}"} が会社名に自動置換されます</p>
+                    </div>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsCreateOpen(false)} className="rounded-none text-xs uppercase tracking-widest h-9">キャンセル</Button>
@@ -290,6 +348,9 @@ export default function SchedulePage() {
           <div className="p-6 space-y-3">
             {jobs.map(job => {
               const config = (() => { try { return JSON.parse(job.config); } catch { return {}; } })();
+              const templateName = config.templateId
+                ? (templates.find(t => t.id === Number(config.templateId))?.name ?? `テンプレートID: ${config.templateId}`)
+                : null;
               return (
                 <div
                   key={job.id}
@@ -320,6 +381,12 @@ export default function SchedulePage() {
                       )}
                       {config.maxResults && (
                         <span>最大: <span className="text-foreground">{config.maxResults}件</span></span>
+                      )}
+                      {job.type === "email_send" && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="w-3 h-3" />
+                          テンプレート: <span className="text-foreground">{templateName ?? "最初のテンプレート"}</span>
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-5 text-[10px] font-mono text-muted-foreground/60">
