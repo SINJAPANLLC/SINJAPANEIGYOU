@@ -1,0 +1,84 @@
+Last login: Fri Apr 10 09:41:38 on console
+kazuyaotani@Mac ~ % ssh root@212.85.24.206
+root@212.85.24.206's password: 
+Welcome to Ubuntu 24.04.4 LTS (GNU/Linux 6.8.0-106-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Fri Apr 10 11:07:01 UTC 2026
+
+  System load:  0.06                Processes:             160
+  Usage of /:   16.3% of 192.69GB   Users logged in:       0
+  Memory usage: 18%                 IPv4 address for eth0: 212.85.24.206
+  Swap usage:   0%                  IPv6 address for eth0: 2a02:4780:59:cc86::1
+
+ * Strictly confined Kubernetes makes edge and IoT secure. Learn how MicroK8s
+   just raised the bar for easy, resilient and secure K8s cluster deployment.
+
+   https://ubuntu.com/engage/secure-kubernetes-at-the-edge
+
+Expanded Security Maintenance for Applications is not enabled.
+
+25 updates can be applied immediately.
+To see these additional updates run: apt list --upgradable
+
+13 additional security updates can be applied with ESM Apps.
+Learn more about enabling ESM Apps service at https://ubuntu.com/esm
+
+
+1 updates could not be installed automatically. For more details,
+see /var/log/unattended-upgrades/unattended-upgrades.log
+
+*** System restart required ***
+Last login: Wed Apr  8 08:25:09 2026 from 182.249.42.4
+root@srv1087935:~# pm2 list
+┌────┬────────────────────┬──────────┬──────┬───────────┬──────────┬──────────┐
+│ id │ name               │ mode     │ ↺    │ status    │ cpu      │ memory   │
+├────┼────────────────────┼──────────┼──────┼───────────┼──────────┼──────────┤
+│ 4  │ aiagent            │ fork     │ 4    │ online    │ 0%       │ 182.9mb  │
+│ 3  │ keimatch           │ fork     │ 0    │ online    │ 0%       │ 596.7mb  │
+│ 12 │ keisaiyou          │ fork     │ 6    │ online    │ 0%       │ 340.3mb  │
+│ 2  │ menz-esthe-town    │ fork     │ 0    │ online    │ 0%       │ 143.4mb  │
+│ 11 │ onlyu              │ fork     │ 0    │ online    │ 0%       │ 129.9mb  │
+│ 7  │ sinjapan-crm-api   │ fork     │ 0    │ online    │ 0%       │ 133.1mb  │
+│ 0  │ sinjapan-manager   │ fork     │ 0    │ online    │ 0%       │ 61.9mb   │
+│ 1  │ sinjapan-onlinesc… │ fork     │ 0    │ online    │ 0%       │ 99.0mb   │
+│ 5  │ sinjapanai         │ fork     │ 0    │ online    │ 0%       │ 107.4mb  │
+│ 6  │ sinjapanailive-api │ fork     │ 0    │ online    │ 0%       │ 106.2mb  │
+│ 9  │ sinjapanaisite-api │ fork     │ 0    │ online    │ 0%       │ 192.5mb  │
+│ 10 │ tiktokshindan      │ fork     │ 0    │ online    │ 0%       │ 159.3mb  │
+│ 8  │ tramatch           │ fork     │ 0    │ online    │ 0%       │ 226.2mb  │
+└────┴────────────────────┴──────────┴──────┴───────────┴──────────┴──────────┘
+root@srv1087935:~# ss -tlnp | grep LISTEN | awk '{print $4}' | cut -d: -f2 | sort -n
+
+
+
+
+22
+53
+53
+80
+443
+3001
+3002
+3009
+3010
+3100
+4000
+4111
+5000
+5002
+5003
+5004
+5005
+5006
+5050
+5432
+7880
+7881
+8008
+8099
+20000
+root@srv1087935:~# 
