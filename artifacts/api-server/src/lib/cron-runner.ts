@@ -91,13 +91,15 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
 
       const token = uuidv4();
       await db.insert(unsubscribesTable).values({ leadId: lead.id, token }).onConflictDoNothing();
-      const unsubLink = `<p style="font-size:12px;color:#999;margin-top:20px;">配信停止は<a href="${buildUnsubscribeLink(token)}">こちら</a></p>`;
-
-      const html = template.htmlTemplate
+      const unsubUrl = buildUnsubscribeLink(token);
+      const fallbackUnsubLink = `<p style="font-size:12px;color:#999;margin-top:20px;">配信停止は<a href="${unsubUrl}">こちら</a></p>`;
+      const replaced = template.htmlTemplate
         .replace(/{{company_name}}/g, company)
         .replace(/{{service_name}}/g, business.name)
         .replace(/{{service_url}}/g, business.serviceUrl || "")
-        + unsubLink
+        .replace(/{{unsubscribe_url}}/g, unsubUrl);
+      const html = replaced
+        + (replaced.includes(unsubUrl) ? "" : fallbackUnsubLink)
         + (business.signatureHtml || "");
 
       const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });
@@ -189,13 +191,15 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
 
     const token = uuidv4();
     await db.insert(unsubscribesTable).values({ leadId: lead.id, token }).onConflictDoNothing();
-    const unsubLink = `<p style="font-size:12px;color:#999;margin-top:20px;">配信停止は<a href="${buildUnsubscribeLink(token)}">こちら</a></p>`;
-
-    const html = template.htmlTemplate
+    const unsubUrl = buildUnsubscribeLink(token);
+    const fallbackUnsubLink = `<p style="font-size:12px;color:#999;margin-top:20px;">配信停止は<a href="${unsubUrl}">こちら</a></p>`;
+    const replaced = template.htmlTemplate
       .replace(/{{company_name}}/g, company)
       .replace(/{{service_name}}/g, business.name)
       .replace(/{{service_url}}/g, business.serviceUrl || "")
-      + unsubLink
+      .replace(/{{unsubscribe_url}}/g, unsubUrl);
+    const html = replaced
+      + (replaced.includes(unsubUrl) ? "" : fallbackUnsubLink)
       + (business.signatureHtml || "");
 
     const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });

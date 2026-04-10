@@ -151,12 +151,15 @@ router.post("/leads/bulk-send", requireAuth, async (req, res): Promise<void> => 
     const finalSubject = subject.replace(/{{company_name}}/g, company).replace(/{{service_name}}/g, business.name).replace(/{{service_url}}/g, business.serviceUrl || "");
     const token = uuidv4();
     await db.insert(unsubscribesTable).values({ leadId: lead.id, token }).onConflictDoNothing();
-    const unsubLink = `<p style="font-size:12px;color:#999;margin-top:20px;">配信停止は<a href="${buildUnsubscribeLink(token)}">こちら</a></p>`;
-    const finalHtml = html
+    const unsubUrl = buildUnsubscribeLink(token);
+    const fallbackUnsubLink = `<p style="font-size:12px;color:#999;margin-top:20px;">配信停止は<a href="${unsubUrl}">こちら</a></p>`;
+    const replaced = html
       .replace(/{{company_name}}/g, company)
       .replace(/{{service_name}}/g, business.name)
       .replace(/{{service_url}}/g, business.serviceUrl || "")
-      + unsubLink
+      .replace(/{{unsubscribe_url}}/g, unsubUrl);
+    const finalHtml = replaced
+      + (replaced.includes(unsubUrl) ? "" : fallbackUnsubLink)
       + (business.signatureHtml || "");
 
     const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
