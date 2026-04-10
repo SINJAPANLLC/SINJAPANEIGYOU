@@ -44,7 +44,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider>
-      <div className="flex min-h-screen w-full bg-background text-foreground">
+      <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
         <Sidebar className="border-r border-border">
           <SidebarContent className="px-3 py-4">
             {/* ビジネス切替 */}
@@ -117,7 +117,7 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
           </SidebarFooter>
         </Sidebar>
 
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
           {children}
         </main>
       </div>
