@@ -110,17 +110,19 @@ echo "  PM2 起動"
 echo "============================================"
 mkdir -p /var/log/pm2
 
-# ecosystem.config の PORT を更新
-sed -i "s/\"PORT\": \"[0-9]*\"/\"PORT\": \"${API_PORT}\"/" "$APP_DIR/deployment/ecosystem.config.cjs"
+# start.sh を生成 (.env を source して Node.js を exec)
+cat > "$APP_DIR/start.sh" << 'STARTSCRIPT'
+#!/bin/bash
+set -a
+source /var/www/sinjapan-sales/.env
+set +a
+exec node /var/www/sinjapan-sales/artifacts/api-server/dist/index.mjs
+STARTSCRIPT
+chmod +x "$APP_DIR/start.sh"
+echo "✓  start.sh 生成完了"
 
 # 既存プロセスを停止
 pm2 delete sinjapan-sales-api 2>/dev/null || true
-
-# .env を読み込んでPM2に渡す
-set -a
-# shellcheck source=/dev/null
-source "$APP_DIR/.env"
-set +a
 
 pm2 start "$APP_DIR/deployment/ecosystem.config.cjs"
 pm2 save
