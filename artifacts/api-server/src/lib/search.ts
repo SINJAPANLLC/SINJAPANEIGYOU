@@ -8,34 +8,41 @@ interface SearchResult {
   description?: string;
 }
 
-export async function searchBrave(query: string, count = 10): Promise<SearchResult[]> {
-  const apiKey = process.env.BRAVE_API_KEY;
-  if (!apiKey) {
-    logger.warn("BRAVE_API_KEY not set, returning empty results");
+export async function searchGoogle(query: string, count = 10): Promise<SearchResult[]> {
+  const apiKey = process.env.GOOGLE_API_KEY;
+  const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
+  if (!apiKey || !cx) {
+    logger.warn("GOOGLE_API_KEY or GOOGLE_SEARCH_ENGINE_ID not set, returning empty results");
     return [];
   }
+
+  const results: SearchResult[] = [];
+  const perPage = Math.min(count, 10);
+  const pages = Math.ceil(count / 10);
 
   try {
-    const response = await axios.get("https://api.search.brave.com/res/v1/web/search", {
-      params: { q: query, count },
-      headers: {
-        Accept: "application/json",
-        "Accept-Encoding": "gzip",
-        "X-Subscription-Token": apiKey,
-      },
-      timeout: 10000,
-    });
+    for (let page = 0; page < pages && results.length < count; page++) {
+      const start = page * 10 + 1;
+      const response = await axios.get("https://www.googleapis.com/customsearch/v1", {
+        params: { key: apiKey, cx, q: query, num: perPage, start },
+        timeout: 10000,
+      });
 
-    const results = response.data?.web?.results || [];
-    return results.map((r: any) => ({
-      url: r.url,
-      title: r.title,
-      description: r.description,
-    }));
+      const items = response.data?.items || [];
+      for (const item of items) {
+        if (results.length >= count) break;
+        results.push({
+          url: item.link,
+          title: item.title,
+          description: item.snippet,
+        });
+      }
+    }
   } catch (err: any) {
-    logger.error({ err: err?.message }, "Brave search failed");
-    return [];
+    logger.error({ err: err?.message }, "Google search failed");
   }
+
+  return results;
 }
 
 export async function searchAndCrawlLeads(
@@ -71,7 +78,7 @@ export async function searchAndCrawlLeads(
   for (const query of queries) {
     if (results.length >= maxResults) break;
 
-    const searchResults = await searchBrave(query, 10);
+    const searchResults = await searchGoogle(query, 10);
     for (const r of searchResults) {
       if (results.length >= maxResults) break;
       if (seen.has(r.url)) continue;
