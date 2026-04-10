@@ -191,10 +191,11 @@ export default function SchedulePage() {
                 <Plus className="w-3 h-3 mr-2" /> 新規作成
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-none border-border max-w-lg">
-              <DialogHeader>
+            <DialogContent className="rounded-none border-border max-w-lg max-h-[90vh] flex flex-col">
+              <DialogHeader className="shrink-0">
                 <DialogTitle className="font-bold font-mono tracking-widest uppercase text-sm">スケジュールを作成</DialogTitle>
               </DialogHeader>
+              <div className="flex-1 overflow-y-auto min-h-0">
               <div className="space-y-5 py-2">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">スケジュール名</Label>
@@ -323,7 +324,8 @@ export default function SchedulePage() {
                   </div>
                 )}
               </div>
-              <DialogFooter>
+              </div>
+              <DialogFooter className="shrink-0 pt-2 border-t border-border">
                 <Button variant="outline" onClick={() => setIsCreateOpen(false)} className="rounded-none text-xs uppercase tracking-widest h-9">キャンセル</Button>
                 <Button onClick={handleCreate} disabled={!form.name || !form.cronExpression} className="rounded-none text-xs uppercase tracking-widest h-9">
                   作成する
