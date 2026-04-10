@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter, FileText, ChevronDown, CheckSquare, Square, Minus, Plus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Search, Sparkles, Building2, Globe, Mail, Phone, MapPin, Send, Filter, FileText, ChevronDown, CheckSquare, Square, Minus, Plus, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -199,6 +200,34 @@ export default function LeadsPage() {
     setEmailBody(tmpl.htmlTemplate.replace(/{{company_name}}/g, company));
     setSelectedTemplateId(templateId);
     toast({ title: `「${tmpl.name}」を適用しました` });
+  };
+
+  const handleDeleteLead = async (leadId: number) => {
+    try {
+      const res = await fetch(`/api/leads/${leadId}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      toast({ title: "リードを削除しました" });
+      if (selectedLeadId === leadId) setSelectedLeadId(null);
+      setCheckedLeadIds(prev => { const n = new Set(prev); n.delete(leadId); return n; });
+      queryClient.invalidateQueries({ queryKey: getListLeadsQueryKey({ businessId: selectedBusinessId ?? undefined }) });
+    } catch {
+      toast({ title: "削除に失敗しました", variant: "destructive" });
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (checkedLeadIds.size === 0) return;
+    try {
+      await Promise.all(Array.from(checkedLeadIds).map(id =>
+        fetch(`/api/leads/${id}`, { method: "DELETE", credentials: "include" })
+      ));
+      toast({ title: `${checkedLeadIds.size}件のリードを削除しました` });
+      setCheckedLeadIds(new Set());
+      if (checkedLeadIds.has(selectedLeadId ?? -1)) setSelectedLeadId(null);
+      queryClient.invalidateQueries({ queryKey: getListLeadsQueryKey({ businessId: selectedBusinessId ?? undefined }) });
+    } catch {
+      toast({ title: "削除に失敗しました", variant: "destructive" });
+    }
   };
 
   const handleBulkSend = async () => {
@@ -395,6 +424,32 @@ export default function LeadsPage() {
             </DialogContent>
           </Dialog>
           
+          {checkedLeadIds.size > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="rounded-none h-8 text-xs uppercase tracking-widest border-destructive/40 text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="w-3 h-3 mr-2" />
+                  {checkedLeadIds.size}件を削除
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="rounded-none border-border">
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="font-bold">リードを削除しますか？</AlertDialogTitle>
+                  <AlertDialogDescription className="text-muted-foreground text-sm">
+                    選択した {checkedLeadIds.size} 件のリードを削除します。この操作は取り消せません。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="rounded-none text-xs uppercase tracking-widest">キャンセル</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleBulkDelete} className="rounded-none text-xs uppercase tracking-widest bg-destructive text-white hover:bg-destructive/90">削除する</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
           <Button
             size="sm"
             className="rounded-none h-8 text-xs uppercase tracking-widest bg-foreground text-background hover:bg-foreground/90 disabled:opacity-40"
@@ -467,9 +522,18 @@ export default function LeadsPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between mb-1">
                         <h4 className="font-bold text-sm truncate pr-2 group-hover:text-foreground">{lead.companyName || '社名不明'}</h4>
-                        <span className={`text-[10px] px-1.5 py-0.5 border font-mono uppercase tracking-wider whitespace-nowrap shrink-0 ${STATUS_COLORS[lead.status]}`}>
-                          {STATUS_LABELS[lead.status]}
-                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className={`text-[10px] px-1.5 py-0.5 border font-mono uppercase tracking-wider whitespace-nowrap ${STATUS_COLORS[lead.status]}`}>
+                            {STATUS_LABELS[lead.status]}
+                          </span>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDeleteLead(lead.id); }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-muted-foreground hover:text-destructive"
+                            title="削除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
                         {lead.score !== null && lead.score !== undefined && (
@@ -577,8 +641,27 @@ export default function LeadsPage() {
         <div className="flex-1 min-w-[300px] bg-card flex flex-col overflow-hidden">
           {selectedLeadId && selectedLead ? (
             <>
-              <div className="h-12 border-b border-border flex items-center px-4 shrink-0 bg-muted/10">
+              <div className="h-12 border-b border-border flex items-center justify-between px-4 shrink-0 bg-muted/10">
                 <div className="text-xs font-mono font-bold tracking-widest uppercase">ターゲット情報・プレビュー</div>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-none text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent className="rounded-none border-border">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle className="font-bold">リードを削除しますか？</AlertDialogTitle>
+                      <AlertDialogDescription className="text-muted-foreground text-sm">
+                        「{selectedLead.companyName}」を削除します。この操作は取り消せません。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel className="rounded-none text-xs uppercase tracking-widest">キャンセル</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handleDeleteLead(selectedLeadId!)} className="rounded-none text-xs uppercase tracking-widest bg-destructive text-white hover:bg-destructive/90">削除する</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
               <ScrollArea className="flex-1">
                 <div className="p-6 space-y-8">

@@ -13,8 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Send, Play, Pause, FileText, CheckCircle2 } from "lucide-react";
+import { Building2, Send, Play, Pause, FileText, CheckCircle2, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -100,6 +101,17 @@ export default function CampaignsPage() {
         onError: () => toast({ title: "ステータスの更新に失敗しました", variant: "destructive" })
       }
     );
+  };
+
+  const handleDeleteCampaign = async (id: number) => {
+    try {
+      const res = await fetch(`/api/campaigns/${id}`, { method: "DELETE", credentials: "include" });
+      if (!res.ok) throw new Error("Failed");
+      queryClient.invalidateQueries({ queryKey: getListCampaignsQueryKey() });
+      toast({ title: "キャンペーンを削除しました" });
+    } catch {
+      toast({ title: "削除に失敗しました", variant: "destructive" });
+    }
   };
 
   const handleSendCampaign = (id: number) => {
@@ -237,6 +249,25 @@ export default function CampaignsPage() {
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 md:border-l md:border-border md:pl-4">
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 rounded-none text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="rounded-none border-border">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle className="font-bold">キャンペーンを削除しますか？</AlertDialogTitle>
+                          <AlertDialogDescription className="text-muted-foreground text-sm">
+                            「{campaign.name}」を削除します。この操作は取り消せません。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="rounded-none text-xs uppercase tracking-widest">キャンセル</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDeleteCampaign(campaign.id)} className="rounded-none text-xs uppercase tracking-widest bg-destructive text-white hover:bg-destructive/90">削除する</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                     {campaign.status === 'draft' && (
                       <Button 
                         size="sm" 
