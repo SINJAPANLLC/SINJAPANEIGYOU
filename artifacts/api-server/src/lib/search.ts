@@ -39,7 +39,8 @@ export async function searchGoogle(query: string, count = 10): Promise<SearchRes
       }
     }
   } catch (err: any) {
-    logger.error({ err: err?.message }, "Google search failed");
+    const detail = err?.response?.data ? JSON.stringify(err.response.data) : err?.message;
+    logger.error({ err: detail }, "Google search failed");
   }
 
   return results;

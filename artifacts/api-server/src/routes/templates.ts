@@ -23,6 +23,60 @@ async function ownsBusiness(userId: string, businessId: number) {
   return b;
 }
 
+router.post("/email/generate", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const { leadId, businessId } = req.body;
+  if (!leadId || !businessId) {
+    res.status(400).json({ error: "leadId and businessId are required" });
+    return;
+  }
+  const [business] = await db.select().from(businessesTable).where(
+    and(eq(businessesTable.id, Number(businessId)), eq(businessesTable.userId, userId))
+  );
+  if (!business) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const [lead] = await db.select().from(leadsTable).where(eq(leadsTable.id, Number(leadId)));
+  if (!lead) { res.status(404).json({ error: "Lead not found" }); return; }
+
+  const companyName = lead.companyName || "御社";
+  const OpenAI = (await import("openai")).default;
+  const client = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+    ...(process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ? { baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL } : {}),
+  });
+  try {
+    const prompt = `あなたは日本語のBtoB営業メールの専門家です。以下の情報を使って自然な日本語の営業メールを生成してください。
+
+送信先企業: ${companyName}
+自社サービス名: ${business.name}
+自社サービスURL: ${business.serviceUrl || ""}
+送信者名: ${business.senderName || ""}
+
+要件:
+- スパムに見えない、誠実で価値提案が明確なメール
+- 件名は開封率が高い簡潔なもの
+- 本文はHTML形式（<p>タグなど使用可）
+- 押しつけがましくなく、相手の状況に寄り添う内容
+
+以下のJSON形式で返してください:
+{"subject": "件名", "html": "<p>HTML本文</p>"}`;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+    });
+    const parsed = JSON.parse(response.choices[0]?.message?.content || "{}");
+    res.json({ subject: parsed.subject || `${companyName}様へのご提案`, html: parsed.html || `<p>${companyName}様、はじめまして。</p>` });
+  } catch (err: any) {
+    // fallback
+    res.json({
+      subject: `${companyName}様へのご提案`,
+      html: `<p>${companyName}様</p>\n<p>はじめまして。${business.name}の${business.senderName || "担当"}と申します。</p>\n<p>この度、貴社のご発展に貢献できるサービスをご提案したくご連絡いたしました。</p>\n<p>ご興味がございましたら、お気軽にご返信ください。</p>`,
+    });
+  }
+});
+
 router.post("/ai/generate-template", requireAuth, async (req, res): Promise<void> => {
   const { description } = req.body;
   if (!description || typeof description !== "string" || description.trim().length < 5) {

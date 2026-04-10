@@ -116,25 +116,26 @@ export default function LeadsPage() {
     );
   };
 
-  const handleGenerateAi = () => {
-    if (!selectedLeadId) return;
-    
+  const handleGenerateAi = async () => {
+    if (!selectedLeadId || !selectedBusinessId) return;
     setIsGenerating(true);
-    generateEmailMutation.mutate(
-      { data: { leadId: selectedLeadId } },
-      {
-        onSuccess: (res) => {
-          setEmailSubject(res.subject);
-          setEmailBody(res.html);
-          setIsGenerating(false);
-          toast({ title: "AIメールを生成しました" });
-        },
-        onError: () => {
-          setIsGenerating(false);
-          toast({ title: "AI生成に失敗しました", variant: "destructive" });
-        }
-      }
-    );
+    try {
+      const res = await fetch("/api/email/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ leadId: selectedLeadId, businessId: selectedBusinessId }),
+      });
+      if (!res.ok) throw new Error("AI generation failed");
+      const data = await res.json();
+      setEmailSubject(data.subject);
+      setEmailBody(data.html);
+      toast({ title: "AIメールを生成しました" });
+    } catch {
+      toast({ title: "AI生成に失敗しました", variant: "destructive" });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const toggleCheck = (id: number, e: React.MouseEvent) => {
@@ -381,7 +382,7 @@ export default function LeadsPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={isApplyingTemplate || !templates?.length}
+                        disabled={isApplyingTemplate}
                         className="h-7 rounded-none text-[10px] uppercase tracking-widest border-border"
                       >
                         <FileText className="w-3 h-3 mr-1.5" />
@@ -389,22 +390,26 @@ export default function LeadsPage() {
                         <ChevronDown className="w-3 h-3 ml-1.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="rounded-none border-border max-w-[240px] max-h-[300px] overflow-y-auto">
-                      {templates?.length === 0 && (
-                        <DropdownMenuItem disabled className="text-xs text-muted-foreground rounded-none">
-                          テンプレートがありません
-                        </DropdownMenuItem>
-                      )}
-                      {templates?.map(t => (
-                        <DropdownMenuItem
-                          key={t.id}
-                          onClick={() => handleApplyTemplate(t.id)}
-                          className={`rounded-none cursor-pointer text-xs ${t.id === selectedTemplateId ? "font-bold bg-muted" : ""}`}
-                        >
-                          <FileText className="w-3 h-3 mr-2 shrink-0" />
-                          <span className="truncate">{t.name}</span>
-                        </DropdownMenuItem>
-                      ))}
+                    <DropdownMenuContent align="end" className="rounded-none border-border w-[240px] p-0">
+                      <ScrollArea className="max-h-[300px]">
+                        <div className="p-1">
+                          {(!templates || templates.length === 0) && (
+                            <DropdownMenuItem disabled className="text-xs text-muted-foreground rounded-none">
+                              テンプレートがありません
+                            </DropdownMenuItem>
+                          )}
+                          {templates?.map(t => (
+                            <DropdownMenuItem
+                              key={t.id}
+                              onClick={() => handleApplyTemplate(t.id)}
+                              className={`rounded-none cursor-pointer text-xs ${t.id === selectedTemplateId ? "font-bold bg-muted" : ""}`}
+                            >
+                              <FileText className="w-3 h-3 mr-2 shrink-0" />
+                              <span className="truncate">{t.name}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </div>
+                      </ScrollArea>
                     </DropdownMenuContent>
                   </DropdownMenu>
 
