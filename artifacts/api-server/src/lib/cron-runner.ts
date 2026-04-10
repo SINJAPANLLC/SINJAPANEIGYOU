@@ -78,7 +78,7 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
     );
     const leadsWithEmail = leads.filter(l => l.email);
 
-    const fromEmail = business.senderEmail || process.env.SMTP_USER || "";
+    const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
     const fromName = business.senderName || business.name;
     let sent = 0;
 
@@ -176,7 +176,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
   }
 
   const leadsWithEmail = newLeads.filter(l => l.email);
-  const fromEmail = business.senderEmail || process.env.SMTP_USER || "";
+  const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
   const fromName = business.senderName || business.name;
   let sent = 0;
 

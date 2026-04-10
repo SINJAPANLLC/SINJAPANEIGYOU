@@ -159,7 +159,7 @@ router.post("/leads/bulk-send", requireAuth, async (req, res): Promise<void> => 
       + unsubLink
       + (business.signatureHtml || "");
 
-    const fromEmail = business.senderEmail || process.env.SMTP_USER || "";
+    const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
     const fromName = business.senderName || business.name;
 
     const result = await sendEmail({
