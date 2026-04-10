@@ -241,6 +241,7 @@ async function syncJobs() {
       let config: Record<string, unknown> = {};
       try { config = JSON.parse(job.config || "{}"); } catch { config = {}; }
 
+      const timezone = typeof config.timezone === "string" ? config.timezone : "Asia/Tokyo";
       const task = cron.schedule(job.cronExpression, async () => {
         logger.info({ jobId: job.id, type: job.type }, "cron: running job");
         await db.update(cronJobsTable).set({ lastRunAt: new Date() }).where(eq(cronJobsTable.id, job.id));
@@ -252,7 +253,7 @@ async function syncJobs() {
         } else if (job.type === "lead_search_and_send") {
           await runLeadSearchAndSend(job.id, businessId, config);
         }
-      });
+      }, { timezone });
 
       activeTasks.set(job.id, task);
       logger.info({ jobId: job.id, expr: job.cronExpression, type: job.type }, "cron: scheduled job");
