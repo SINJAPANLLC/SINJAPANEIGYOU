@@ -763,10 +763,11 @@ export default function TemplatesPage() {
                 テンプレートから選ぶ
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-none border-border max-w-4xl">
-              <DialogHeader>
+            <DialogContent className="rounded-none border-border max-w-4xl max-h-[90vh] flex flex-col">
+              <DialogHeader className="shrink-0">
                 <DialogTitle className="font-bold">スターターテンプレートを選ぶ</DialogTitle>
               </DialogHeader>
+              <div className="flex-1 overflow-y-auto pr-1">
               <div className="grid grid-cols-3 gap-3 mt-4">
                 {STARTER_TEMPLATES.map((s) => (
                   <button
@@ -793,6 +794,7 @@ export default function TemplatesPage() {
                     </div>
                   </button>
                 ))}
+              </div>
               </div>
             </DialogContent>
           </Dialog>
