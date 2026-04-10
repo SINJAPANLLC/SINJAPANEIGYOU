@@ -37,7 +37,7 @@ export async function generateEmailTemplate(opts: {
 }`;
 
     const response = await client.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     });
@@ -92,7 +92,7 @@ export async function generateSalesEmail(opts: {
 }`;
 
     const response = await client.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
     });
