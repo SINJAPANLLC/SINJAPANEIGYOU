@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Clock, Plus, Trash2, Building2, RefreshCw, Mail } from "lucide-react";
+import { Clock, Plus, Trash2, Building2, RefreshCw, Mail, Play } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -77,6 +77,7 @@ export default function SchedulePage() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [runningJobs, setRunningJobs] = useState<Set<number>>(new Set());
 
   const [form, setForm] = useState(DEFAULT_FORM);
 
@@ -158,6 +159,24 @@ export default function SchedulePage() {
       toast({ title: "スケジュールを削除しました" });
     } else {
       toast({ title: "削除に失敗しました", variant: "destructive" });
+    }
+  };
+
+  const handleRunNow = async (job: CronJob) => {
+    setRunningJobs(prev => new Set(prev).add(job.id));
+    toast({ title: `「${job.name}」を実行開始しました`, description: "バックグラウンドで処理中..." });
+    try {
+      const res = await fetch(`/api/cron-jobs/${job.id}/run`, { method: "POST", credentials: "include" });
+      if (res.ok) {
+        toast({ title: `「${job.name}」が完了しました` });
+        fetchJobs();
+      } else {
+        toast({ title: "実行に失敗しました", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "ネットワークエラー", variant: "destructive" });
+    } finally {
+      setRunningJobs(prev => { const s = new Set(prev); s.delete(job.id); return s; });
     }
   };
 
@@ -404,6 +423,20 @@ export default function SchedulePage() {
 
                   {/* コントロール */}
                   <div className="flex items-center gap-3 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRunNow(job)}
+                      disabled={runningJobs.has(job.id)}
+                      className="rounded-none h-8 text-xs uppercase tracking-widest border-border gap-1.5"
+                    >
+                      {runningJobs.has(job.id) ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                      {runningJobs.has(job.id) ? "実行中..." : "今すぐ実行"}
+                    </Button>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-mono text-muted-foreground">{job.isActive ? "有効" : "無効"}</span>
                       <Switch

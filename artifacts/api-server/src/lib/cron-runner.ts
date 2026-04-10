@@ -273,3 +273,29 @@ export function startCronRunner() {
   cron.schedule("*/5 * * * *", syncJobs);
   logger.info("cron: runner started");
 }
+
+// ジョブを即時実行（APIからのマニュアルトリガー用）
+export async function runJobById(jobId: number): Promise<{ ok: boolean; message: string }> {
+  try {
+    const [job] = await db.select().from(cronJobsTable).where(eq(cronJobsTable.id, jobId));
+    if (!job) return { ok: false, message: "Job not found" };
+
+    let config: Record<string, unknown> = {};
+    try { config = JSON.parse(job.config || "{}"); } catch { config = {}; }
+
+    await db.update(cronJobsTable).set({ lastRunAt: new Date() }).where(eq(cronJobsTable.id, job.id));
+
+    if (job.type === "lead_search") {
+      await runLeadSearch(job.id, job.businessId, config);
+    } else if (job.type === "email_send") {
+      await runEmailSend(job.id, job.businessId, config);
+    } else if (job.type === "lead_search_and_send") {
+      await runLeadSearchAndSend(job.id, job.businessId, config);
+    }
+
+    return { ok: true, message: `Job ${jobId} completed` };
+  } catch (err: any) {
+    logger.error({ err, jobId }, "runJobById error");
+    return { ok: false, message: err?.message || "Unknown error" };
+  }
+}

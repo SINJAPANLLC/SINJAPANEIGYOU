@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, cronJobsTable, businessesTable } from "@workspace/db";
 import { requireAuth, getUserId } from "../lib/auth";
+import { runJobById } from "../lib/cron-runner";
 
 const router: IRouter = Router();
 
@@ -58,6 +59,20 @@ router.patch("/cron-jobs/:id", requireAuth, async (req, res): Promise<void> => {
 
   const [updated] = await db.update(cronJobsTable).set(updates).where(eq(cronJobsTable.id, id)).returning();
   res.json(updated);
+});
+
+// マニュアル即時実行（バックグラウンドで走らせてすぐ202を返す）
+router.post("/cron-jobs/:id/run", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const id = Number(req.params.id);
+
+  const [existing] = await db.select().from(cronJobsTable).where(eq(cronJobsTable.id, id));
+  if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+  if (!(await ownsBusiness(userId, existing.businessId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  // 即時に202を返してバックグラウンドで実行
+  res.status(202).json({ ok: true, message: `Job ${id} started in background` });
+  runJobById(id).catch(() => {});
 });
 
 router.delete("/cron-jobs/:id", requireAuth, async (req, res): Promise<void> => {
