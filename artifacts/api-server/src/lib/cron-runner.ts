@@ -6,7 +6,7 @@ import { sendEmail } from "./mailer";
 import { logger } from "./logger";
 import { v4 as uuidv4 } from "uuid";
 
-const activeTasks = new Map<number, cron.ScheduledTask>();
+const activeTasks = new Map<number, ReturnType<typeof cron.schedule>>();
 
 function buildUnsubscribeLink(token: string) {
   const base = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || "localhost"}`;

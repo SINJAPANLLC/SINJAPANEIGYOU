@@ -35,7 +35,7 @@ export async function searchYahooJapan(query: string, count = 20): Promise<Searc
     const seen = new Set<string>();
 
     // Primary: use .sw-Card anchor links (Yahoo Japan's current HTML structure)
-    $(".sw-Card a").each((_, el) => {
+    $(".sw-Card a").each((_, el): false | void => {
       if (results.length >= count) return false;
       const href = $(el).attr("href") || "";
       const h3Title = $(el).find("h3").text().trim();
@@ -53,11 +53,12 @@ export async function searchYahooJapan(query: string, count = 20): Promise<Searc
         seen.add(href);
         results.push({ url: href, title, snippet });
       }
+      return undefined;
     });
 
     // Fallback: broader anchor scan
     if (results.length < 3) {
-      $("a[href^='http']").each((_, el) => {
+      $("a[href^='http']").each((_, el): false | void => {
         if (results.length >= count) return false;
         const href = $(el).attr("href") || "";
         const title = $(el).text().trim().split("\n")[0].trim();
@@ -71,6 +72,7 @@ export async function searchYahooJapan(query: string, count = 20): Promise<Searc
           seen.add(href);
           results.push({ url: href, title });
         }
+        return undefined;
       });
     }
 

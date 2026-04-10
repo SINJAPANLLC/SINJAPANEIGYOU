@@ -75,9 +75,11 @@ router.post("/campaigns", requireAuth, async (req, res): Promise<void> => {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
+  const { scheduledAt, ...rest } = parsed.data;
   const [campaign] = await db.insert(campaignsTable).values({
-    ...parsed.data,
+    ...rest,
     status: "draft",
+    ...(scheduledAt != null ? { scheduledAt: new Date(scheduledAt) } : {}),
   }).returning();
   res.status(201).json(campaign);
 });
@@ -113,9 +115,15 @@ router.patch("/campaigns/:id", requireAuth, async (req, res): Promise<void> => {
     res.status(404).json({ error: "Campaign not found" });
     return;
   }
+  const { scheduledAt: updScheduledAt, ...updateRest } = parsed.data;
   const [campaign] = await db
     .update(campaignsTable)
-    .set(parsed.data)
+    .set({
+      ...updateRest,
+      ...(updScheduledAt !== undefined
+        ? { scheduledAt: updScheduledAt != null ? new Date(updScheduledAt) : null }
+        : {}),
+    })
     .where(eq(campaignsTable.id, params.data.id))
     .returning();
   res.json(campaign);
