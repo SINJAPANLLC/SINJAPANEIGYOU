@@ -333,7 +333,7 @@ export async function searchAndCrawlLeads(
     const candidateTarget = needed * 6;
 
     const searchSeen = new Set<string>([...globalSeen]);
-    const candidates = await gatherSearchResults(queries, searchSeen, candidateTarget, round <= 2 ? 2 : 3);
+    const candidates = await gatherSearchResults(queries, searchSeen, candidateTarget, round <= 2 ? 4 : 6);
 
     if (candidates.length === 0) {
       logger.info({ round }, "No more candidates, stopping early");
