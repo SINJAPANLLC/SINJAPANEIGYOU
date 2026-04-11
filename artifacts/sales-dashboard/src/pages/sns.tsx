@@ -5,8 +5,6 @@ import {
   Repeat2,
   MessageCircle,
   UserPlus,
-  Play,
-  Pause,
   CheckCircle2,
   XCircle,
   AlertCircle,
@@ -15,6 +13,8 @@ import {
   Eye,
   EyeOff,
   Zap,
+  Sparkles,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,6 +50,16 @@ interface Log {
 interface Account {
   username: string | null;
   isConnected: boolean;
+  persona?: PersonaData | null;
+}
+
+interface PersonaData {
+  name: string;
+  job: string;
+  tone: string;
+  topics: string;
+  bio: string;
+  style: string;
 }
 
 const ACTION_CONFIG: Record<ActionType, { label: string; icon: React.ElementType; color: string; desc: string }> = {
@@ -68,7 +78,7 @@ export default function SnsPage() {
   const { toast } = useToast();
   const { selectedBusinessId } = useBusiness();
 
-  const [activeTab, setActiveTab] = useState<"account" | "post" | "rules" | "logs">("account");
+  const [activeTab, setActiveTab] = useState<"account" | "persona" | "post" | "rules" | "logs">("account");
   const [account, setAccount] = useState<Account | null>(null);
   const [rules, setRules] = useState<Rule[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
@@ -87,6 +97,12 @@ export default function SnsPage() {
   // 投稿フォーム
   const [postText, setPostText] = useState("");
   const [posting, setPosting] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [postTheme, setPostTheme] = useState("");
+
+  // ペルソナ
+  const [persona, setPersona] = useState<PersonaData>({ name: "", job: "", tone: "", topics: "", bio: "", style: "" });
+  const [savingPersona, setSavingPersona] = useState(false);
 
   // ルール編集フォーム
   const [ruleForm, setRuleForm] = useState<{ keywords: string; dailyLimit: number; intervalSeconds: number; replyTemplate: string }>({
@@ -106,10 +122,50 @@ export default function SnsPage() {
       const res = await fetch(`/api/x/account?businessId=${selectedBusinessId}`, { credentials: "include" });
       const data = await res.json();
       setAccount(data);
+      if (data?.persona) {
+        try { setPersona({ ...{ name: "", job: "", tone: "", topics: "", bio: "", style: "" }, ...JSON.parse(data.persona) }); } catch {}
+      }
     } catch {
       setAccount(null);
     } finally {
       setLoadingAccount(false);
+    }
+  }
+
+  async function handleSavePersona() {
+    setSavingPersona(true);
+    try {
+      const res = await fetch("/api/x/persona", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ businessId: selectedBusinessId, persona }),
+      });
+      if (!res.ok) throw new Error("保存失敗");
+      toast({ title: "ペルソナを保存しました" });
+    } catch {
+      toast({ title: "保存に失敗しました", variant: "destructive" });
+    } finally {
+      setSavingPersona(false);
+    }
+  }
+
+  async function handleGenerateTweet() {
+    setGenerating(true);
+    try {
+      const res = await fetch("/api/x/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ businessId: selectedBusinessId, type: "tweet", context: postTheme }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPostText(data.text);
+    } catch (err: any) {
+      toast({ title: err.message ?? "生成に失敗しました", variant: "destructive" });
+    } finally {
+      setGenerating(false);
     }
   }
 
@@ -255,6 +311,7 @@ export default function SnsPage() {
 
   const tabs = [
     { id: "account" as const, label: "アカウント" },
+    { id: "persona" as const, label: "ペルソナ" },
     { id: "post"    as const, label: "投稿" },
     { id: "rules"   as const, label: "自動化ルール" },
     { id: "logs"    as const, label: "実行ログ" },
@@ -297,6 +354,52 @@ export default function SnsPage() {
       {/* コンテンツ */}
       <div className="flex-1 overflow-y-auto p-6">
 
+        {/* ── ペルソナタブ ── */}
+        {activeTab === "persona" && (
+          <div className="max-w-lg space-y-5">
+            <div className="border border-border/60 bg-muted/5 p-4 flex gap-3 text-xs text-muted-foreground">
+              <User className="w-4 h-4 shrink-0 mt-0.5 text-[#1DA1F2]" />
+              <div>ここで設定した情報をもとに、AIがあなたになりきってツイートやリプライを生成します。詳しく書くほど精度が上がります。</div>
+            </div>
+
+            <div className="border border-border p-5 space-y-4">
+              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ペルソナ設定</div>
+
+              {[
+                { key: "name",   label: "名前・ハンドル名",         placeholder: "大谷 和也 / @kazuya_sin" },
+                { key: "job",    label: "職業・役職",               placeholder: "合同会社SIN JAPAN 代表 / 軽貨物・人材事業" },
+                { key: "tone",   label: "口調・キャラクター",        placeholder: "フランクで熱血。経営者目線で本音を話す。難しい言葉は使わない。" },
+                { key: "topics", label: "メイン投稿テーマ",          placeholder: "軽貨物業界、物流の裏側、起業・経営、採用、日常のリアル" },
+                { key: "style",  label: "投稿スタイル",              placeholder: "短文多め。結論から書く。たまに本音をぶっちゃける。絵文字は控えめ。" },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key} className="space-y-1">
+                  <label className="text-xs text-muted-foreground">{label}</label>
+                  <Input
+                    placeholder={placeholder}
+                    value={persona[key as keyof PersonaData]}
+                    onChange={e => setPersona(p => ({ ...p, [key]: e.target.value }))}
+                    className="rounded-none text-sm"
+                  />
+                </div>
+              ))}
+
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">自己紹介文（Xのbioベース）</label>
+                <Textarea
+                  placeholder="軽貨物・人材の合同会社代表。物流の現場から経営まで全部やってます。起業4年目。採用・外注の相談はDMへ。"
+                  value={persona.bio}
+                  onChange={e => setPersona(p => ({ ...p, bio: e.target.value }))}
+                  className="rounded-none text-sm min-h-[80px]"
+                />
+              </div>
+
+              <Button className="rounded-none w-full" onClick={handleSavePersona} disabled={savingPersona}>
+                {savingPersona ? <span className="flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />保存中...</span> : "ペルソナを保存"}
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* ── 投稿タブ ── */}
         {activeTab === "post" && (
           <div className="max-w-lg space-y-4">
@@ -307,36 +410,67 @@ export default function SnsPage() {
               </div>
             )}
             <div className="border border-border p-5 space-y-4">
-              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ツイート作成</div>
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ツイート作成</div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder="テーマ（任意）"
+                    value={postTheme}
+                    onChange={e => setPostTheme(e.target.value)}
+                    className="rounded-none text-xs h-7 w-36"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="rounded-none h-7 text-xs gap-1 border-[#1DA1F2]/50 text-[#1DA1F2] hover:bg-[#1DA1F2]/10"
+                    onClick={handleGenerateTweet}
+                    disabled={generating || !account?.isConnected}
+                  >
+                    {generating
+                      ? <RefreshCw className="w-3 h-3 animate-spin" />
+                      : <Sparkles className="w-3 h-3" />
+                    }
+                    AI生成
+                  </Button>
+                </div>
+              </div>
               <Textarea
                 placeholder="いまどうしてる？"
                 value={postText}
                 onChange={e => setPostText(e.target.value)}
-                className="rounded-none text-sm min-h-[120px] resize-none"
+                className="rounded-none text-sm min-h-[140px] resize-none"
                 disabled={!account?.isConnected}
               />
               <div className="flex items-center justify-between">
                 <span className={`text-xs font-mono tabular-nums ${postText.length > 280 ? "text-red-400" : postText.length > 240 ? "text-amber-400" : "text-muted-foreground"}`}>
                   {postText.length} / 280
                 </span>
-                <Button
-                  className="rounded-none"
-                  onClick={handlePost}
-                  disabled={posting || !account?.isConnected || postText.length === 0 || postText.length > 280}
-                >
-                  {posting ? (
-                    <span className="flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />投稿中...</span>
-                  ) : (
-                    <span className="flex items-center gap-2"><Twitter className="w-3.5 h-3.5" />投稿する</span>
+                <div className="flex gap-2">
+                  {postText && (
+                    <Button size="sm" variant="outline" className="rounded-none text-xs" onClick={handleGenerateTweet} disabled={generating}>
+                      <RefreshCw className={`w-3 h-3 mr-1 ${generating ? "animate-spin" : ""}`} />
+                      再生成
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    className="rounded-none"
+                    onClick={handlePost}
+                    disabled={posting || !account?.isConnected || postText.length === 0 || postText.length > 280}
+                  >
+                    {posting ? (
+                      <span className="flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />投稿中...</span>
+                    ) : (
+                      <span className="flex items-center gap-2"><Twitter className="w-3.5 h-3.5" />投稿する</span>
+                    )}
+                  </Button>
+                </div>
               </div>
             </div>
             <div className="text-xs text-muted-foreground border border-border/50 p-3 space-y-1">
               <div className="font-mono uppercase tracking-wider mb-2">ヒント</div>
-              <div>・ハッシュタグ <code className="bg-muted px-1">#軽貨物</code> を入れると検索流入が増えます</div>
-              <div>・URLは自動短縮されます（23文字として計算）</div>
-              <div>・投稿ログは「実行ログ」タブで確認できます</div>
+              <div>・「AI生成」ボタンでペルソナに沿ったツイートを自動生成します</div>
+              <div>・テーマ欄に「採用」「物流」など入れると内容が絞れます</div>
+              <div>・気に入らなければ「再生成」で別のツイートを作れます</div>
             </div>
           </div>
         )}

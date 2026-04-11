@@ -379,6 +379,78 @@ router.post("/x/run/:actionType", requireAuth, async (req, res): Promise<void> =
   }
 });
 
+// ── ペルソナ保存 ──────────────────────────────────────────
+router.put("/x/persona", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const { businessId, persona } = req.body;
+  if (!businessId) { res.status(400).json({ error: "businessId is required" }); return; }
+  if (!(await ownsBusiness(userId, Number(businessId)))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  await db
+    .update(xAccountsTable)
+    .set({ persona: JSON.stringify(persona) })
+    .where(eq(xAccountsTable.businessId, Number(businessId)));
+
+  res.json({ success: true });
+});
+
+// ── AIツイート生成 ─────────────────────────────────────────
+router.post("/x/generate", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const { businessId, type, context } = req.body;
+  if (!businessId) { res.status(400).json({ error: "businessId is required" }); return; }
+  if (!(await ownsBusiness(userId, Number(businessId)))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const [account] = await db
+    .select()
+    .from(xAccountsTable)
+    .where(eq(xAccountsTable.businessId, Number(businessId)));
+
+  const persona = account?.persona ? JSON.parse(account.persona) : null;
+
+  let systemPrompt = `あなたはX(Twitter)の投稿を生成するアシスタントです。`;
+  if (persona) {
+    systemPrompt += `
+以下のペルソナになりきって投稿文を生成してください。
+
+【名前】${persona.name ?? "未設定"}
+【職業・役職】${persona.job ?? "未設定"}
+【口調・キャラ】${persona.tone ?? "フランクで親しみやすい"}
+【得意分野・テーマ】${persona.topics ?? "ビジネス・日常"}
+【自己紹介】${persona.bio ?? "未設定"}
+【投稿スタイル】${persona.style ?? "自然な口語体"}
+
+ルール:
+- 280文字以内で書く（日本語）
+- ハッシュタグは1〜2個まで
+- 宣伝っぽくならないよう自然な投稿にする
+- 絵文字は適度に使う
+- 本文だけを出力し、説明・前置きは一切不要`;
+  } else {
+    systemPrompt += `日本語で280文字以内の自然なツイートを生成してください。本文だけを出力してください。`;
+  }
+
+  const userPrompt = type === "reply" && context
+    ? `以下のツイートへの自然なリプライを生成してください:\n"${context}"`
+    : `今日のツイートを1本生成してください。${context ? `テーマ: ${context}` : ""}`;
+
+  const { default: OpenAI } = await import("openai");
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    max_tokens: 200,
+    temperature: 0.85,
+  });
+
+  const text = completion.choices[0]?.message?.content?.trim() ?? "";
+  res.json({ text });
+});
+
 // ── ツイート投稿 ──────────────────────────────────────────
 router.post("/x/post", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);

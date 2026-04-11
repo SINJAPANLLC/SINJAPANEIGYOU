@@ -11,6 +11,7 @@ export const xAccountsTable = pgTable("x_accounts", {
   accessTokenSecret: text("access_token_secret"),
   bearerToken: text("bearer_token"),
   isConnected: boolean("is_connected").notNull().default(false),
+  persona: text("persona"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
