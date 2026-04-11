@@ -36,11 +36,11 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  unsent: "bg-muted text-muted-foreground border-border",
-  sent: "bg-primary/10 text-primary border-primary/20",
-  replied: "bg-green-500/10 text-green-500 border-green-500/20",
-  ng: "bg-destructive/10 text-destructive border-destructive/20",
-  unsubscribed: "bg-muted/50 text-muted-foreground border-border"
+  unsent: "bg-zinc-700/60 text-zinc-200 border-zinc-600",
+  sent: "bg-blue-500/20 text-blue-300 border-blue-400/40",
+  replied: "bg-green-500/20 text-green-300 border-green-400/40",
+  ng: "bg-red-500/20 text-red-300 border-red-400/40",
+  unsubscribed: "bg-zinc-600/40 text-zinc-400 border-zinc-500/60"
 };
 
 export default function LeadsPage() {
