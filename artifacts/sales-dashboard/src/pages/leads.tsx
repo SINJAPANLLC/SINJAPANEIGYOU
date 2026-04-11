@@ -520,31 +520,29 @@ export default function LeadsPage() {
                       />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between mb-1">
-                        <h4 className="font-bold text-sm truncate pr-2 group-hover:text-foreground">{lead.companyName || '社名不明'}</h4>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span
-                            className="text-[10px] px-1.5 py-0.5 font-mono tracking-wider whitespace-nowrap"
-                            style={STATUS_STYLES[lead.status] ?? STATUS_STYLES.unsent}
-                          >
-                            {STATUS_LABELS[lead.status] ?? lead.status}
-                          </span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleDeleteLead(lead.id); }}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-muted-foreground hover:text-destructive"
-                            title="削除"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                      <div className="flex items-start justify-between mb-1.5">
+                        <h4 className="font-bold text-sm truncate group-hover:text-foreground">{lead.companyName || '社名不明'}</h4>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteLead(lead.id); }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-muted-foreground hover:text-destructive shrink-0 ml-1"
+                          title="削除"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono">
+                      <div className="flex items-center gap-2 text-xs font-mono flex-wrap">
+                        <span
+                          className="px-1.5 py-0.5 tracking-wider whitespace-nowrap shrink-0"
+                          style={STATUS_STYLES[lead.status] ?? STATUS_STYLES.unsent}
+                        >
+                          {STATUS_LABELS[lead.status] ?? lead.status}
+                        </span>
                         {lead.score !== null && lead.score !== undefined && (
                           <span className="flex items-center text-primary/70">
                             <Sparkles className="w-3 h-3 mr-1" /> {lead.score}
                           </span>
                         )}
-                        {lead.websiteUrl && <span className="truncate max-w-[100px]">{lead.websiteUrl.replace(/^https?:\/\//, '')}</span>}
+                        {lead.websiteUrl && <span className="truncate max-w-[90px] text-muted-foreground">{lead.websiteUrl.replace(/^https?:\/\//, '')}</span>}
                       </div>
                     </div>
                   </div>
