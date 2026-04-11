@@ -82,6 +82,7 @@ export default function SnsPage() {
   const [creds, setCreds] = useState({ apiKey: "", apiSecret: "", accessToken: "", accessTokenSecret: "", bearerToken: "" });
   const [showSecrets, setShowSecrets] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [forceEdit, setForceEdit] = useState(false);
 
   // 投稿フォーム
   const [postText, setPostText] = useState("");
@@ -151,6 +152,7 @@ export default function SnsPage() {
       if (!res.ok) throw new Error(data.error);
       toast({ title: `@${data.username} に接続しました` });
       setCreds({ apiKey: "", apiSecret: "", accessToken: "", accessTokenSecret: "", bearerToken: "" });
+      setForceEdit(false);
       fetchAccount();
     } catch (err: any) {
       toast({ title: err.message ?? "接続に失敗しました", variant: "destructive" });
@@ -344,7 +346,7 @@ export default function SnsPage() {
           <div className="max-w-lg space-y-6">
             {loadingAccount ? (
               <div className="h-24 animate-pulse bg-muted/30 border border-border" />
-            ) : account?.isConnected ? (
+            ) : account?.isConnected && !forceEdit ? (
               <div className="border border-green-900/40 bg-green-950/10 p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-5 h-5 text-green-400" />
@@ -353,12 +355,26 @@ export default function SnsPage() {
                     <div className="text-xs text-muted-foreground">X API 接続済み</div>
                   </div>
                 </div>
-                <Button size="sm" variant="outline" className="rounded-none text-xs" onClick={handleDisconnect}>
-                  接続解除
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" className="rounded-none text-xs" onClick={() => { setForceEdit(true); setCreds({ apiKey: "", apiSecret: "", accessToken: "", accessTokenSecret: "", bearerToken: "" }); }}>
+                    変更する
+                  </Button>
+                  <Button size="sm" variant="outline" className="rounded-none text-xs text-muted-foreground" onClick={handleDisconnect}>
+                    接続解除
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="border border-border p-5 space-y-4">
+                {forceEdit && (
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-amber-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      新しい認証情報を入力してください
+                    </div>
+                    <button onClick={() => setForceEdit(false)} className="text-xs text-muted-foreground hover:text-foreground">キャンセル</button>
+                  </div>
+                )}
                 <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">X API 認証情報</div>
 
                 <div className="flex justify-end">
