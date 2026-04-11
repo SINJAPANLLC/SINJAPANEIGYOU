@@ -12,7 +12,7 @@ import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
-const ACTION_TYPES = ["like", "retweet", "reply", "follow"] as const;
+const ACTION_TYPES = ["like", "retweet", "reply", "follow", "followback", "post", "dm"] as const;
 type ActionType = (typeof ACTION_TYPES)[number];
 
 async function ownsAccount(userId: string, accountId: number) {
@@ -173,6 +173,51 @@ router.get("/x/accounts/:id/logs", requireAuth, async (req, res): Promise<void> 
   res.json(logs);
 });
 
+// ── AIペルソナ生成 ────────────────────────────────────────
+router.post("/x/accounts/:id/generate-persona", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const accountId = Number(req.params.id);
+  const account = await ownsAccount(userId, accountId);
+  if (!account) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const { description } = req.body;
+  if (!description?.trim()) { res.status(400).json({ error: "説明を入力してください" }); return; }
+
+  const { default: OpenAI } = await import("openai");
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  const systemPrompt = `あなたはX(Twitter)のペルソナ設定を行うアシスタントです。
+ユーザーの説明をもとに、以下のJSON形式でペルソナを生成してください。
+出力はJSONのみ（前置き・説明不要）。
+
+{
+  "name": "名前・ハンドル名",
+  "job": "職業・役職",
+  "tone": "口調・キャラクター（具体的に）",
+  "topics": "メイン投稿テーマ（カンマ区切り）",
+  "bio": "自己紹介文（100文字前後）",
+  "style": "投稿スタイル（具体的に）"
+}`;
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `以下の人物・アカウントのペルソナを生成してください:\n${description}` },
+    ],
+    max_tokens: 500,
+    temperature: 0.7,
+    response_format: { type: "json_object" },
+  });
+
+  try {
+    const persona = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+    res.json({ persona });
+  } catch {
+    res.status(500).json({ error: "ペルソナの生成に失敗しました" });
+  }
+});
+
 // ── AI生成 ────────────────────────────────────────────────
 router.post("/x/accounts/:id/generate", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
@@ -240,13 +285,16 @@ router.post("/x/accounts/:id/run/:actionType", requireAuth, async (req, res): Pr
   const [rule] = await db.select().from(xAutomationRulesTable)
     .where(and(eq(xAutomationRulesTable.xAccountId, accountId), eq(xAutomationRulesTable.actionType, actionType)));
 
-  if (!rule?.keywords?.trim()) { res.status(400).json({ error: "キーワードが設定されていません" }); return; }
+  // post・followback は keywords 任意
+  if (actionType !== "post" && actionType !== "followback" && !rule?.keywords?.trim()) {
+    res.status(400).json({ error: "キーワードが設定されていません" }); return;
+  }
 
   try {
     const client = buildClient(account);
     const me = await client.v2.me();
     const myId = me.data.id;
-    const keyword = rule.keywords.split(",")[0].trim();
+    const keyword = rule.keywords?.split(",")[0]?.trim() ?? "";
     const executed: string[] = [];
     const limit = Math.min(5, rule.dailyLimit);
 
@@ -283,6 +331,66 @@ router.post("/x/accounts/:id/run/:actionType", requireAuth, async (req, res): Pr
         await client.v2.tweet({ text: replyText, reply: { in_reply_to_tweet_id: tweet.id } });
         await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "reply", targetTweetId: tweet.id, tweetContent: replyText, status: "success" });
         executed.push(tweet.id);
+      }
+    } else if (actionType === "post") {
+      // テンプレートあり → そのまま投稿、なし → AIで生成
+      let tweetText: string;
+      if (rule.replyTemplate?.trim()) {
+        tweetText = rule.replyTemplate.trim();
+      } else {
+        const account2 = await ownsAccount(userId, accountId);
+        const persona = account2?.persona ? JSON.parse(account2.persona) : null;
+        let systemPrompt = "あなたはX(Twitter)の投稿を生成するアシスタントです。";
+        if (persona) {
+          systemPrompt += `\n以下のペルソナになりきって投稿文を生成してください。\n名前: ${persona.name ?? ""}\n職業: ${persona.job ?? ""}\n口調: ${persona.tone ?? ""}\nテーマ: ${persona.topics ?? ""}\nスタイル: ${persona.style ?? ""}\n\n・280文字以内（日本語）・ハッシュタグ1〜2個・本文だけ出力`;
+        } else {
+          systemPrompt += "日本語で280文字以内のツイートを1本生成。本文だけ出力。";
+        }
+        const userPrompt = keyword ? `テーマ「${keyword}」でツイートを1本生成` : "今日のツイートを1本生成";
+        const { default: OpenAI } = await import("openai");
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+          max_tokens: 200, temperature: 0.85,
+        });
+        tweetText = completion.choices[0]?.message?.content?.trim() ?? "";
+      }
+      if (!tweetText) { res.status(500).json({ error: "投稿文の生成に失敗しました" }); return; }
+      const tweet = await client.v2.tweet({ text: tweetText });
+      await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "post", targetTweetId: tweet.data.id, tweetContent: tweetText, status: "success" });
+      executed.push(tweet.data.id);
+    } else if (actionType === "dm") {
+      if (!rule.replyTemplate?.trim()) { res.status(400).json({ error: "DM本文テンプレートが設定されていません" }); return; }
+      const users = await client.v2.searchUsers(keyword, { max_results: 10 });
+      for (const user of users.data ?? []) {
+        if (executed.length >= Math.min(3, limit)) break;
+        if (user.id === myId) continue;
+        try {
+          await client.v1.sendDm({ recipient_id: user.id, text: rule.replyTemplate!.trim() });
+          await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "dm", targetUserId: user.id, targetUsername: user.username, tweetContent: rule.replyTemplate, status: "success" });
+          executed.push(user.id);
+        } catch (dmErr: any) {
+          await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "dm", targetUserId: user.id, targetUsername: user.username, status: "error", errorMessage: dmErr?.message });
+        }
+      }
+    } else if (actionType === "followback") {
+      // フォロワー取得
+      const followers = await client.v2.followers(myId, { max_results: 100 });
+      // 自分がフォローしている人を取得
+      const following = await client.v2.following(myId, { max_results: 1000 });
+      const followingIds = new Set((following.data ?? []).map(u => u.id));
+
+      for (const follower of followers.data ?? []) {
+        if (executed.length >= limit) break;
+        if (followingIds.has(follower.id)) continue; // すでにフォロー済み
+        try {
+          await client.v2.follow(myId, follower.id);
+          await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "followback", targetUserId: follower.id, targetUsername: follower.username, status: "success" });
+          executed.push(follower.id);
+        } catch (fbErr: any) {
+          await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "followback", targetUserId: follower.id, targetUsername: follower.username, status: "error", errorMessage: fbErr?.message });
+        }
       }
     }
 

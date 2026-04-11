@@ -45,8 +45,18 @@ interface PersonaData {
 
 const ACTION_LABELS: Record<string, string> = {
   like: "いいね", retweet: "リツイート", reply: "リプライ", follow: "フォロー",
+  followback: "フォロバ", post: "自動投稿", dm: "DM送信",
 };
-const ACTION_TYPES = ["like", "retweet", "reply", "follow"];
+const ACTION_DESCS: Record<string, string> = {
+  like:        "キーワードに一致するツイートに自動いいね",
+  retweet:     "キーワードに一致するツイートを自動RT",
+  reply:       "キーワードに一致するツイートに自動リプライ",
+  follow:      "キーワードで検索したユーザーを自動フォロー",
+  followback:  "自分をフォローしたユーザーを自動でフォローバック（キーワード不要）",
+  post:        "テンプレートまたはAIで生成したツイートを自動投稿",
+  dm:          "キーワードで検索したユーザーに自動でDMを送信",
+};
+const ACTION_TYPES = ["post", "like", "retweet", "reply", "follow", "followback", "dm"];
 
 type SubTab = "account" | "persona" | "post" | "rules" | "logs";
 
@@ -161,6 +171,8 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
   };
   const [persona, setPersona] = useState<PersonaData>(initPersona);
   const [savingPersona, setSavingPersona] = useState(false);
+  const [personaDesc, setPersonaDesc] = useState("");
+  const [generatingPersona, setGeneratingPersona] = useState(false);
 
   // 投稿
   const [postText, setPostText] = useState("");
@@ -239,6 +251,23 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
       toast({ title: "ペルソナを保存しました" });
     } catch { toast({ title: "保存に失敗しました", variant: "destructive" }); }
     finally { setSavingPersona(false); }
+  }
+
+  async function handleGeneratePersona() {
+    if (!personaDesc.trim()) { toast({ title: "アカウントの説明を入力してください", variant: "destructive" }); return; }
+    setGeneratingPersona(true);
+    try {
+      const res = await fetch(`/api/x/accounts/${account.id}/generate-persona`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ description: personaDesc }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPersona(p => ({ ...p, ...data.persona }));
+      toast({ title: "ペルソナを生成しました。内容を確認して保存してください。" });
+    } catch (err: any) {
+      toast({ title: err.message ?? "生成に失敗しました", variant: "destructive" });
+    } finally { setGeneratingPersona(false); }
   }
 
   async function handleGenerateTweet() {
@@ -375,19 +404,46 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
 
         {/* ── ペルソナタブ ── */}
         {subTab === "persona" && (
-          <div className="max-w-lg space-y-5">
-            <div className="border border-border/60 bg-muted/5 p-4 flex gap-3 text-xs text-muted-foreground">
-              <User className="w-4 h-4 shrink-0 mt-0.5 text-[#1DA1F2]" />
-              <div>AIがこのアカウントになりきってツイートやリプライを生成します。詳しく書くほど精度が上がります。</div>
+          <div className="max-w-lg space-y-4">
+            {/* AI一発生成 */}
+            <div className="border border-[#1DA1F2]/30 bg-[#1DA1F2]/5 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-[#1DA1F2]" />
+                <span className="text-xs font-mono uppercase tracking-wider text-[#1DA1F2]">AIでペルソナを自動生成</span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                あなたや会社の情報を簡単に書くだけで、AIが全項目を一括で生成します。
+              </div>
+              <Textarea
+                placeholder={"例：合同会社SIN JAPAN代表の大谷和哉。軽貨物と人材紹介が主な事業。フランクで熱血な経営者スタイル。X(@kazuya_otani_8)で業界の裏話や採用情報を発信したい。"}
+                value={personaDesc}
+                onChange={e => setPersonaDesc(e.target.value)}
+                className="rounded-none text-sm min-h-[80px] bg-background"
+              />
+              <Button
+                className="rounded-none w-full gap-2 bg-[#1DA1F2] hover:bg-[#1DA1F2]/90 text-white"
+                onClick={handleGeneratePersona}
+                disabled={generatingPersona}
+              >
+                {generatingPersona
+                  ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" />生成中...</>
+                  : <><Sparkles className="w-3.5 h-3.5" />AIでペルソナを生成</>
+                }
+              </Button>
             </div>
+
+            {/* 手動編集 */}
             <div className="border border-border p-5 space-y-4">
-              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ペルソナ設定</div>
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ペルソナ内容（確認・編集）</div>
+                <span className="text-[10px] text-muted-foreground">AI生成後に自動反映されます</span>
+              </div>
               {[
-                { key: "name",   label: "名前・ハンドル名",   placeholder: "大谷 和也 / @kazuya_sin" },
+                { key: "name",   label: "名前・ハンドル名",   placeholder: "大谷 和哉 / @kazuya_otani_8" },
                 { key: "job",    label: "職業・役職",         placeholder: "合同会社SIN JAPAN 代表 / 軽貨物・人材事業" },
-                { key: "tone",   label: "口調・キャラクター", placeholder: "フランクで熱血。経営者目線で本音を話す。" },
-                { key: "topics", label: "メイン投稿テーマ",   placeholder: "軽貨物業界、物流、起業・経営、採用" },
-                { key: "style",  label: "投稿スタイル",       placeholder: "短文多め。結論から書く。絵文字は控えめ。" },
+                { key: "tone",   label: "口調・キャラクター", placeholder: "フランクで熱血。経営者目線で本音を話す。難しい言葉は使わない。" },
+                { key: "topics", label: "メイン投稿テーマ",   placeholder: "軽貨物業界、物流の裏側、起業・経営、採用、日常のリアル" },
+                { key: "style",  label: "投稿スタイル",       placeholder: "短文多め。結論から書く。たまに本音をぶっちゃける。絵文字は控えめ。" },
               ].map(({ key, label, placeholder }) => (
                 <div key={key} className="space-y-1">
                   <label className="text-xs text-muted-foreground">{label}</label>
@@ -400,9 +456,9 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
                 </div>
               ))}
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">自己紹介文</label>
+                <label className="text-xs text-muted-foreground">自己紹介文（X の bio ベース）</label>
                 <Textarea
-                  placeholder="軽貨物・人材の合同会社代表。物流の現場から経営まで全部やってます。"
+                  placeholder="軽貨物・人材の合同会社代表。物流の現場から経営まで全部やってます。起業4年目。採用・外注の相談はDMへ。"
                   value={persona.bio}
                   onChange={e => setPersona(p => ({ ...p, bio: e.target.value }))}
                   className="rounded-none text-sm min-h-[80px]"
@@ -494,15 +550,13 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="text-sm font-medium">{ACTION_LABELS[actionType]}</span>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <div
-                          onClick={() => setRuleEdits(e => ({ ...e, [actionType]: { ...e[actionType], enabled: !e[actionType].enabled } }))}
-                          className={`w-8 h-4 rounded-full transition-colors cursor-pointer ${rule.enabled ? "bg-emerald-500" : "bg-muted-foreground/30"}`}
-                        >
-                          <div className={`w-3 h-3 bg-white rounded-full mt-0.5 transition-transform ${rule.enabled ? "translate-x-4.5 ml-0.5" : "ml-0.5"}`} />
-                        </div>
-                        <span className="text-xs text-muted-foreground">{rule.enabled ? "有効" : "無効"}</span>
-                      </label>
+                      <div
+                        onClick={() => setRuleEdits(e => ({ ...e, [actionType]: { ...e[actionType], enabled: !e[actionType].enabled } }))}
+                        className={`w-8 h-4 rounded-full transition-colors cursor-pointer ${rule.enabled ? "bg-emerald-500" : "bg-muted-foreground/30"}`}
+                      >
+                        <div className={`w-3 h-3 bg-white rounded-full mt-0.5 transition-transform ${rule.enabled ? "translate-x-4.5 ml-0.5" : "ml-0.5"}`} />
+                      </div>
+                      <span className="text-xs text-muted-foreground">{rule.enabled ? "有効" : "無効"}</span>
                     </div>
                     <div className="flex gap-2">
                       <Button
@@ -526,20 +580,68 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
                       </Button>
                     </div>
                   </div>
+                  {ACTION_DESCS[actionType] && (
+                    <div className="text-[11px] text-muted-foreground/70">{ACTION_DESCS[actionType]}</div>
+                  )}
+
+                  {/* フォロバはキーワード不要 */}
+                  {actionType !== "followback" && (
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">キーワード（カンマ区切り）</label>
-                      <Input value={rule.keywords} onChange={e => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], keywords: e.target.value } }))} className="rounded-none text-xs" placeholder="軽貨物, ドライバー" />
+                      <label className="text-xs text-muted-foreground">
+                        {actionType === "post" ? "投稿テーマ（カンマ区切り、任意）" :
+                         actionType === "dm"   ? "検索キーワード（カンマ区切り）" :
+                         "キーワード（カンマ区切り）"}
+                      </label>
+                      <Input
+                        value={rule.keywords}
+                        onChange={e => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], keywords: e.target.value } }))}
+                        className="rounded-none text-xs"
+                        placeholder={
+                          actionType === "post" ? "採用, 軽貨物, 物流" :
+                          actionType === "dm"   ? "軽貨物ドライバー, 配送業" :
+                          "軽貨物, ドライバー"
+                        }
+                      />
                     </div>
                     <div className="space-y-1">
                       <label className="text-xs text-muted-foreground">1日の上限</label>
                       <Input type="number" value={rule.dailyLimit} onChange={e => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], dailyLimit: Number(e.target.value) } }))} className="rounded-none text-xs" />
                     </div>
                   </div>
+                  )}
+                  {actionType === "followback" && (
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">1日のフォロバ上限</label>
+                      <Input type="number" value={rule.dailyLimit} onChange={e => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], dailyLimit: Number(e.target.value) } }))} className="rounded-none text-xs w-32" />
+                    </div>
+                  )}
+
+                  {/* リプライ: テンプレート */}
                   {actionType === "reply" && (
                     <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">リプライテンプレート</label>
+                      <label className="text-xs text-muted-foreground">リプライテンプレート <span className="text-[#1DA1F2]">{"{{tweet}}"}</span> でツイート本文を挿入</label>
                       <Textarea value={rule.replyTemplate ?? ""} onChange={e => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], replyTemplate: e.target.value } }))} className="rounded-none text-xs min-h-[60px]" placeholder="ありがとうございます！{{tweet}}" />
+                    </div>
+                  )}
+
+                  {/* 自動投稿: テンプレートまたはAI生成 */}
+                  {actionType === "post" && (
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">投稿テンプレート（空の場合はAIがペルソナに沿って自動生成）</label>
+                      <Textarea value={rule.replyTemplate ?? ""} onChange={e => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], replyTemplate: e.target.value } }))} className="rounded-none text-xs min-h-[70px]" placeholder="空欄にするとペルソナ設定をもとにAIが毎回異なる投稿を生成します。固定文を入れる場合はここに書いてください。" />
+                      <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
+                        <Sparkles className="w-3 h-3 text-[#1DA1F2]" /> ペルソナタブを設定しておくとAI生成の精度が上がります
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DM: 本文テンプレート */}
+                  {actionType === "dm" && (
+                    <div className="space-y-1">
+                      <label className="text-xs text-muted-foreground">DM本文テンプレート <span className="text-amber-400">※必須</span></label>
+                      <Textarea value={rule.replyTemplate ?? ""} onChange={e => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], replyTemplate: e.target.value } }))} className="rounded-none text-xs min-h-[80px]" placeholder={"はじめまして！軽貨物の仕事を探しているとのことで、ご連絡しました。\nよろしければ詳しいお話をさせてください。"} />
+                      <div className="text-[10px] text-amber-500/80 mt-1">X APIの無料プランではDM送信に制限がある場合があります。</div>
                     </div>
                   )}
                   {(rule.executedToday > 0 || rule.lastRunAt) && (
