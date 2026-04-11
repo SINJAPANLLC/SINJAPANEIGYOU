@@ -68,7 +68,7 @@ export default function SnsPage() {
   const { toast } = useToast();
   const { selectedBusinessId } = useBusiness();
 
-  const [activeTab, setActiveTab] = useState<"account" | "rules" | "logs">("account");
+  const [activeTab, setActiveTab] = useState<"account" | "post" | "rules" | "logs">("account");
   const [account, setAccount] = useState<Account | null>(null);
   const [rules, setRules] = useState<Rule[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
@@ -82,6 +82,10 @@ export default function SnsPage() {
   const [creds, setCreds] = useState({ apiKey: "", apiSecret: "", accessToken: "", accessTokenSecret: "", bearerToken: "" });
   const [showSecrets, setShowSecrets] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // 投稿フォーム
+  const [postText, setPostText] = useState("");
+  const [posting, setPosting] = useState(false);
 
   // ルール編集フォーム
   const [ruleForm, setRuleForm] = useState<{ keywords: string; dailyLimit: number; intervalSeconds: number; replyTemplate: string }>({
@@ -225,8 +229,31 @@ export default function SnsPage() {
     setEditingRule(rule.actionType as ActionType);
   }
 
+  async function handlePost() {
+    if (!postText.trim()) { toast({ title: "本文を入力してください", variant: "destructive" }); return; }
+    if (postText.length > 280) { toast({ title: "280文字以内で入力してください", variant: "destructive" }); return; }
+    setPosting(true);
+    try {
+      const res = await fetch("/api/x/post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ businessId: selectedBusinessId, text: postText }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: "投稿しました！" });
+      setPostText("");
+    } catch (err: any) {
+      toast({ title: err.message ?? "投稿に失敗しました", variant: "destructive" });
+    } finally {
+      setPosting(false);
+    }
+  }
+
   const tabs = [
     { id: "account" as const, label: "アカウント" },
+    { id: "post"    as const, label: "投稿" },
     { id: "rules"   as const, label: "自動化ルール" },
     { id: "logs"    as const, label: "実行ログ" },
   ];
@@ -267,6 +294,50 @@ export default function SnsPage() {
 
       {/* コンテンツ */}
       <div className="flex-1 overflow-y-auto p-6">
+
+        {/* ── 投稿タブ ── */}
+        {activeTab === "post" && (
+          <div className="max-w-lg space-y-4">
+            {!account?.isConnected && (
+              <div className="border border-dashed border-border p-4 text-xs text-muted-foreground flex items-center gap-2">
+                <XCircle className="w-4 h-4" />
+                先にアカウントタブでX APIを接続してください
+              </div>
+            )}
+            <div className="border border-border p-5 space-y-4">
+              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ツイート作成</div>
+              <Textarea
+                placeholder="いまどうしてる？"
+                value={postText}
+                onChange={e => setPostText(e.target.value)}
+                className="rounded-none text-sm min-h-[120px] resize-none"
+                disabled={!account?.isConnected}
+              />
+              <div className="flex items-center justify-between">
+                <span className={`text-xs font-mono tabular-nums ${postText.length > 280 ? "text-red-400" : postText.length > 240 ? "text-amber-400" : "text-muted-foreground"}`}>
+                  {postText.length} / 280
+                </span>
+                <Button
+                  className="rounded-none"
+                  onClick={handlePost}
+                  disabled={posting || !account?.isConnected || postText.length === 0 || postText.length > 280}
+                >
+                  {posting ? (
+                    <span className="flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />投稿中...</span>
+                  ) : (
+                    <span className="flex items-center gap-2"><Twitter className="w-3.5 h-3.5" />投稿する</span>
+                  )}
+                </Button>
+              </div>
+            </div>
+            <div className="text-xs text-muted-foreground border border-border/50 p-3 space-y-1">
+              <div className="font-mono uppercase tracking-wider mb-2">ヒント</div>
+              <div>・ハッシュタグ <code className="bg-muted px-1">#軽貨物</code> を入れると検索流入が増えます</div>
+              <div>・URLは自動短縮されます（23文字として計算）</div>
+              <div>・投稿ログは「実行ログ」タブで確認できます</div>
+            </div>
+          </div>
+        )}
 
         {/* ── アカウントタブ ── */}
         {activeTab === "account" && (

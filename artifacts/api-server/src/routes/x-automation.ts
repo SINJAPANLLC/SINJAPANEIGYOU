@@ -379,4 +379,51 @@ router.post("/x/run/:actionType", requireAuth, async (req, res): Promise<void> =
   }
 });
 
+// ── ツイート投稿 ──────────────────────────────────────────
+router.post("/x/post", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const { businessId, text, scheduledAt } = req.body;
+
+  if (!businessId) { res.status(400).json({ error: "businessId is required" }); return; }
+  if (!text?.trim()) { res.status(400).json({ error: "ツイート本文を入力してください" }); return; }
+  if (text.length > 280) { res.status(400).json({ error: "280文字以内で入力してください" }); return; }
+
+  if (!(await ownsBusiness(userId, Number(businessId)))) {
+    res.status(403).json({ error: "Forbidden" }); return;
+  }
+
+  const [account] = await db
+    .select()
+    .from(xAccountsTable)
+    .where(and(eq(xAccountsTable.businessId, Number(businessId)), eq(xAccountsTable.isConnected, true)));
+
+  if (!account) { res.status(400).json({ error: "X アカウントが接続されていません" }); return; }
+
+  try {
+    const client = buildClient(account);
+    const tweet = await client.v2.tweet({ text: text.trim() });
+
+    await db.insert(xAutomationLogsTable).values({
+      businessId: Number(businessId),
+      actionType: "post",
+      targetTweetId: tweet.data.id,
+      tweetContent: text.trim(),
+      status: "success",
+    });
+
+    logger.info({ tweetId: tweet.data.id }, "X post success");
+    res.json({ success: true, tweetId: tweet.data.id });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "X post failed");
+    await db.insert(xAutomationLogsTable).values({
+      businessId: Number(businessId),
+      actionType: "post",
+      tweetContent: text.trim(),
+      status: "error",
+      errorMessage: err?.message ?? "Unknown error",
+    }).catch(() => {});
+    res.status(500).json({ error: err?.message ?? "投稿に失敗しました" });
+  }
+});
+
 export default router;
