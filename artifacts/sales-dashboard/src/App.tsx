@@ -14,6 +14,7 @@ import LeadsPage from "@/pages/leads";
 import TemplatesPage from "@/pages/templates";
 import EmailLogsPage from "@/pages/email-logs";
 import SchedulePage from "@/pages/schedule";
+import SnsPage from "@/pages/sns";
 import NotFound from "@/pages/not-found";
 
 function HomeRedirect() {
@@ -44,6 +45,7 @@ function AppRoutes() {
       <Route path="/templates"><ProtectedRoute component={TemplatesPage} /></Route>
       <Route path="/email-logs"><ProtectedRoute component={EmailLogsPage} /></Route>
       <Route path="/schedule"><ProtectedRoute component={SchedulePage} /></Route>
+      <Route path="/sns"><ProtectedRoute component={SnsPage} /></Route>
 
       <Route component={NotFound} />
     </Switch>

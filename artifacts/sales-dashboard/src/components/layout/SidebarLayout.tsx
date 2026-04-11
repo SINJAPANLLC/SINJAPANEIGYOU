@@ -10,6 +10,7 @@ import {
   LogOut,
   ChevronDown,
   Clock,
+  MessageSquare,
 } from "lucide-react";
 import {
   Sidebar,
@@ -33,6 +34,7 @@ const navigation = [
   { name: "テンプレート", href: "/templates", icon: FileText },
   { name: "送信ログ", href: "/email-logs", icon: History },
   { name: "スケジュール", href: "/schedule", icon: Clock },
+  { name: "SNS", href: "/sns", icon: MessageSquare },
 ];
 
 export function SidebarLayout({ children }: { children: ReactNode }) {
