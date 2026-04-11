@@ -143,6 +143,26 @@ function normalizeFullWidth(text: string): string {
     .replace(/‐/g, "-");
 }
 
+// 画像拡張子・ファイル名をメールアドレスに誤認しないようにバリデーション
+const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|svg|webp|ico|bmp|tiff|avif|heic)$/i;
+const BAD_TLD = /\.(png|jpg|jpeg|gif|svg|webp|ico|bmp|tiff|avif|heic|css|js|ts|json|xml|zip|pdf|txt|html|htm|php|asp|aspx|cgi|woff|woff2|ttf|eot|mp4|mp3|mov|avi|exe|dmg)$/i;
+const BLOCKED_WORDS = ["example", "noreply", "no-reply", "webmaster", "postmaster", "sentry", "placeholder", "domain", "yourdomain", "test", "admin@admin", "user@user"];
+
+function isValidEmail(e: string): boolean {
+  if (!e || !e.includes("@")) return false;
+  const lower = e.toLowerCase();
+  if (BLOCKED_WORDS.some(w => lower.includes(w))) return false;
+  // ドメイン部分が画像ファイル名になっていないか
+  const domain = lower.split("@")[1] || "";
+  if (IMAGE_EXTENSIONS.test(domain)) return false;
+  if (BAD_TLD.test(lower)) return false;
+  // ドメインにドットが必要
+  if (!domain.includes(".")) return false;
+  // 最低限の形式チェック（ローカル部 + @ + ドメイン）
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(lower)) return false;
+  return true;
+}
+
 function extractEmail(html: string, $: cheerio.CheerioAPI): string | null {
   // 1) mailto links (highest priority)
   let email: string | null = null;
@@ -150,7 +170,7 @@ function extractEmail(html: string, $: cheerio.CheerioAPI): string | null {
     if (email) return;
     const href = $(el).attr("href") || "";
     const e = href.replace("mailto:", "").split("?")[0].trim().toLowerCase();
-    if (e && e.includes("@") && !e.includes("example") && !e.includes("noreply")) {
+    if (e && isValidEmail(e)) {
       email = e;
     }
   });
@@ -164,7 +184,7 @@ function extractEmail(html: string, $: cheerio.CheerioAPI): string | null {
       const entries = Array.isArray(json) ? json : [json];
       for (const entry of entries) {
         const candidate = entry.email || entry.contactPoint?.email;
-        if (candidate && typeof candidate === "string" && candidate.includes("@")) {
+        if (candidate && typeof candidate === "string" && isValidEmail(candidate)) {
           email = candidate.toLowerCase();
           return;
         }
@@ -185,7 +205,7 @@ function extractEmail(html: string, $: cheerio.CheerioAPI): string | null {
       if (email) return;
       const href = $(a).attr("href") || "";
       const e = href.replace("mailto:", "").split("?")[0].trim().toLowerCase();
-      if (e && e.includes("@") && !e.includes("example") && !e.includes("noreply")) {
+      if (e && isValidEmail(e)) {
         email = e;
       }
     });
@@ -209,11 +229,7 @@ function extractEmail(html: string, $: cheerio.CheerioAPI): string | null {
     if (matches) {
       for (const m of matches) {
         const lower = m.toLowerCase();
-        if (!lower.includes("example") && !lower.includes("noreply") &&
-            !lower.includes("webmaster") && !lower.includes("postmaster") &&
-            !lower.includes("sentry") && !lower.includes("placeholder")) {
-          return lower;
-        }
+        if (isValidEmail(lower)) return lower;
       }
     }
   }
