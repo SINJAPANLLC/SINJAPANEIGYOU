@@ -1,535 +1,536 @@
-import { useState } from "react";
+import { useState, useEffect, CSSProperties } from "react";
 import {
-  Instagram,
   Twitter,
-  Facebook,
-  Linkedin,
-  Plus,
-  Send,
-  Settings,
-  Users,
-  Clock,
-  ChevronRight,
+  Heart,
+  Repeat2,
+  MessageCircle,
+  UserPlus,
+  Play,
+  Pause,
   CheckCircle2,
   XCircle,
   AlertCircle,
-  MessageSquare,
-  Trash2,
-  Play,
-  Pause,
+  History,
+  RefreshCw,
+  Eye,
+  EyeOff,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { useBusiness } from "@/contexts/BusinessContext";
 
-type Platform = "instagram" | "twitter" | "facebook" | "linkedin";
+type ActionType = "like" | "retweet" | "reply" | "follow";
 
-interface PlatformConfig {
-  id: Platform;
-  label: string;
-  icon: React.ElementType;
-  color: string;
-  dmLimit: string;
-  note: string;
+interface Rule {
+  id: number;
+  actionType: ActionType;
+  enabled: boolean;
+  keywords: string;
+  dailyLimit: number;
+  intervalSeconds: number;
+  replyTemplate: string | null;
+  executedToday: number;
+  lastRunAt: string | null;
 }
 
-const PLATFORMS: PlatformConfig[] = [
-  {
-    id: "instagram",
-    label: "Instagram",
-    icon: Instagram,
-    color: "#E1306C",
-    dmLimit: "1日 50〜100件",
-    note: "ビジネスアカウント推奨。新規アカウントは制限あり。",
-  },
-  {
-    id: "twitter",
-    label: "Twitter / X",
-    icon: Twitter,
-    color: "#1DA1F2",
-    dmLimit: "1日 500件（APIプランによる）",
-    note: "Basic以上のAPIプランが必要。",
-  },
-  {
-    id: "facebook",
-    label: "Facebook",
-    icon: Facebook,
-    color: "#1877F2",
-    dmLimit: "1日 50件（個人） / ページは別途",
-    note: "Messengerページ経由での自動化が安定。",
-  },
-  {
-    id: "linkedin",
-    label: "LinkedIn",
-    icon: Linkedin,
-    color: "#0A66C2",
-    dmLimit: "1日 20〜30件（InMail）",
-    note: "Sales Navigator推奨。接続リクエストも自動化可能。",
-  },
-];
-
-interface AccountSetting {
-  username: string;
-  connected: boolean;
-}
-
-interface DmTemplate {
-  id: string;
-  name: string;
-  content: string;
-  platform: Platform;
-}
-
-interface DmJob {
-  id: string;
-  platform: Platform;
-  templateName: string;
-  targets: number;
-  sent: number;
-  status: "running" | "paused" | "done" | "error";
+interface Log {
+  id: number;
+  actionType: string;
+  targetTweetId: string | null;
+  targetUsername: string | null;
+  tweetContent: string | null;
+  status: string;
+  errorMessage: string | null;
   createdAt: string;
 }
 
-const MOCK_JOBS: DmJob[] = [
-  {
-    id: "1",
-    platform: "instagram",
-    templateName: "軽貨物荷主向けDM",
-    targets: 80,
-    sent: 43,
-    status: "running",
-    createdAt: "2026-04-11",
-  },
-  {
-    id: "2",
-    platform: "linkedin",
-    templateName: "人材採用企業向け",
-    targets: 30,
-    sent: 30,
-    status: "done",
-    createdAt: "2026-04-10",
-  },
-];
+interface Account {
+  username: string | null;
+  isConnected: boolean;
+}
 
-const JOB_STATUS_STYLES: Record<DmJob["status"], { label: string; color: string; bg: string; border: string }> = {
-  running: { label: "送信中", color: "#86efac", bg: "#14532d", border: "#22c55e" },
-  paused:  { label: "停止中", color: "#fde68a", bg: "#451a03", border: "#f59e0b" },
-  done:    { label: "完了",   color: "#93c5fd", bg: "#1e3a5f", border: "#3b82f6" },
-  error:   { label: "エラー", color: "#fca5a5", bg: "#450a0a", border: "#ef4444" },
+const ACTION_CONFIG: Record<ActionType, { label: string; icon: React.ElementType; color: string; desc: string }> = {
+  like:     { label: "いいね",     icon: Heart,         color: "#E0245E", desc: "キーワードを含むツイートに自動いいね" },
+  retweet:  { label: "リツイート", icon: Repeat2,       color: "#17BF63", desc: "キーワードを含むツイートを自動RT" },
+  reply:    { label: "リプライ",   icon: MessageCircle, color: "#1DA1F2", desc: "キーワードを含むツイートに自動リプ" },
+  follow:   { label: "フォロー",   icon: UserPlus,      color: "#794BC4", desc: "キーワードで検索したユーザーを自動フォロー" },
+};
+
+const STATUS_STYLE: Record<string, CSSProperties> = {
+  success: { background: "#14532d", color: "#86efac", border: "1px solid #22c55e" },
+  error:   { background: "#450a0a", color: "#fca5a5", border: "1px solid #ef4444" },
 };
 
 export default function SnsPage() {
   const { toast } = useToast();
-  const [activePlatform, setActivePlatform] = useState<Platform>("instagram");
-  const [activeTab, setActiveTab] = useState<"account" | "templates" | "jobs" | "schedule">("account");
+  const { selectedBusinessId } = useBusiness();
 
-  const [accounts, setAccounts] = useState<Record<Platform, AccountSetting>>({
-    instagram: { username: "", connected: false },
-    twitter:   { username: "", connected: false },
-    facebook:  { username: "", connected: false },
-    linkedin:  { username: "", connected: false },
+  const [activeTab, setActiveTab] = useState<"account" | "rules" | "logs">("account");
+  const [account, setAccount] = useState<Account | null>(null);
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [loadingAccount, setLoadingAccount] = useState(true);
+  const [loadingRules, setLoadingRules] = useState(false);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [running, setRunning] = useState<ActionType | null>(null);
+  const [editingRule, setEditingRule] = useState<ActionType | null>(null);
+
+  // アカウント接続フォーム
+  const [creds, setCreds] = useState({ apiKey: "", apiSecret: "", accessToken: "", accessTokenSecret: "", bearerToken: "" });
+  const [showSecrets, setShowSecrets] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // ルール編集フォーム
+  const [ruleForm, setRuleForm] = useState<{ keywords: string; dailyLimit: number; intervalSeconds: number; replyTemplate: string }>({
+    keywords: "", dailyLimit: 30, intervalSeconds: 120, replyTemplate: "",
   });
 
-  const [templates, setTemplates] = useState<DmTemplate[]>([
-    {
-      id: "t1",
-      platform: "instagram",
-      name: "軽貨物荷主向けDM",
-      content: "はじめまして、合同会社SIN JAPANの大谷と申します。\n\n貴社の配送業務に関してご提案がございます。\n軽貨物の配送コスト削減についてお話しできますでしょうか？\n\nよろしくお願いいたします。",
-    },
-  ]);
+  useEffect(() => {
+    if (!selectedBusinessId) return;
+    fetchAccount();
+    if (activeTab === "rules") fetchRules();
+    if (activeTab === "logs") fetchLogs();
+  }, [selectedBusinessId, activeTab]);
 
-  const [newTemplate, setNewTemplate] = useState({ name: "", content: "" });
-  const [showNewTemplate, setShowNewTemplate] = useState(false);
-  const [jobs, setJobs] = useState<DmJob[]>(MOCK_JOBS);
-
-  const platform = PLATFORMS.find(p => p.id === activePlatform)!;
-  const PlatformIcon = platform.icon;
-  const platformTemplates = templates.filter(t => t.platform === activePlatform);
-
-  function handleConnect() {
-    const username = accounts[activePlatform].username.trim();
-    if (!username) {
-      toast({ title: "ユーザー名を入力してください", variant: "destructive" });
-      return;
+  async function fetchAccount() {
+    setLoadingAccount(true);
+    try {
+      const res = await fetch(`/api/x/account?businessId=${selectedBusinessId}`, { credentials: "include" });
+      const data = await res.json();
+      setAccount(data);
+    } catch {
+      setAccount(null);
+    } finally {
+      setLoadingAccount(false);
     }
-    setAccounts(prev => ({ ...prev, [activePlatform]: { username, connected: true } }));
-    toast({ title: `${platform.label} に接続しました` });
   }
 
-  function handleDisconnect() {
-    setAccounts(prev => ({ ...prev, [activePlatform]: { username: prev[activePlatform].username, connected: false } }));
+  async function fetchRules() {
+    setLoadingRules(true);
+    try {
+      const res = await fetch(`/api/x/rules?businessId=${selectedBusinessId}`, { credentials: "include" });
+      const data = await res.json();
+      setRules(data);
+    } finally {
+      setLoadingRules(false);
+    }
+  }
+
+  async function fetchLogs() {
+    setLoadingLogs(true);
+    try {
+      const res = await fetch(`/api/x/logs?businessId=${selectedBusinessId}`, { credentials: "include" });
+      const data = await res.json();
+      setLogs(data);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }
+
+  async function handleConnect() {
+    if (!creds.apiKey || !creds.apiSecret || !creds.accessToken || !creds.accessTokenSecret) {
+      toast({ title: "すべての認証情報を入力してください", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/x/account", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ businessId: selectedBusinessId, ...creds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: `@${data.username} に接続しました` });
+      setCreds({ apiKey: "", apiSecret: "", accessToken: "", accessTokenSecret: "", bearerToken: "" });
+      fetchAccount();
+    } catch (err: any) {
+      toast({ title: err.message ?? "接続に失敗しました", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    await fetch(`/api/x/account?businessId=${selectedBusinessId}`, { method: "DELETE", credentials: "include" });
     toast({ title: "接続を解除しました" });
+    fetchAccount();
   }
 
-  function handleAddTemplate() {
-    if (!newTemplate.name.trim() || !newTemplate.content.trim()) {
-      toast({ title: "テンプレート名と本文を入力してください", variant: "destructive" });
-      return;
+  async function handleSaveRule(actionType: ActionType) {
+    try {
+      const res = await fetch(`/api/x/rules/${actionType}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ businessId: selectedBusinessId, ...ruleForm, enabled: rules.find(r => r.actionType === actionType)?.enabled ?? false }),
+      });
+      if (!res.ok) throw new Error("保存に失敗");
+      toast({ title: "保存しました" });
+      setEditingRule(null);
+      fetchRules();
+    } catch (err: any) {
+      toast({ title: err.message, variant: "destructive" });
     }
-    setTemplates(prev => [...prev, {
-      id: Date.now().toString(),
-      platform: activePlatform,
-      name: newTemplate.name,
-      content: newTemplate.content,
-    }]);
-    setNewTemplate({ name: "", content: "" });
-    setShowNewTemplate(false);
-    toast({ title: "テンプレートを保存しました" });
   }
 
-  function handleDeleteTemplate(id: string) {
-    setTemplates(prev => prev.filter(t => t.id !== id));
+  async function handleToggleRule(rule: Rule) {
+    await fetch(`/api/x/rules/${rule.actionType}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        businessId: selectedBusinessId,
+        enabled: !rule.enabled,
+        keywords: rule.keywords,
+        dailyLimit: rule.dailyLimit,
+        intervalSeconds: rule.intervalSeconds,
+        replyTemplate: rule.replyTemplate,
+      }),
+    });
+    fetchRules();
   }
 
-  function toggleJob(id: string) {
-    setJobs(prev => prev.map(j =>
-      j.id === id ? { ...j, status: j.status === "running" ? "paused" : "running" } : j
-    ));
+  async function handleRun(actionType: ActionType) {
+    setRunning(actionType);
+    try {
+      const res = await fetch(`/api/x/run/${actionType}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ businessId: selectedBusinessId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: `${ACTION_CONFIG[actionType].label} を ${data.executed} 件実行しました` });
+      fetchRules();
+    } catch (err: any) {
+      toast({ title: err.message ?? "実行に失敗しました", variant: "destructive" });
+    } finally {
+      setRunning(null);
+    }
   }
 
-  const tabs: { id: typeof activeTab; label: string; icon: React.ElementType }[] = [
-    { id: "account",   label: "アカウント", icon: Settings },
-    { id: "templates", label: "テンプレート", icon: MessageSquare },
-    { id: "jobs",      label: "送信ジョブ", icon: Send },
-    { id: "schedule",  label: "スケジュール", icon: Clock },
+  function openEditRule(rule: Rule) {
+    setRuleForm({
+      keywords: rule.keywords,
+      dailyLimit: rule.dailyLimit,
+      intervalSeconds: rule.intervalSeconds,
+      replyTemplate: rule.replyTemplate ?? "",
+    });
+    setEditingRule(rule.actionType as ActionType);
+  }
+
+  const tabs = [
+    { id: "account" as const, label: "アカウント" },
+    { id: "rules"   as const, label: "自動化ルール" },
+    { id: "logs"    as const, label: "実行ログ" },
   ];
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="border-b border-border px-6 py-4 shrink-0">
-        <h1 className="text-lg font-bold tracking-tight font-mono uppercase">SNS DM 自動化</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">複数SNSプラットフォームのDM送信を自動化します</p>
+      {/* ヘッダー */}
+      <div className="border-b border-border px-6 py-4 shrink-0 flex items-center gap-3">
+        <Twitter className="w-5 h-5" style={{ color: "#1DA1F2" }} />
+        <div>
+          <h1 className="text-lg font-bold tracking-tight font-mono uppercase">X (Twitter) 自動化</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">いいね・RT・リプライ・フォローを自動化します</p>
+        </div>
+        {!loadingAccount && account?.isConnected && (
+          <span className="ml-auto flex items-center gap-1.5 text-xs text-green-400 border border-green-900/50 bg-green-950/30 px-2 py-1">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            @{account.username}
+          </span>
+        )}
       </div>
 
-      <div className="flex flex-1 min-h-0">
-        {/* プラットフォーム選択サイドバー */}
-        <div className="w-44 shrink-0 border-r border-border flex flex-col py-3 gap-1 px-2">
-          {PLATFORMS.map(p => {
-            const Icon = p.icon;
-            const isActive = activePlatform === p.id;
-            const isConnected = accounts[p.id].connected;
-            return (
-              <button
-                key={p.id}
-                onClick={() => setActivePlatform(p.id)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium transition-colors text-left w-full ${
-                  isActive
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" style={{ color: isActive ? undefined : p.color }} />
-                <span className="flex-1 truncate">{p.label}</span>
-                {isConnected && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-                )}
-              </button>
-            );
-          })}
-        </div>
+      {/* タブ */}
+      <div className="border-b border-border flex shrink-0">
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className={`px-5 py-2.5 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors ${
+              activeTab === t.id
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-        {/* メインコンテンツ */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {/* プラットフォームヘッダー */}
-          <div className="border-b border-border px-6 py-3 flex items-center gap-3 shrink-0">
-            <PlatformIcon className="w-5 h-5" style={{ color: platform.color }} />
-            <span className="font-bold text-sm">{platform.label}</span>
-            <span className="text-xs text-muted-foreground border border-border px-2 py-0.5 font-mono">
-              上限: {platform.dmLimit}
-            </span>
-            {accounts[activePlatform].connected ? (
-              <span className="flex items-center gap-1 text-xs text-green-400">
-                <CheckCircle2 className="w-3.5 h-3.5" /> 接続済
-              </span>
+      {/* コンテンツ */}
+      <div className="flex-1 overflow-y-auto p-6">
+
+        {/* ── アカウントタブ ── */}
+        {activeTab === "account" && (
+          <div className="max-w-lg space-y-6">
+            {loadingAccount ? (
+              <div className="h-24 animate-pulse bg-muted/30 border border-border" />
+            ) : account?.isConnected ? (
+              <div className="border border-green-900/40 bg-green-950/10 p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-400" />
+                  <div>
+                    <div className="font-bold text-sm">@{account.username}</div>
+                    <div className="text-xs text-muted-foreground">X API 接続済み</div>
+                  </div>
+                </div>
+                <Button size="sm" variant="outline" className="rounded-none text-xs" onClick={handleDisconnect}>
+                  接続解除
+                </Button>
+              </div>
             ) : (
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                <XCircle className="w-3.5 h-3.5" /> 未接続
-              </span>
-            )}
-          </div>
+              <div className="border border-border p-5 space-y-4">
+                <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">X API 認証情報</div>
 
-          {/* タブ */}
-          <div className="border-b border-border flex shrink-0">
-            {tabs.map(t => {
-              const TabIcon = t.icon;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setActiveTab(t.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors ${
-                    activeTab === t.id
-                      ? "border-foreground text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <TabIcon className="w-3.5 h-3.5" />
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* タブコンテンツ */}
-          <div className="flex-1 overflow-y-auto p-6">
-
-            {/* アカウント設定 */}
-            {activeTab === "account" && (
-              <div className="max-w-lg space-y-6">
-                <div className="border border-border p-4 space-y-4">
-                  <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">アカウント接続</div>
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">ユーザー名 / ID</label>
-                    <Input
-                      placeholder={`@${platform.id}_username`}
-                      value={accounts[activePlatform].username}
-                      onChange={e => setAccounts(prev => ({ ...prev, [activePlatform]: { ...prev[activePlatform], username: e.target.value } }))}
-                      className="rounded-none font-mono text-sm"
-                      disabled={accounts[activePlatform].connected}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">パスワード / APIキー</label>
-                    <Input
-                      type="password"
-                      placeholder="••••••••"
-                      className="rounded-none font-mono text-sm"
-                      disabled={accounts[activePlatform].connected}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    {accounts[activePlatform].connected ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="rounded-none"
-                        onClick={handleDisconnect}
-                      >
-                        接続解除
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        className="rounded-none"
-                        onClick={handleConnect}
-                      >
-                        接続する
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                <div className="border border-amber-900/40 bg-amber-950/20 p-4 flex gap-3">
-                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <div className="text-xs font-bold text-amber-400">注意事項</div>
-                    <div className="text-xs text-muted-foreground">{platform.note}</div>
-                    <div className="text-xs text-muted-foreground">送信上限を超えるとアカウントが一時停止される場合があります。</div>
-                  </div>
-                </div>
-
-                <div className="border border-border p-4 space-y-3">
-                  <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">送信制限設定</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">1日の送信上限</label>
-                      <Input type="number" defaultValue={30} className="rounded-none font-mono text-sm" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-xs text-muted-foreground">送信間隔（秒）</label>
-                      <Input type="number" defaultValue={120} className="rounded-none font-mono text-sm" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* テンプレート */}
-            {activeTab === "templates" && (
-              <div className="max-w-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
-                    {platform.label} テンプレート（{platformTemplates.length}件）
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="rounded-none text-xs gap-1"
-                    onClick={() => setShowNewTemplate(true)}
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setShowSecrets(!showSecrets)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    新規作成
-                  </Button>
+                    {showSecrets ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    {showSecrets ? "隠す" : "表示"}
+                  </button>
                 </div>
 
-                {showNewTemplate && (
-                  <div className="border border-border p-4 space-y-3 bg-muted/10">
+                {[
+                  { key: "apiKey",             label: "API Key (Consumer Key)" },
+                  { key: "apiSecret",          label: "API Secret (Consumer Secret)" },
+                  { key: "accessToken",        label: "Access Token" },
+                  { key: "accessTokenSecret",  label: "Access Token Secret" },
+                  { key: "bearerToken",        label: "Bearer Token（任意）" },
+                ].map(({ key, label }) => (
+                  <div key={key} className="space-y-1">
+                    <label className="text-xs text-muted-foreground">{label}</label>
                     <Input
-                      placeholder="テンプレート名"
-                      value={newTemplate.name}
-                      onChange={e => setNewTemplate(prev => ({ ...prev, name: e.target.value }))}
-                      className="rounded-none text-sm"
+                      type={showSecrets ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={creds[key as keyof typeof creds]}
+                      onChange={e => setCreds(prev => ({ ...prev, [key]: e.target.value }))}
+                      className="rounded-none font-mono text-sm"
                     />
-                    <Textarea
-                      placeholder="DM本文（{{company}}などの変数が使えます）"
-                      value={newTemplate.content}
-                      onChange={e => setNewTemplate(prev => ({ ...prev, content: e.target.value }))}
-                      className="rounded-none text-sm min-h-[120px] font-mono"
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      使用可能変数: <code className="bg-muted px-1">{"{{company}}"}</code> <code className="bg-muted px-1">{"{{name}}"}</code> <code className="bg-muted px-1">{"{{industry}}"}</code>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" className="rounded-none" onClick={handleAddTemplate}>保存</Button>
-                      <Button size="sm" variant="outline" className="rounded-none" onClick={() => setShowNewTemplate(false)}>キャンセル</Button>
-                    </div>
                   </div>
-                )}
+                ))}
 
-                {platformTemplates.length === 0 && !showNewTemplate ? (
-                  <div className="border border-dashed border-border p-8 text-center text-muted-foreground text-sm">
-                    テンプレートがありません。「新規作成」から追加してください。
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {platformTemplates.map(t => (
-                      <div key={t.id} className="border border-border p-4 group">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-bold">{t.name}</span>
-                          <button
-                            onClick={() => handleDeleteTemplate(t.id)}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed">{t.content}</pre>
+                <Button className="rounded-none w-full" onClick={handleConnect} disabled={saving}>
+                  {saving ? "接続テスト中..." : "接続する"}
+                </Button>
+              </div>
+            )}
+
+            <div className="border border-amber-900/40 bg-amber-950/20 p-4 flex gap-3">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1.5 text-xs text-muted-foreground">
+                <div className="font-bold text-amber-400">API取得方法</div>
+                <div>1. <a href="https://developer.twitter.com" target="_blank" rel="noreferrer" className="underline text-blue-400">developer.twitter.com</a> でアプリを作成</div>
+                <div>2. Read/Write 権限を設定</div>
+                <div>3. API Key・Access Token を生成してここに貼り付け</div>
+                <div className="mt-1 text-amber-300/80">送信上限: いいね/RT 1日1,000件・フォロー 400件（Basic以上）</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── ルールタブ ── */}
+        {activeTab === "rules" && (
+          <div className="space-y-3 max-w-2xl">
+            {!account?.isConnected && (
+              <div className="border border-dashed border-border p-4 text-xs text-muted-foreground flex items-center gap-2">
+                <XCircle className="w-4 h-4" />
+                先にアカウントタブでX APIを接続してください
+              </div>
+            )}
+
+            {loadingRules ? (
+              <div className="space-y-2">
+                {[1,2,3,4].map(i => <div key={i} className="h-20 animate-pulse bg-muted/30 border border-border" />)}
+              </div>
+            ) : (
+              (["like", "retweet", "reply", "follow"] as ActionType[]).map(actionType => {
+                const rule = rules.find(r => r.actionType === actionType);
+                const cfg = ACTION_CONFIG[actionType];
+                const Icon = cfg.icon;
+                const isEditing = editingRule === actionType;
+
+                return (
+                  <div key={actionType} className="border border-border">
+                    {/* カードヘッダー */}
+                    <div className="flex items-center gap-3 px-4 py-3">
+                      <Icon className="w-4 h-4 shrink-0" style={{ color: cfg.color }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-bold">{cfg.label}</div>
+                        <div className="text-xs text-muted-foreground">{cfg.desc}</div>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 送信ジョブ */}
-            {activeTab === "jobs" && (
-              <div className="max-w-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">送信ジョブ</div>
-                  <Button size="sm" className="rounded-none text-xs gap-1">
-                    <Plus className="w-3.5 h-3.5" />
-                    新規ジョブ
-                  </Button>
-                </div>
-
-                {jobs.length === 0 ? (
-                  <div className="border border-dashed border-border p-8 text-center text-muted-foreground text-sm">
-                    ジョブがありません
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {jobs.map(job => {
-                      const p = PLATFORMS.find(p => p.id === job.platform)!;
-                      const JobIcon = p.icon;
-                      const statusStyle = JOB_STATUS_STYLES[job.status];
-                      const progress = Math.round((job.sent / job.targets) * 100);
-                      return (
-                        <div key={job.id} className="border border-border p-4">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <JobIcon className="w-4 h-4" style={{ color: p.color }} />
-                              <span className="text-sm font-bold">{job.templateName}</span>
-                              <span
-                                className="text-[10px] px-1.5 py-0.5 font-mono"
-                                style={{ background: statusStyle.bg, color: statusStyle.color, border: `1px solid ${statusStyle.border}` }}
-                              >
-                                {statusStyle.label}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {(job.status === "running" || job.status === "paused") && (
-                                <button
-                                  onClick={() => toggleJob(job.id)}
-                                  className="text-muted-foreground hover:text-foreground transition-colors"
-                                >
-                                  {job.status === "running"
-                                    ? <Pause className="w-4 h-4" />
-                                    : <Play className="w-4 h-4" />
-                                  }
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground font-mono mb-2">
-                            <span><Users className="w-3 h-3 inline mr-1" />{job.targets}件対象</span>
-                            <span><Send className="w-3 h-3 inline mr-1" />{job.sent}件送信済</span>
-                            <span className="ml-auto">{job.createdAt}</span>
-                          </div>
-                          <div className="h-1 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-foreground transition-all"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-muted-foreground font-mono mt-1 text-right">{progress}%</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* スケジュール */}
-            {activeTab === "schedule" && (
-              <div className="max-w-lg space-y-6">
-                <div className="border border-border p-4 space-y-4">
-                  <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">自動送信スケジュール</div>
-                  <div className="space-y-3">
-                    {[
-                      { label: "月〜金 09:00〜12:00", active: true },
-                      { label: "月〜金 13:00〜17:00", active: true },
-                      { label: "土曜 10:00〜12:00", active: false },
-                    ].map((s, i) => (
-                      <div key={i} className="flex items-center justify-between border border-border px-3 py-2">
-                        <span className="text-sm font-mono">{s.label}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {rule && (
+                          <>
+                            <span className="text-xs text-muted-foreground font-mono">{rule.executedToday}/{rule.dailyLimit}件</span>
+                            <button
+                              onClick={() => handleRun(actionType)}
+                              disabled={!account?.isConnected || running !== null}
+                              className="flex items-center gap-1 text-xs px-2 py-1 border border-border text-muted-foreground hover:text-foreground hover:border-foreground transition-colors disabled:opacity-40"
+                            >
+                              {running === actionType
+                                ? <RefreshCw className="w-3 h-3 animate-spin" />
+                                : <Zap className="w-3 h-3" />
+                              }
+                              今すぐ実行
+                            </button>
+                            <button
+                              onClick={() => handleToggleRule(rule)}
+                              disabled={!account?.isConnected}
+                              className={`text-xs px-2 py-1 border font-mono transition-colors disabled:opacity-40 ${
+                                rule.enabled
+                                  ? "bg-foreground text-background border-foreground"
+                                  : "border-border text-muted-foreground"
+                              }`}
+                            >
+                              {rule.enabled ? "有効" : "無効"}
+                            </button>
+                          </>
+                        )}
                         <button
-                          className={`text-xs px-2 py-0.5 font-mono border transition-colors ${
-                            s.active
-                              ? "bg-foreground text-background border-foreground"
-                              : "text-muted-foreground border-border"
-                          }`}
+                          onClick={() => {
+                            if (isEditing) { setEditingRule(null); return; }
+                            if (rule) openEditRule(rule);
+                            else setEditingRule(actionType);
+                          }}
+                          className="text-xs text-muted-foreground hover:text-foreground border border-border px-2 py-1 transition-colors"
                         >
-                          {s.active ? "有効" : "無効"}
+                          {isEditing ? "閉じる" : "設定"}
                         </button>
                       </div>
-                    ))}
-                  </div>
-                  <Button size="sm" variant="outline" className="rounded-none text-xs gap-1">
-                    <Plus className="w-3.5 h-3.5" />
-                    時間帯を追加
-                  </Button>
-                </div>
+                    </div>
 
-                <div className="border border-border p-4 space-y-3">
-                  <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ターゲット自動取得</div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    リストページで収集した企業のSNSアカウントを自動検索し、DMターゲットに追加します。
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <input type="checkbox" id="auto-target" className="accent-foreground" />
-                    <label htmlFor="auto-target" className="text-xs text-muted-foreground">
-                      メール送信済みリードのSNSアカウントを自動検索する
-                    </label>
+                    {/* キーワードプレビュー */}
+                    {rule?.keywords && !isEditing && (
+                      <div className="px-4 pb-2 text-xs text-muted-foreground font-mono truncate border-t border-border/50 pt-2">
+                        キーワード: {rule.keywords}
+                      </div>
+                    )}
+
+                    {/* 設定フォーム */}
+                    {isEditing && (
+                      <div className="border-t border-border p-4 space-y-3 bg-muted/10">
+                        <div className="space-y-1">
+                          <label className="text-xs text-muted-foreground">キーワード（カンマ区切りで複数指定）</label>
+                          <Input
+                            placeholder="軽貨物, 物流, 運送会社"
+                            value={ruleForm.keywords}
+                            onChange={e => setRuleForm(p => ({ ...p, keywords: e.target.value }))}
+                            className="rounded-none text-sm font-mono"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">1日の上限件数</label>
+                            <Input
+                              type="number"
+                              value={ruleForm.dailyLimit}
+                              onChange={e => setRuleForm(p => ({ ...p, dailyLimit: Number(e.target.value) }))}
+                              className="rounded-none text-sm font-mono"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">実行間隔（秒）</label>
+                            <Input
+                              type="number"
+                              value={ruleForm.intervalSeconds}
+                              onChange={e => setRuleForm(p => ({ ...p, intervalSeconds: Number(e.target.value) }))}
+                              className="rounded-none text-sm font-mono"
+                            />
+                          </div>
+                        </div>
+                        {actionType === "reply" && (
+                          <div className="space-y-1">
+                            <label className="text-xs text-muted-foreground">リプライ文面（{"{{tweet}}"} で対象ツイート冒頭を挿入）</label>
+                            <Textarea
+                              placeholder="はじめまして！配送のご相談があればお気軽にどうぞ🚚"
+                              value={ruleForm.replyTemplate}
+                              onChange={e => setRuleForm(p => ({ ...p, replyTemplate: e.target.value }))}
+                              className="rounded-none text-sm min-h-[80px]"
+                            />
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <Button size="sm" className="rounded-none" onClick={() => handleSaveRule(actionType)}>保存</Button>
+                          <Button size="sm" variant="outline" className="rounded-none" onClick={() => setEditingRule(null)}>キャンセル</Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* ── ログタブ ── */}
+        {activeTab === "logs" && (
+          <div className="max-w-2xl space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">
+                実行ログ（最新100件）
+              </div>
+              <Button size="sm" variant="outline" className="rounded-none h-7 w-7 p-0" onClick={fetchLogs}>
+                <RefreshCw className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+
+            {loadingLogs ? (
+              <div className="space-y-1">
+                {[1,2,3].map(i => <div key={i} className="h-12 animate-pulse bg-muted/30 border border-border" />)}
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="border border-dashed border-border p-8 text-center text-muted-foreground text-sm">
+                <History className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                実行ログがありません
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {logs.map(log => {
+                  const cfg = ACTION_CONFIG[log.actionType as ActionType];
+                  const Icon = cfg?.icon ?? Zap;
+                  return (
+                    <div key={log.id} className="flex items-start gap-3 border border-border px-3 py-2.5">
+                      <Icon className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: cfg?.color }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold">{cfg?.label ?? log.actionType}</span>
+                          {log.targetUsername && (
+                            <span className="text-xs text-muted-foreground font-mono">@{log.targetUsername}</span>
+                          )}
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 font-mono ml-auto"
+                            style={STATUS_STYLE[log.status] ?? STATUS_STYLE.error}
+                          >
+                            {log.status === "success" ? "成功" : "エラー"}
+                          </span>
+                        </div>
+                        {log.tweetContent && (
+                          <div className="text-xs text-muted-foreground truncate mt-0.5">{log.tweetContent}</div>
+                        )}
+                        {log.errorMessage && (
+                          <div className="text-xs text-red-400 mt-0.5">{log.errorMessage}</div>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground font-mono shrink-0">
+                        {new Date(log.createdAt).toLocaleString("ja-JP", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import searchRouter from "./search";
 import dashboardRouter from "./dashboard";
 import unsubscribeRouter from "./unsubscribe";
 import cronJobsRouter from "./cron-jobs";
+import xAutomationRouter from "./x-automation";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(searchRouter);
 router.use(dashboardRouter);
 router.use(unsubscribeRouter);
 router.use(cronJobsRouter);
+router.use(xAutomationRouter);
 
 export default router;

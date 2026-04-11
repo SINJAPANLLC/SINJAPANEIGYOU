@@ -5,3 +5,4 @@ export * from "./campaigns";
 export * from "./email-logs";
 export * from "./unsubscribes";
 export * from "./cron-jobs";
+export * from "./x-automation";
