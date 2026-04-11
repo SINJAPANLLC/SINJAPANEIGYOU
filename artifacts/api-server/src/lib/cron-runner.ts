@@ -7,10 +7,31 @@ import { logger } from "./logger";
 import { v4 as uuidv4 } from "uuid";
 
 const activeTasks = new Map<number, ReturnType<typeof cron.schedule>>();
+const COMPANY_WEBSITE = process.env.COMPANY_WEBSITE || "https://sinjapan.work";
 
 function buildUnsubscribeLink(token: string) {
   const base = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || "localhost"}`;
   return `${base}/api/unsubscribe/${token}`;
+}
+
+// フッターのMailアドレス行の直後にサイトURLを挿入する
+function injectWebsiteIntoFooter(html: string, websiteUrl: string): string {
+  if (!websiteUrl || html.includes(websiteUrl)) return html;
+  const siteRow = `<tr><td style="color:#93c5fd;font-size:11px;padding:3px 0;white-space:nowrap;width:60px;">サイト</td><td style="font-size:11px;padding:3px 0;"><a href="${websiteUrl}" style="color:#bfdbfe;text-decoration:none;" target="_blank">${websiteUrl}</a></td></tr>`;
+  // 許認可行の前に挿入（フッターテーブル内）
+  if (html.includes("許認可")) {
+    return html.replace(/(<tr>[^<]*<td[^>]*>許認可<\/td>)/i, `${siteRow}$1`);
+  }
+  // Mailアドレス行の直後に挿入
+  const mailRowEnd = "</tr>";
+  const mailIdx = html.lastIndexOf("info@sinjapan.jp");
+  if (mailIdx !== -1) {
+    const afterMail = html.indexOf(mailRowEnd, mailIdx);
+    if (afterMail !== -1) {
+      return html.slice(0, afterMail + mailRowEnd.length) + siteRow + html.slice(afterMail + mailRowEnd.length);
+    }
+  }
+  return html;
 }
 
 async function runLeadSearch(jobId: number, businessId: number, config: Record<string, unknown>) {
@@ -100,8 +121,9 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
         .replace(/{{service_name}}/g, business.name)
         .replace(/{{service_url}}/g, business.serviceUrl || "")
         .replace(/{{unsubscribe_url}}/g, unsubUrl);
-      const html = replaced
-        + (replaced.includes(unsubUrl) ? "" : fallbackUnsubLink)
+      const withSite = injectWebsiteIntoFooter(replaced, COMPANY_WEBSITE);
+      const html = withSite
+        + (withSite.includes(unsubUrl) ? "" : fallbackUnsubLink)
         + (business.signatureHtml || "");
 
       const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });
@@ -203,8 +225,9 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
       .replace(/{{service_name}}/g, business.name)
       .replace(/{{service_url}}/g, business.serviceUrl || "")
       .replace(/{{unsubscribe_url}}/g, unsubUrl);
-    const html = replaced
-      + (replaced.includes(unsubUrl) ? "" : fallbackUnsubLink)
+    const withSite = injectWebsiteIntoFooter(replaced, COMPANY_WEBSITE);
+    const html = withSite
+      + (withSite.includes(unsubUrl) ? "" : fallbackUnsubLink)
       + (business.signatureHtml || "");
 
     const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });
