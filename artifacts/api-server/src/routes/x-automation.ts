@@ -147,16 +147,16 @@ router.put("/x/accounts/:id/rules/:actionType", requireAuth, async (req, res): P
   const { actionType } = req.params;
   if (!(await ownsAccount(userId, accountId))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-  const { enabled, keywords, dailyLimit, intervalSeconds, replyTemplate } = req.body;
+  const { enabled, keywords, dailyLimit, intervalSeconds, replyTemplate, scheduleTimes } = req.body;
   const [existing] = await db.select().from(xAutomationRulesTable)
     .where(and(eq(xAutomationRulesTable.xAccountId, accountId), eq(xAutomationRulesTable.actionType, actionType)));
 
   if (existing) {
     await db.update(xAutomationRulesTable)
-      .set({ enabled, keywords, dailyLimit: Number(dailyLimit), intervalSeconds: Number(intervalSeconds), replyTemplate: replyTemplate || null })
+      .set({ enabled, keywords, dailyLimit: Number(dailyLimit), intervalSeconds: Number(intervalSeconds), replyTemplate: replyTemplate || null, scheduleTimes: scheduleTimes || "" })
       .where(eq(xAutomationRulesTable.id, existing.id));
   } else {
-    await db.insert(xAutomationRulesTable).values({ xAccountId: accountId, actionType, enabled, keywords: keywords || "", dailyLimit: Number(dailyLimit) || 30, intervalSeconds: Number(intervalSeconds) || 120, replyTemplate: replyTemplate || null });
+    await db.insert(xAutomationRulesTable).values({ xAccountId: accountId, actionType, enabled, keywords: keywords || "", dailyLimit: Number(dailyLimit) || 30, intervalSeconds: Number(intervalSeconds) || 120, replyTemplate: replyTemplate || null, scheduleTimes: scheduleTimes || "" });
   }
   res.json({ success: true });
 });

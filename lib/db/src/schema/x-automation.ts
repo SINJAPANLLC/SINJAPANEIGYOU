@@ -25,6 +25,7 @@ export const xAutomationRulesTable = pgTable("x_automation_rules", {
   dailyLimit: integer("daily_limit").notNull().default(30),
   intervalSeconds: integer("interval_seconds").notNull().default(120),
   replyTemplate: text("reply_template"),
+  scheduleTimes: text("schedule_times").notNull().default(""),
   executedToday: integer("executed_today").notNull().default(0),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   resetAt: timestamp("reset_at", { withTimezone: true }),

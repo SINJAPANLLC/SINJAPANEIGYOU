@@ -24,6 +24,7 @@ interface Rule {
   dailyLimit: number;
   intervalSeconds: number;
   replyTemplate: string | null;
+  scheduleTimes: string;
   executedToday: number;
   lastRunAt: string | null;
 }
@@ -58,12 +59,11 @@ const ACTION_DESCS: Record<string, string> = {
 };
 const ACTION_TYPES = ["post", "like", "retweet", "reply", "follow", "followback", "dm"];
 
-type SubTab = "account" | "persona" | "post" | "rules" | "logs";
+type SubTab = "account" | "persona" | "rules" | "logs";
 
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: "account", label: "アカウント" },
   { id: "persona", label: "ペルソナ" },
-  { id: "post",    label: "投稿" },
   { id: "rules",   label: "自動化ルール" },
   { id: "logs",    label: "実行ログ" },
 ];
@@ -207,7 +207,8 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
     setLoadingLogs(true);
     try {
       const res = await fetch(`/api/x/accounts/${account.id}/logs`, { credentials: "include" });
-      setLogs(await res.json());
+      const data = await res.json();
+      setLogs(Array.isArray(data) ? data : []);
     } catch { setLogs([]); } finally { setLoadingLogs(false); }
   }, [account.id]);
 
@@ -306,13 +307,22 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
     try {
       const res = await fetch(`/api/x/accounts/${account.id}/rules/${actionType}`, {
         method: "PUT", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify(edit),
+        body: JSON.stringify({ ...edit, scheduleTimes: edit.scheduleTimes ?? "" }),
       });
       if (!res.ok) throw new Error("保存失敗");
       toast({ title: `${ACTION_LABELS[actionType] ?? actionType} ルールを保存しました` });
       await fetchRules();
     } catch { toast({ title: "保存に失敗しました", variant: "destructive" }); }
     finally { setSavingRule(null); }
+  }
+
+  function toggleScheduleHour(actionType: string, hour: number) {
+    setRuleEdits(r => {
+      const current = r[actionType]?.scheduleTimes ?? "";
+      const hours = current ? current.split(",").map(Number) : [];
+      const newHours = hours.includes(hour) ? hours.filter(h => h !== hour) : [...hours, hour].sort((a, b) => a - b);
+      return { ...r, [actionType]: { ...r[actionType], scheduleTimes: newHours.join(",") } };
+    });
   }
 
   async function handleRun(actionType: string) {
@@ -472,69 +482,6 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
           </div>
         )}
 
-        {/* ── 投稿タブ ── */}
-        {subTab === "post" && (
-          <div className="max-w-lg space-y-4">
-            {!account.isConnected && (
-              <div className="border border-dashed border-border p-4 text-xs text-muted-foreground flex items-center gap-2">
-                <XCircle className="w-4 h-4" /> 先にアカウントタブでX APIを接続してください
-              </div>
-            )}
-            <div className="border border-border p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ツイート作成</div>
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder="テーマ（任意）"
-                    value={postTheme}
-                    onChange={e => setPostTheme(e.target.value)}
-                    className="rounded-none text-xs h-7 w-32"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="rounded-none h-7 text-xs gap-1 border-[#1DA1F2]/50 text-[#1DA1F2] hover:bg-[#1DA1F2]/10"
-                    onClick={handleGenerateTweet}
-                    disabled={generating || !account.isConnected}
-                  >
-                    {generating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                    AI生成
-                  </Button>
-                </div>
-              </div>
-              <Textarea
-                placeholder="いまどうしてる？"
-                value={postText}
-                onChange={e => setPostText(e.target.value)}
-                className="rounded-none text-sm min-h-[140px] resize-none"
-                disabled={!account.isConnected}
-              />
-              <div className="flex items-center justify-between">
-                <span className={`text-xs font-mono tabular-nums ${postText.length > 280 ? "text-red-400" : postText.length > 240 ? "text-amber-400" : "text-muted-foreground"}`}>
-                  {postText.length} / 280
-                </span>
-                <div className="flex gap-2">
-                  {postText && (
-                    <Button size="sm" variant="outline" className="rounded-none text-xs" onClick={handleGenerateTweet} disabled={generating}>
-                      <RefreshCw className={`w-3 h-3 mr-1 ${generating ? "animate-spin" : ""}`} />再生成
-                    </Button>
-                  )}
-                  <Button
-                    className="rounded-none"
-                    onClick={handlePost}
-                    disabled={posting || !account.isConnected || postText.length === 0 || postText.length > 280}
-                  >
-                    {posting
-                      ? <><RefreshCw className="w-3.5 h-3.5 animate-spin mr-2" />投稿中...</>
-                      : <><Twitter className="w-3.5 h-3.5 mr-2" />投稿する</>
-                    }
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ── 自動化ルールタブ ── */}
         {subTab === "rules" && (
           <div className="max-w-2xl space-y-4">
@@ -644,10 +591,70 @@ function AccountPanel({ account, onDeleted }: { account: XAccount; onDeleted: ()
                       <div className="text-[10px] text-amber-500/80 mt-1">X APIの無料プランではDM送信に制限がある場合があります。</div>
                     </div>
                   )}
+                  {/* スケジュール時刻 */}
+                  <div className="space-y-2 border-t border-border/40 pt-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted-foreground">自動実行する時刻（複数選択可）</label>
+                      {rule.scheduleTimes && (
+                        <span className="text-[10px] font-mono text-[#1DA1F2]">
+                          {rule.scheduleTimes.split(",").map(h => `${h}:00`).join(" / ")}
+                        </span>
+                      )}
+                    </div>
+                    {/* プリセット */}
+                    <div className="flex gap-1.5 flex-wrap mb-1">
+                      {[
+                        { label: "朝・昼・夕", hours: "8,12,18" },
+                        { label: "朝・夜", hours: "8,21" },
+                        { label: "ビジネス", hours: "9,12,17" },
+                        { label: "夜のみ", hours: "20,22" },
+                      ].map(preset => (
+                        <button
+                          key={preset.label}
+                          onClick={() => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], scheduleTimes: preset.hours } }))}
+                          className={`text-[10px] px-2 py-0.5 border transition-colors ${
+                            rule.scheduleTimes === preset.hours
+                              ? "border-[#1DA1F2] text-[#1DA1F2] bg-[#1DA1F2]/10"
+                              : "border-border text-muted-foreground hover:border-foreground/40"
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setRuleEdits(r => ({ ...r, [actionType]: { ...r[actionType], scheduleTimes: "" } }))}
+                        className="text-[10px] px-2 py-0.5 border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/40 transition-colors"
+                      >
+                        クリア
+                      </button>
+                    </div>
+                    {/* 時間グリッド */}
+                    <div className="grid grid-cols-12 gap-0.5">
+                      {Array.from({ length: 24 }, (_, h) => {
+                        const selectedHours = rule.scheduleTimes ? rule.scheduleTimes.split(",").map(Number) : [];
+                        const isSelected = selectedHours.includes(h);
+                        return (
+                          <button
+                            key={h}
+                            onClick={() => toggleScheduleHour(actionType, h)}
+                            className={`text-[9px] font-mono h-6 transition-colors border ${
+                              isSelected
+                                ? "bg-[#1DA1F2] border-[#1DA1F2] text-white"
+                                : "border-border text-muted-foreground hover:border-[#1DA1F2]/50 hover:text-foreground"
+                            }`}
+                          >
+                            {h}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">スケジュールを設定しない場合は「今すぐ実行」ボタンのみ動作します</div>
+                  </div>
+
                   {(rule.executedToday > 0 || rule.lastRunAt) && (
-                    <div className="text-xs text-muted-foreground font-mono flex items-center gap-3 pt-1">
+                    <div className="text-xs text-muted-foreground font-mono flex items-center gap-3 pt-1 border-t border-border/30">
                       <span>今日の実行数: {rule.executedToday}</span>
-                      {rule.lastRunAt && <span>最終: {new Date(rule.lastRunAt).toLocaleString("ja-JP")}</span>}
+                      {rule.lastRunAt && <span>最終実行: {new Date(rule.lastRunAt).toLocaleString("ja-JP")}</span>}
                     </div>
                   )}
                 </div>
