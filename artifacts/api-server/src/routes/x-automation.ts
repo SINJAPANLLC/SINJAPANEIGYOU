@@ -401,8 +401,16 @@ router.post("/x/accounts/:id/run/:actionType", requireAuth, async (req, res): Pr
     res.json({ success: true, executed: executed.length });
   } catch (err: any) {
     logger.error({ err: err?.message, actionType }, "X automation run failed");
-    await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType, status: "error", errorMessage: err?.message }).catch(() => {});
-    res.status(500).json({ error: err?.message ?? "実行に失敗しました" });
+    let errMsg: string = err?.message ?? "実行に失敗しました";
+    if (errMsg.includes("453") || errMsg.includes("Essential access") || errMsg.includes("403")) {
+      errMsg = "X APIの無料プランではこの機能は利用できません（検索・DM・フォロワー取得はBasicプラン以上が必要）";
+    } else if (errMsg.includes("429") || errMsg.includes("Rate limit")) {
+      errMsg = "X APIのレート制限に達しました。しばらく待ってから再実行してください";
+    } else if (errMsg.includes("401") || errMsg.includes("Unauthorized")) {
+      errMsg = "X API認証エラー。アカウントの認証情報を確認してください";
+    }
+    await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType, status: "error", errorMessage: errMsg }).catch(() => {});
+    res.status(500).json({ error: errMsg });
   }
 });
 

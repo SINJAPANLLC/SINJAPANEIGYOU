@@ -135,7 +135,8 @@ export async function runXRule(
 export function startXScheduler() {
   // 毎時00分に実行
   cron.schedule("0 * * * *", async () => {
-    const nowHour = new Date().getHours(); // JST想定
+    // サーバーはUTCなので +9時間してJSTに変換
+    const nowHour = new Date(Date.now() + 9 * 60 * 60 * 1000).getUTCHours();
     logger.info({ nowHour }, "x-scheduler: hourly check");
 
     try {
