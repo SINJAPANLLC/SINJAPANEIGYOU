@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, CSSProperties } from "react";
 import { 
   useListLeads, 
   useSearchLeads,
@@ -35,12 +35,12 @@ const STATUS_LABELS: Record<string, string> = {
   unsubscribed: "配信停止"
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  unsent: "bg-zinc-700/60 text-zinc-200 border-zinc-600",
-  sent: "bg-blue-500/20 text-blue-300 border-blue-400/40",
-  replied: "bg-green-500/20 text-green-300 border-green-400/40",
-  ng: "bg-red-500/20 text-red-300 border-red-400/40",
-  unsubscribed: "bg-zinc-600/40 text-zinc-400 border-zinc-500/60"
+const STATUS_STYLES: Record<string, CSSProperties> = {
+  unsent:      { background: "#3f3f46", color: "#e4e4e7", border: "1px solid #71717a" },
+  sent:        { background: "#1e3a5f", color: "#93c5fd", border: "1px solid #3b82f6" },
+  replied:     { background: "#14532d", color: "#86efac", border: "1px solid #22c55e" },
+  ng:          { background: "#450a0a", color: "#fca5a5", border: "1px solid #ef4444" },
+  unsubscribed:{ background: "#27272a", color: "#a1a1aa", border: "1px solid #52525b" },
 };
 
 export default function LeadsPage() {
@@ -523,8 +523,11 @@ export default function LeadsPage() {
                       <div className="flex items-start justify-between mb-1">
                         <h4 className="font-bold text-sm truncate pr-2 group-hover:text-foreground">{lead.companyName || '社名不明'}</h4>
                         <div className="flex items-center gap-1 shrink-0">
-                          <span className={`text-[10px] px-1.5 py-0.5 border font-mono uppercase tracking-wider whitespace-nowrap ${STATUS_COLORS[lead.status]}`}>
-                            {STATUS_LABELS[lead.status]}
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 font-mono tracking-wider whitespace-nowrap"
+                            style={STATUS_STYLES[lead.status] ?? STATUS_STYLES.unsent}
+                          >
+                            {STATUS_LABELS[lead.status] ?? lead.status}
                           </span>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDeleteLead(lead.id); }}
