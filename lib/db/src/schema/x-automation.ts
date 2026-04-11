@@ -1,9 +1,9 @@
 import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
-import { businessesTable } from "./businesses";
 
 export const xAccountsTable = pgTable("x_accounts", {
   id: serial("id").primaryKey(),
-  businessId: integer("business_id").notNull().references(() => businessesTable.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
+  label: text("label").notNull().default(""),
   username: text("username"),
   apiKey: text("api_key"),
   apiSecret: text("api_secret"),
@@ -18,7 +18,7 @@ export const xAccountsTable = pgTable("x_accounts", {
 
 export const xAutomationRulesTable = pgTable("x_automation_rules", {
   id: serial("id").primaryKey(),
-  businessId: integer("business_id").notNull().references(() => businessesTable.id, { onDelete: "cascade" }),
+  xAccountId: integer("x_account_id").notNull().references(() => xAccountsTable.id, { onDelete: "cascade" }),
   actionType: text("action_type").notNull(),
   enabled: boolean("enabled").notNull().default(false),
   keywords: text("keywords").notNull().default(""),
@@ -34,7 +34,7 @@ export const xAutomationRulesTable = pgTable("x_automation_rules", {
 
 export const xAutomationLogsTable = pgTable("x_automation_logs", {
   id: serial("id").primaryKey(),
-  businessId: integer("business_id").notNull().references(() => businessesTable.id, { onDelete: "cascade" }),
+  xAccountId: integer("x_account_id").notNull().references(() => xAccountsTable.id, { onDelete: "cascade" }),
   actionType: text("action_type").notNull(),
   targetTweetId: text("target_tweet_id"),
   targetUserId: text("target_user_id"),

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
-import { db, businessesTable } from "@workspace/db";
+import { db } from "@workspace/db";
 import {
   xAccountsTable,
   xAutomationRulesTable,
@@ -15,17 +15,12 @@ const router: IRouter = Router();
 const ACTION_TYPES = ["like", "retweet", "reply", "follow"] as const;
 type ActionType = (typeof ACTION_TYPES)[number];
 
-async function ownsBusiness(userId: string, businessId: number) {
-  const [b] = await db
+async function ownsAccount(userId: string, accountId: number) {
+  const [a] = await db
     .select()
-    .from(businessesTable)
-    .where(
-      and(
-        eq(businessesTable.id, businessId),
-        eq(businessesTable.userId, userId)
-      )
-    );
-  return b;
+    .from(xAccountsTable)
+    .where(and(eq(xAccountsTable.id, accountId), eq(xAccountsTable.userId, userId)));
+  return a;
 }
 
 function buildClient(account: typeof xAccountsTable.$inferSelect) {
@@ -37,464 +32,269 @@ function buildClient(account: typeof xAccountsTable.$inferSelect) {
   });
 }
 
-// ── アカウント取得 ─────────────────────────────────────────
-router.get("/x/account", requireAuth, async (req, res): Promise<void> => {
+// ── アカウント一覧 ────────────────────────────────────────
+router.get("/x/accounts", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
-  const businessId = Number(req.query.businessId);
-  if (!businessId) {
-    res.status(400).json({ error: "businessId is required" });
-    return;
-  }
-  if (!(await ownsBusiness(userId, businessId))) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  const [account] = await db
+  const accounts = await db
     .select()
     .from(xAccountsTable)
-    .where(eq(xAccountsTable.businessId, businessId));
+    .where(eq(xAccountsTable.userId, userId))
+    .orderBy(xAccountsTable.createdAt);
 
-  if (!account) {
-    res.json(null);
-    return;
-  }
-  res.json({
-    ...account,
-    apiKey: account.apiKey ? "***" : null,
-    apiSecret: account.apiSecret ? "***" : null,
-    accessToken: account.accessToken ? "***" : null,
-    accessTokenSecret: account.accessTokenSecret ? "***" : null,
-    bearerToken: account.bearerToken ? "***" : null,
-  });
+  res.json(accounts.map(a => ({
+    ...a,
+    apiKey: a.apiKey ? "***" : null,
+    apiSecret: a.apiSecret ? "***" : null,
+    accessToken: a.accessToken ? "***" : null,
+    accessTokenSecret: a.accessTokenSecret ? "***" : null,
+    bearerToken: a.bearerToken ? "***" : null,
+  })));
 });
 
-// ── アカウント保存 / 接続テスト ────────────────────────────
-router.post("/x/account", requireAuth, async (req, res): Promise<void> => {
+// ── アカウント追加・接続テスト ─────────────────────────────
+router.post("/x/accounts", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
-  const { businessId, username, apiKey, apiSecret, accessToken, accessTokenSecret, bearerToken } = req.body;
-  if (!businessId) {
-    res.status(400).json({ error: "businessId is required" });
-    return;
-  }
-  if (!(await ownsBusiness(userId, Number(businessId)))) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
+  const { label, apiKey, apiSecret, accessToken, accessTokenSecret, bearerToken } = req.body;
+  if (!apiKey || !apiSecret || !accessToken || !accessTokenSecret) {
+    res.status(400).json({ error: "認証情報を全て入力してください" }); return;
   }
 
-  // 接続テスト
-  let isConnected = false;
-  let verifiedUsername = username || null;
+  let verifiedUsername = label || null;
   try {
-    const client = new TwitterApi({
-      appKey: apiKey,
-      appSecret: apiSecret,
-      accessToken,
-      accessSecret: accessTokenSecret,
-    });
+    const client = new TwitterApi({ appKey: apiKey, appSecret: apiSecret, accessToken, accessSecret: accessTokenSecret });
     const me = await client.v2.me();
-    isConnected = true;
     verifiedUsername = me.data.username;
   } catch (err: any) {
-    logger.warn({ err: err?.message }, "X API connection test failed");
-    res.status(400).json({ error: "X APIへの接続に失敗しました。認証情報を確認してください。" });
-    return;
+    res.status(400).json({ error: "X APIへの接続に失敗しました。認証情報を確認してください。" }); return;
   }
 
-  const [existing] = await db
-    .select()
-    .from(xAccountsTable)
-    .where(eq(xAccountsTable.businessId, Number(businessId)));
+  const [inserted] = await db.insert(xAccountsTable).values({
+    userId,
+    label: label || verifiedUsername || "アカウント",
+    username: verifiedUsername,
+    apiKey, apiSecret, accessToken, accessTokenSecret,
+    bearerToken: bearerToken || null,
+    isConnected: true,
+  }).returning();
 
-  if (existing) {
-    await db
-      .update(xAccountsTable)
-      .set({ username: verifiedUsername, apiKey, apiSecret, accessToken, accessTokenSecret, bearerToken: bearerToken || null, isConnected })
-      .where(eq(xAccountsTable.id, existing.id));
-  } else {
-    await db.insert(xAccountsTable).values({
-      businessId: Number(businessId),
-      username: verifiedUsername,
-      apiKey,
-      apiSecret,
-      accessToken,
-      accessTokenSecret,
-      bearerToken: bearerToken || null,
-      isConnected,
-    });
+  res.json({ success: true, account: { ...inserted, apiKey: "***", apiSecret: "***", accessToken: "***", accessTokenSecret: "***" } });
+});
+
+// ── アカウント更新（認証情報変更） ─────────────────────────
+router.put("/x/accounts/:id", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const accountId = Number(req.params.id);
+  if (!(await ownsAccount(userId, accountId))) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const { label, apiKey, apiSecret, accessToken, accessTokenSecret, bearerToken } = req.body;
+
+  let verifiedUsername: string | null = null;
+  try {
+    const client = new TwitterApi({ appKey: apiKey, appSecret: apiSecret, accessToken, accessSecret: accessTokenSecret });
+    const me = await client.v2.me();
+    verifiedUsername = me.data.username;
+  } catch {
+    res.status(400).json({ error: "X APIへの接続に失敗しました。認証情報を確認してください。" }); return;
   }
+
+  await db.update(xAccountsTable)
+    .set({ label: label || verifiedUsername || "アカウント", username: verifiedUsername, apiKey, apiSecret, accessToken, accessTokenSecret, bearerToken: bearerToken || null, isConnected: true })
+    .where(eq(xAccountsTable.id, accountId));
 
   res.json({ success: true, username: verifiedUsername });
 });
 
-// ── アカウント切断 ────────────────────────────────────────
-router.delete("/x/account", requireAuth, async (req, res): Promise<void> => {
+// ── アカウント削除 ────────────────────────────────────────
+router.delete("/x/accounts/:id", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
-  const businessId = Number(req.query.businessId);
-  if (!(await ownsBusiness(userId, businessId))) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  await db
-    .update(xAccountsTable)
-    .set({ isConnected: false })
-    .where(eq(xAccountsTable.businessId, businessId));
+  const accountId = Number(req.params.id);
+  if (!(await ownsAccount(userId, accountId))) { res.status(403).json({ error: "Forbidden" }); return; }
+  await db.delete(xAccountsTable).where(eq(xAccountsTable.id, accountId));
   res.json({ success: true });
 });
 
-// ── ルール一覧取得 ────────────────────────────────────────
-router.get("/x/rules", requireAuth, async (req, res): Promise<void> => {
+// ── ペルソナ保存 ──────────────────────────────────────────
+router.put("/x/accounts/:id/persona", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
-  const businessId = Number(req.query.businessId);
-  if (!businessId) {
-    res.status(400).json({ error: "businessId is required" });
-    return;
-  }
-  if (!(await ownsBusiness(userId, businessId))) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
+  const accountId = Number(req.params.id);
+  if (!(await ownsAccount(userId, accountId))) { res.status(403).json({ error: "Forbidden" }); return; }
+  await db.update(xAccountsTable).set({ persona: JSON.stringify(req.body.persona) }).where(eq(xAccountsTable.id, accountId));
+  res.json({ success: true });
+});
 
-  let rules = await db
-    .select()
-    .from(xAutomationRulesTable)
-    .where(eq(xAutomationRulesTable.businessId, businessId));
+// ── ルール一覧 ────────────────────────────────────────────
+router.get("/x/accounts/:id/rules", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const accountId = Number(req.params.id);
+  if (!(await ownsAccount(userId, accountId))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-  // アクションタイプごとにデフォルト行を補完
+  let rules = await db.select().from(xAutomationRulesTable).where(eq(xAutomationRulesTable.xAccountId, accountId));
   for (const actionType of ACTION_TYPES) {
     if (!rules.find(r => r.actionType === actionType)) {
-      const [inserted] = await db
-        .insert(xAutomationRulesTable)
-        .values({ businessId, actionType, enabled: false, keywords: "", dailyLimit: 30, intervalSeconds: 120 })
+      const [inserted] = await db.insert(xAutomationRulesTable)
+        .values({ xAccountId: accountId, actionType, enabled: false, keywords: "", dailyLimit: 30, intervalSeconds: 120 })
         .returning();
       rules.push(inserted);
     }
   }
-
   res.json(rules);
 });
 
 // ── ルール更新 ─────────────────────────────────────────────
-router.put("/x/rules/:actionType", requireAuth, async (req, res): Promise<void> => {
+router.put("/x/accounts/:id/rules/:actionType", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
-  const { businessId, enabled, keywords, dailyLimit, intervalSeconds, replyTemplate } = req.body;
-  const actionType = req.params.actionType;
+  const accountId = Number(req.params.id);
+  const { actionType } = req.params;
+  if (!(await ownsAccount(userId, accountId))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-  if (!businessId) {
-    res.status(400).json({ error: "businessId is required" });
-    return;
-  }
-  if (!(await ownsBusiness(userId, Number(businessId)))) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-
-  const [existing] = await db
-    .select()
-    .from(xAutomationRulesTable)
-    .where(
-      and(
-        eq(xAutomationRulesTable.businessId, Number(businessId)),
-        eq(xAutomationRulesTable.actionType, actionType)
-      )
-    );
+  const { enabled, keywords, dailyLimit, intervalSeconds, replyTemplate } = req.body;
+  const [existing] = await db.select().from(xAutomationRulesTable)
+    .where(and(eq(xAutomationRulesTable.xAccountId, accountId), eq(xAutomationRulesTable.actionType, actionType)));
 
   if (existing) {
-    await db
-      .update(xAutomationRulesTable)
+    await db.update(xAutomationRulesTable)
       .set({ enabled, keywords, dailyLimit: Number(dailyLimit), intervalSeconds: Number(intervalSeconds), replyTemplate: replyTemplate || null })
       .where(eq(xAutomationRulesTable.id, existing.id));
   } else {
-    await db.insert(xAutomationRulesTable).values({
-      businessId: Number(businessId),
-      actionType,
-      enabled,
-      keywords: keywords || "",
-      dailyLimit: Number(dailyLimit) || 30,
-      intervalSeconds: Number(intervalSeconds) || 120,
-      replyTemplate: replyTemplate || null,
-    });
+    await db.insert(xAutomationRulesTable).values({ xAccountId: accountId, actionType, enabled, keywords: keywords || "", dailyLimit: Number(dailyLimit) || 30, intervalSeconds: Number(intervalSeconds) || 120, replyTemplate: replyTemplate || null });
   }
-
   res.json({ success: true });
 });
 
 // ── ログ一覧 ──────────────────────────────────────────────
-router.get("/x/logs", requireAuth, async (req, res): Promise<void> => {
+router.get("/x/accounts/:id/logs", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
-  const businessId = Number(req.query.businessId);
-  if (!businessId) {
-    res.status(400).json({ error: "businessId is required" });
-    return;
-  }
-  if (!(await ownsBusiness(userId, businessId))) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
-  const logs = await db
-    .select()
-    .from(xAutomationLogsTable)
-    .where(eq(xAutomationLogsTable.businessId, businessId))
+  const accountId = Number(req.params.id);
+  if (!(await ownsAccount(userId, accountId))) { res.status(403).json({ error: "Forbidden" }); return; }
+  const logs = await db.select().from(xAutomationLogsTable)
+    .where(eq(xAutomationLogsTable.xAccountId, accountId))
     .orderBy(desc(xAutomationLogsTable.createdAt))
     .limit(100);
   res.json(logs);
 });
 
-// ── 手動実行（いいね / RT / フォロー / リプ） ─────────────
-router.post("/x/run/:actionType", requireAuth, async (req, res): Promise<void> => {
+// ── AI生成 ────────────────────────────────────────────────
+router.post("/x/accounts/:id/generate", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
-  const { businessId } = req.body;
+  const accountId = Number(req.params.id);
+  const account = await ownsAccount(userId, accountId);
+  if (!account) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const { type, context } = req.body;
+  const persona = account.persona ? JSON.parse(account.persona) : null;
+
+  let systemPrompt = `あなたはX(Twitter)の投稿を生成するアシスタントです。`;
+  if (persona) {
+    systemPrompt += `\n以下のペルソナになりきって投稿文を生成してください。\n\n【名前】${persona.name ?? ""}\n【職業・役職】${persona.job ?? ""}\n【口調・キャラ】${persona.tone ?? "フランク"}\n【得意分野・テーマ】${persona.topics ?? ""}\n【自己紹介】${persona.bio ?? ""}\n【投稿スタイル】${persona.style ?? ""}\n\nルール:\n- 280文字以内（日本語）\n- ハッシュタグは1〜2個まで\n- 宣伝っぽくしない\n- 本文だけ出力、前置き不要`;
+  } else {
+    systemPrompt += `日本語で280文字以内の自然なツイートを生成。本文だけ出力。`;
+  }
+
+  const userPrompt = type === "reply" && context
+    ? `以下のツイートへの自然なリプライを生成:\n"${context}"`
+    : `今日のツイートを1本生成。${context ? `テーマ: ${context}` : ""}`;
+
+  const { default: OpenAI } = await import("openai");
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+    max_tokens: 200, temperature: 0.85,
+  });
+
+  res.json({ text: completion.choices[0]?.message?.content?.trim() ?? "" });
+});
+
+// ── ツイート投稿 ──────────────────────────────────────────
+router.post("/x/accounts/:id/post", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const accountId = Number(req.params.id);
+  const account = await ownsAccount(userId, accountId);
+  if (!account) { res.status(403).json({ error: "Forbidden" }); return; }
+  if (!account.isConnected) { res.status(400).json({ error: "X アカウントが接続されていません" }); return; }
+
+  const { text } = req.body;
+  if (!text?.trim()) { res.status(400).json({ error: "本文を入力してください" }); return; }
+  if (text.length > 280) { res.status(400).json({ error: "280文字以内で入力してください" }); return; }
+
+  try {
+    const client = buildClient(account);
+    const tweet = await client.v2.tweet({ text: text.trim() });
+    await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "post", targetTweetId: tweet.data.id, tweetContent: text.trim(), status: "success" });
+    res.json({ success: true, tweetId: tweet.data.id });
+  } catch (err: any) {
+    await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "post", tweetContent: text.trim(), status: "error", errorMessage: err?.message }).catch(() => {});
+    res.status(500).json({ error: err?.message ?? "投稿に失敗しました" });
+  }
+});
+
+// ── 自動化実行 ────────────────────────────────────────────
+router.post("/x/accounts/:id/run/:actionType", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const accountId = Number(req.params.id);
   const actionType = req.params.actionType as ActionType;
+  const account = await ownsAccount(userId, accountId);
+  if (!account) { res.status(403).json({ error: "Forbidden" }); return; }
+  if (!account.isConnected) { res.status(400).json({ error: "X アカウントが接続されていません" }); return; }
 
-  if (!businessId) {
-    res.status(400).json({ error: "businessId is required" });
-    return;
-  }
-  if (!(await ownsBusiness(userId, Number(businessId)))) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
-  }
+  const [rule] = await db.select().from(xAutomationRulesTable)
+    .where(and(eq(xAutomationRulesTable.xAccountId, accountId), eq(xAutomationRulesTable.actionType, actionType)));
 
-  const [account] = await db
-    .select()
-    .from(xAccountsTable)
-    .where(
-      and(
-        eq(xAccountsTable.businessId, Number(businessId)),
-        eq(xAccountsTable.isConnected, true)
-      )
-    );
-
-  if (!account) {
-    res.status(400).json({ error: "X アカウントが接続されていません" });
-    return;
-  }
-
-  const [rule] = await db
-    .select()
-    .from(xAutomationRulesTable)
-    .where(
-      and(
-        eq(xAutomationRulesTable.businessId, Number(businessId)),
-        eq(xAutomationRulesTable.actionType, actionType)
-      )
-    );
-
-  if (!rule || !rule.keywords.trim()) {
-    res.status(400).json({ error: "キーワードが設定されていません" });
-    return;
-  }
+  if (!rule?.keywords?.trim()) { res.status(400).json({ error: "キーワードが設定されていません" }); return; }
 
   try {
     const client = buildClient(account);
     const me = await client.v2.me();
     const myId = me.data.id;
-
     const keyword = rule.keywords.split(",")[0].trim();
     const executed: string[] = [];
+    const limit = Math.min(5, rule.dailyLimit);
 
     if (actionType === "like") {
       const tweets = await client.v2.search(keyword, { max_results: 10 });
       for (const tweet of tweets.data.data ?? []) {
+        if (executed.length >= limit) break;
         await client.v2.like(myId, tweet.id);
-        await db.insert(xAutomationLogsTable).values({
-          businessId: Number(businessId),
-          actionType: "like",
-          targetTweetId: tweet.id,
-          tweetContent: tweet.text,
-          status: "success",
-        });
+        await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "like", targetTweetId: tweet.id, tweetContent: tweet.text, status: "success" });
         executed.push(tweet.id);
-        if (executed.length >= Math.min(5, rule.dailyLimit)) break;
       }
-    }
-
-    if (actionType === "retweet") {
+    } else if (actionType === "retweet") {
       const tweets = await client.v2.search(keyword, { max_results: 10 });
       for (const tweet of tweets.data.data ?? []) {
+        if (executed.length >= limit) break;
         await client.v2.retweet(myId, tweet.id);
-        await db.insert(xAutomationLogsTable).values({
-          businessId: Number(businessId),
-          actionType: "retweet",
-          targetTweetId: tweet.id,
-          tweetContent: tweet.text,
-          status: "success",
-        });
+        await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "retweet", targetTweetId: tweet.id, tweetContent: tweet.text, status: "success" });
         executed.push(tweet.id);
-        if (executed.length >= Math.min(5, rule.dailyLimit)) break;
       }
-    }
-
-    if (actionType === "follow") {
+    } else if (actionType === "follow") {
       const users = await client.v2.searchUsers(keyword, { max_results: 10 });
       for (const user of users.data ?? []) {
+        if (executed.length >= limit) break;
         await client.v2.follow(myId, user.id);
-        await db.insert(xAutomationLogsTable).values({
-          businessId: Number(businessId),
-          actionType: "follow",
-          targetUserId: user.id,
-          targetUsername: user.username,
-          status: "success",
-        });
+        await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "follow", targetUserId: user.id, targetUsername: user.username, status: "success" });
         executed.push(user.id);
-        if (executed.length >= Math.min(5, rule.dailyLimit)) break;
       }
-    }
-
-    if (actionType === "reply") {
-      if (!rule.replyTemplate) {
-        res.status(400).json({ error: "リプライテンプレートが設定されていません" });
-        return;
-      }
+    } else if (actionType === "reply") {
+      if (!rule.replyTemplate) { res.status(400).json({ error: "リプライテンプレートが設定されていません" }); return; }
       const tweets = await client.v2.search(keyword, { max_results: 10 });
       for (const tweet of tweets.data.data ?? []) {
+        if (executed.length >= Math.min(3, limit)) break;
         const replyText = rule.replyTemplate.replace("{{tweet}}", tweet.text.slice(0, 30));
         await client.v2.tweet({ text: replyText, reply: { in_reply_to_tweet_id: tweet.id } });
-        await db.insert(xAutomationLogsTable).values({
-          businessId: Number(businessId),
-          actionType: "reply",
-          targetTweetId: tweet.id,
-          tweetContent: replyText,
-          status: "success",
-        });
+        await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType: "reply", targetTweetId: tweet.id, tweetContent: replyText, status: "success" });
         executed.push(tweet.id);
-        if (executed.length >= Math.min(3, rule.dailyLimit)) break;
       }
     }
 
-    await db
-      .update(xAutomationRulesTable)
+    await db.update(xAutomationRulesTable)
       .set({ executedToday: (rule.executedToday ?? 0) + executed.length, lastRunAt: new Date() })
       .where(eq(xAutomationRulesTable.id, rule.id));
 
     res.json({ success: true, executed: executed.length });
   } catch (err: any) {
     logger.error({ err: err?.message, actionType }, "X automation run failed");
-    await db.insert(xAutomationLogsTable).values({
-      businessId: Number(businessId),
-      actionType,
-      status: "error",
-      errorMessage: err?.message ?? "Unknown error",
-    }).catch(() => {});
+    await db.insert(xAutomationLogsTable).values({ xAccountId: accountId, actionType, status: "error", errorMessage: err?.message }).catch(() => {});
     res.status(500).json({ error: err?.message ?? "実行に失敗しました" });
-  }
-});
-
-// ── ペルソナ保存 ──────────────────────────────────────────
-router.put("/x/persona", requireAuth, async (req, res): Promise<void> => {
-  const userId = getUserId(req);
-  const { businessId, persona } = req.body;
-  if (!businessId) { res.status(400).json({ error: "businessId is required" }); return; }
-  if (!(await ownsBusiness(userId, Number(businessId)))) { res.status(403).json({ error: "Forbidden" }); return; }
-
-  await db
-    .update(xAccountsTable)
-    .set({ persona: JSON.stringify(persona) })
-    .where(eq(xAccountsTable.businessId, Number(businessId)));
-
-  res.json({ success: true });
-});
-
-// ── AIツイート生成 ─────────────────────────────────────────
-router.post("/x/generate", requireAuth, async (req, res): Promise<void> => {
-  const userId = getUserId(req);
-  const { businessId, type, context } = req.body;
-  if (!businessId) { res.status(400).json({ error: "businessId is required" }); return; }
-  if (!(await ownsBusiness(userId, Number(businessId)))) { res.status(403).json({ error: "Forbidden" }); return; }
-
-  const [account] = await db
-    .select()
-    .from(xAccountsTable)
-    .where(eq(xAccountsTable.businessId, Number(businessId)));
-
-  const persona = account?.persona ? JSON.parse(account.persona) : null;
-
-  let systemPrompt = `あなたはX(Twitter)の投稿を生成するアシスタントです。`;
-  if (persona) {
-    systemPrompt += `
-以下のペルソナになりきって投稿文を生成してください。
-
-【名前】${persona.name ?? "未設定"}
-【職業・役職】${persona.job ?? "未設定"}
-【口調・キャラ】${persona.tone ?? "フランクで親しみやすい"}
-【得意分野・テーマ】${persona.topics ?? "ビジネス・日常"}
-【自己紹介】${persona.bio ?? "未設定"}
-【投稿スタイル】${persona.style ?? "自然な口語体"}
-
-ルール:
-- 280文字以内で書く（日本語）
-- ハッシュタグは1〜2個まで
-- 宣伝っぽくならないよう自然な投稿にする
-- 絵文字は適度に使う
-- 本文だけを出力し、説明・前置きは一切不要`;
-  } else {
-    systemPrompt += `日本語で280文字以内の自然なツイートを生成してください。本文だけを出力してください。`;
-  }
-
-  const userPrompt = type === "reply" && context
-    ? `以下のツイートへの自然なリプライを生成してください:\n"${context}"`
-    : `今日のツイートを1本生成してください。${context ? `テーマ: ${context}` : ""}`;
-
-  const { default: OpenAI } = await import("openai");
-  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    max_tokens: 200,
-    temperature: 0.85,
-  });
-
-  const text = completion.choices[0]?.message?.content?.trim() ?? "";
-  res.json({ text });
-});
-
-// ── ツイート投稿 ──────────────────────────────────────────
-router.post("/x/post", requireAuth, async (req, res): Promise<void> => {
-  const userId = getUserId(req);
-  const { businessId, text, scheduledAt } = req.body;
-
-  if (!businessId) { res.status(400).json({ error: "businessId is required" }); return; }
-  if (!text?.trim()) { res.status(400).json({ error: "ツイート本文を入力してください" }); return; }
-  if (text.length > 280) { res.status(400).json({ error: "280文字以内で入力してください" }); return; }
-
-  if (!(await ownsBusiness(userId, Number(businessId)))) {
-    res.status(403).json({ error: "Forbidden" }); return;
-  }
-
-  const [account] = await db
-    .select()
-    .from(xAccountsTable)
-    .where(and(eq(xAccountsTable.businessId, Number(businessId)), eq(xAccountsTable.isConnected, true)));
-
-  if (!account) { res.status(400).json({ error: "X アカウントが接続されていません" }); return; }
-
-  try {
-    const client = buildClient(account);
-    const tweet = await client.v2.tweet({ text: text.trim() });
-
-    await db.insert(xAutomationLogsTable).values({
-      businessId: Number(businessId),
-      actionType: "post",
-      targetTweetId: tweet.data.id,
-      tweetContent: text.trim(),
-      status: "success",
-    });
-
-    logger.info({ tweetId: tweet.data.id }, "X post success");
-    res.json({ success: true, tweetId: tweet.data.id });
-  } catch (err: any) {
-    logger.error({ err: err?.message }, "X post failed");
-    await db.insert(xAutomationLogsTable).values({
-      businessId: Number(businessId),
-      actionType: "post",
-      tweetContent: text.trim(),
-      status: "error",
-      errorMessage: err?.message ?? "Unknown error",
-    }).catch(() => {});
-    res.status(500).json({ error: err?.message ?? "投稿に失敗しました" });
   }
 });
 
