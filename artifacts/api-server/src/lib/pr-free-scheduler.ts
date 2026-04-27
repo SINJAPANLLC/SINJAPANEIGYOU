@@ -10,7 +10,12 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
+const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+const openai = new OpenAI({
+  apiKey: openaiApiKey,
+  ...(openaiBaseURL ? { baseURL: openaiBaseURL } : {}),
+});
 
 const PR_FREE_CF7_ENDPOINT =
   "https://pr-free.jp/wp-json/contact-form-7/v1/contact-forms/25868/feedback";
@@ -69,7 +74,7 @@ async function generateArticle(biz: typeof businessesTable.$inferSelect): Promis
 
 ビジネス名: ${biz.name}
 会社名: 合同会社SIN JAPAN
-サービスURL: ${biz.serviceUrl || "https://sinjapan-sales.site"}
+サービスURL: ${biz.serviceUrl || "https://sinjapan.work"}
 
 【出力フォーマット（必ずこの形式で）】
 タイトル: （20〜40文字のキャッチーなタイトル）
@@ -87,7 +92,7 @@ async function generateArticle(biz: typeof businessesTable.$inferSelect): Promis
 会社名: 合同会社SIN JAPAN
 担当: 大谷
 メール: info@sinjapan.jp
-${biz.serviceUrl ? `URL: ${biz.serviceUrl}` : "URL: https://sinjapan-sales.site"}
+${biz.serviceUrl ? `URL: ${biz.serviceUrl}` : "URL: https://sinjapan.work"}
 
 記事全体で500〜800字程度。PR TIMESのルールに沿ったビジネスライクな文体で。
 `;
@@ -118,7 +123,7 @@ function buildFormData(
   category: string,
   logoBuffer: Buffer,
 ): FormData {
-  const siteUrl = biz.serviceUrl || "https://sinjapan-sales.site";
+  const siteUrl = biz.serviceUrl || "https://sinjapan.work";
   const formData = new FormData();
 
   formData.append("_wpcf7", "25868");

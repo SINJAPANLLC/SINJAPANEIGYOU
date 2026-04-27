@@ -180,7 +180,7 @@ router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise
     res.status(400).json({ error: "Invalid category" }); return;
   }
 
-  const siteUrl = biz.serviceUrl || "https://sinjapan-sales.site";
+  const siteUrl = biz.serviceUrl || "https://sinjapan.work";
 
   const formData = new FormData();
   formData.append("_wpcf7", "25868");
@@ -237,6 +237,18 @@ router.post("/pr-articles/run-daily", requireAuth, async (req, res): Promise<voi
   const { runPrFreeDailyNow } = await import("../lib/pr-free-scheduler");
   res.json({ ok: true, message: "PR-FREE一括投稿を開始しました（バックグラウンド実行）" });
   runPrFreeDailyNow().catch(() => {});
+});
+
+router.post("/pr-articles/generate-and-post/:businessId", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const businessId = Number(req.params.businessId);
+
+  const biz = await ownsBusiness(userId, businessId);
+  if (!biz) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  const { generateAndPost } = await import("../lib/pr-free-scheduler");
+  res.json({ ok: true, message: `${biz.name} の記事生成・投稿を開始しました` });
+  generateAndPost(biz).catch(() => {});
 });
 
 export { PR_FREE_CATEGORIES };
