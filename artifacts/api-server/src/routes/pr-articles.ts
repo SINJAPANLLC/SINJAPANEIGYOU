@@ -186,5 +186,11 @@ router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise
   }
 });
 
+router.post("/pr-articles/run-daily", requireAuth, async (req, res): Promise<void> => {
+  const { runPrFreeDailyNow } = await import("../lib/pr-free-scheduler");
+  res.json({ ok: true, message: "PR-FREE一括投稿を開始しました（バックグラウンド実行）" });
+  runPrFreeDailyNow().catch(() => {});
+});
+
 export { PR_FREE_CATEGORIES };
 export default router;

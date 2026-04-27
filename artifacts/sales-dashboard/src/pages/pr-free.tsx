@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Sparkles, Trash2, Copy, PenLine, FileText, Loader2, Send, ChevronDown } from "lucide-react";
+import { Sparkles, Trash2, Copy, PenLine, FileText, Loader2, Send, ChevronDown, CalendarClock, PlayCircle } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -210,6 +210,22 @@ export default function PrFreePage() {
   const { toast } = useToast();
   const [topic, setTopic] = useState("");
 
+  const runDailyMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/pr-articles/run-daily", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) throw new Error("実行失敗");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "🚀 全ビジネスの自動投稿を開始しました", description: "バックグラウンドで順番に投稿します（約2分/社）" });
+    },
+    onError: () => toast({ title: "エラー", description: "実行に失敗しました", variant: "destructive" }),
+  });
+
   const { data: articles = [], isLoading } = useQuery<PrArticle[]>({
     queryKey: ["/api/pr-articles", selectedBusinessId],
     queryFn: async () => {
@@ -252,13 +268,36 @@ export default function PrFreePage() {
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <FileText className="w-6 h-6" />
-          PR-FREE 自動記事作成＆投稿
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          AIが記事を生成し、PR-FREE（pr-free.jp）に自動投稿します。
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <FileText className="w-6 h-6" />
+              PR-FREE 自動記事作成＆投稿
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              AIが記事を生成し、PR-FREE（pr-free.jp）に自動投稿します。
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 border-purple-500/30 hover:border-purple-400 text-purple-300"
+              onClick={() => runDailyMutation.mutate()}
+              disabled={runDailyMutation.isPending}
+            >
+              {runDailyMutation.isPending ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" />実行中...</>
+              ) : (
+                <><PlayCircle className="w-3.5 h-3.5" />今すぐ全ビジネス投稿</>
+              )}
+            </Button>
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <CalendarClock className="w-3 h-3" />
+              毎日10:00 (JST) 自動実行
+            </span>
+          </div>
+        </div>
       </div>
 
       {!selectedBusinessId ? (
