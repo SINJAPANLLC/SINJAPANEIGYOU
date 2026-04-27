@@ -115,4 +115,76 @@ router.delete("/pr-articles/:id", requireAuth, async (req, res): Promise<void> =
   res.json({ ok: true });
 });
 
+const PR_FREE_CATEGORIES = [
+  "ＩＴ・通信", "流通", "芸能", "スポーツ", "映画・音楽",
+  "出版・アート・カルチャー", "ゲーム・ホビー", "デジタル製品・家電",
+  "インテリア・雑貨", "自動車・バイク", "ファッション", "飲食・食品・飲料",
+  "美容・医療・健康", "コンサルティング・シンクタンク", "金融",
+  "広告・マーケティング", "教育・資格・人材", "ホテル・レジャー",
+  "建設・住宅・空間デザイン", "素材・化学・エネルギー・運輸", "自然・環境", "SDGs", "その他",
+];
+
+router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const id = Number(req.params.id);
+  const { category = "その他" } = req.body;
+
+  const [article] = await db.select().from(prArticlesTable).where(eq(prArticlesTable.id, id));
+  if (!article) { res.status(404).json({ error: "Not found" }); return; }
+
+  const biz = await ownsBusiness(userId, article.businessId);
+  if (!biz) { res.status(403).json({ error: "Forbidden" }); return; }
+
+  if (!PR_FREE_CATEGORIES.includes(category)) {
+    res.status(400).json({ error: "Invalid category" }); return;
+  }
+
+  const siteUrl = biz.serviceUrl || "https://sinjapan-sales.site";
+  const formBody = new URLSearchParams({
+    "_wpcf7": "25868",
+    "_wpcf7_version": "5.2",
+    "_wpcf7_locale": "ja",
+    "_wpcf7_unit_tag": "wpcf7-f25868-p2821-o1",
+    "_wpcf7_container_post": "2821",
+    "_wpcf7_posted_data_hash": "",
+    "your-teamname": biz.name,
+    "your-name": biz.senderName,
+    "your-email": biz.senderEmail,
+    "url-adress": siteUrl,
+    "category": category,
+    "companyname": biz.companyName || "合同会社SIN JAPAN",
+    "your-subject": article.title.slice(0, 140),
+    "subtitle": "",
+    "your-message": article.content,
+  });
+
+  const cfRes = await fetch(
+    "https://pr-free.jp/wp-json/contact-form-7/v1/contact-forms/25868/feedback",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "https://pr-free.jp/prform/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Origin": "https://pr-free.jp",
+      },
+      body: formBody.toString(),
+    }
+  );
+
+  const cfJson = await cfRes.json() as { status: string; message?: string };
+
+  if (cfJson.status === "mail_sent") {
+    await db.update(prArticlesTable).set({
+      status: "posted",
+      postedAt: new Date(),
+      updatedAt: new Date(),
+    }).where(eq(prArticlesTable.id, id));
+    res.json({ ok: true, message: cfJson.message || "投稿成功" });
+  } else {
+    res.status(422).json({ error: cfJson.message || "PR-FREE送信失敗", detail: cfJson });
+  }
+});
+
+export { PR_FREE_CATEGORIES };
 export default router;

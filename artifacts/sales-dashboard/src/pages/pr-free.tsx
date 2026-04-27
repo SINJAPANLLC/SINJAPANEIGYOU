@@ -4,9 +4,14 @@ import { useBusiness } from "@/contexts/BusinessContext";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Sparkles, Trash2, Copy, PenLine, FileText, Loader2, ExternalLink } from "lucide-react";
+import { Sparkles, Trash2, Copy, PenLine, FileText, Loader2, Send, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface PrArticle {
   id: number;
@@ -19,20 +24,191 @@ interface PrArticle {
   createdAt: string;
 }
 
+const PR_FREE_CATEGORIES = [
+  "ＩＴ・通信", "流通", "芸能", "スポーツ", "映画・音楽",
+  "出版・アート・カルチャー", "ゲーム・ホビー", "デジタル製品・家電",
+  "インテリア・雑貨", "自動車・バイク", "ファッション", "飲食・食品・飲料",
+  "美容・医療・健康", "コンサルティング・シンクタンク", "金融",
+  "広告・マーケティング", "教育・資格・人材", "ホテル・レジャー",
+  "建設・住宅・空間デザイン", "素材・化学・エネルギー・運輸", "自然・環境", "SDGs", "その他",
+];
+
 const statusLabel: Record<string, { label: string; color: string }> = {
   draft: { label: "下書き", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
   scheduled: { label: "スケジュール済", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
   posted: { label: "投稿済み", color: "bg-green-500/20 text-green-400 border-green-500/30" },
 };
 
+function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () => void }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(article.title);
+  const [editContent, setEditContent] = useState(article.content);
+  const [selectedCategory, setSelectedCategory] = useState("その他");
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: Partial<PrArticle>) => {
+      const res = await fetch(`/api/pr-articles/${article.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("更新失敗");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
+      setEditing(false);
+      toast({ title: "✅ 更新しました" });
+    },
+  });
+
+  const autoPostMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/pr-articles/${article.id}/auto-post`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: selectedCategory }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "投稿失敗");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
+      toast({ title: "🎉 PR-FREEへの自動投稿が完了しました！" });
+    },
+    onError: (e: Error) => toast({ title: "投稿エラー", description: e.message, variant: "destructive" }),
+  });
+
+  function copyToClipboard() {
+    navigator.clipboard.writeText(`${article.title}\n\n${article.content}`);
+    toast({ title: "📋 コピーしました" });
+  }
+
+  if (editing) {
+    return (
+      <div className="border border-border rounded-lg p-5 space-y-3">
+        <Input
+          value={editTitle}
+          onChange={(e) => setEditTitle(e.target.value)}
+          className="font-semibold"
+          placeholder="タイトル"
+        />
+        <Textarea
+          value={editContent}
+          onChange={(e) => setEditContent(e.target.value)}
+          rows={10}
+          className="text-sm font-mono"
+        />
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            onClick={() => updateMutation.mutate({ title: editTitle, content: editContent })}
+            disabled={updateMutation.isPending}
+          >
+            {updateMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "保存"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>キャンセル</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border border-border rounded-lg overflow-hidden">
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm leading-tight">{article.title}</h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              {new Date(article.createdAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+              {article.postedAt && (
+                <span className="ml-2">
+                  投稿: {new Date(article.postedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                </span>
+              )}
+            </p>
+          </div>
+          <span className={`shrink-0 text-[11px] px-2 py-0.5 rounded border font-medium ${statusLabel[article.status]?.color || ""}`}>
+            {statusLabel[article.status]?.label || article.status}
+          </span>
+        </div>
+
+        <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed bg-muted/20 rounded p-3 max-h-48 overflow-y-auto mb-4">
+          {article.content}
+        </pre>
+
+        {/* 自動投稿セクション */}
+        {article.status !== "posted" && (
+          <div className="flex items-center gap-2 mb-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+            <Send className="w-4 h-4 text-blue-400 shrink-0" />
+            <span className="text-xs text-blue-300 flex-1">PR-FREEに自動投稿</span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-blue-500/30 hover:border-blue-400">
+                  {selectedCategory}
+                  <ChevronDown className="w-3 h-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
+                {PR_FREE_CATEGORIES.map((cat) => (
+                  <DropdownMenuItem key={cat} onClick={() => setSelectedCategory(cat)}>
+                    {cat}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button
+              size="sm"
+              className="h-7 text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => autoPostMutation.mutate()}
+              disabled={autoPostMutation.isPending}
+            >
+              {autoPostMutation.isPending ? (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" />送信中...</>
+              ) : (
+                <><Send className="w-3.5 h-3.5" />自動投稿</>
+              )}
+            </Button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={copyToClipboard}>
+            <Copy className="w-3 h-3" />コピー
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => setEditing(true)}>
+            <PenLine className="w-3 h-3" />編集
+          </Button>
+          {article.status !== "posted" && (
+            <Button
+              size="sm" variant="outline" className="gap-1.5 text-xs h-7"
+              onClick={() => updateMutation.mutate({ status: "posted", postedAt: new Date().toISOString() })}
+            >
+              投稿済みにする
+            </Button>
+          )}
+          <Button
+            size="sm" variant="ghost" className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive ml-auto"
+            onClick={onDelete}
+          >
+            <Trash2 className="w-3 h-3" />削除
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PrFreePage() {
   const { selectedBusinessId } = useBusiness();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [topic, setTopic] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editContent, setEditContent] = useState("");
 
   const { data: articles = [], isLoading } = useQuery<PrArticle[]>({
     queryKey: ["/api/pr-articles", selectedBusinessId],
@@ -63,24 +239,6 @@ export default function PrFreePage() {
     onError: () => toast({ title: "エラー", description: "記事生成に失敗しました", variant: "destructive" }),
   });
 
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: Partial<PrArticle> }) => {
-      const res = await fetch(`/api/pr-articles/${id}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("更新失敗");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles", selectedBusinessId] });
-      setEditingId(null);
-      toast({ title: "✅ 更新しました" });
-    },
-  });
-
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await fetch(`/api/pr-articles/${id}`, { method: "DELETE", credentials: "include" });
@@ -91,26 +249,15 @@ export default function PrFreePage() {
     },
   });
 
-  function startEdit(a: PrArticle) {
-    setEditingId(a.id);
-    setEditTitle(a.title);
-    setEditContent(a.content);
-  }
-
-  function copyToClipboard(text: string) {
-    navigator.clipboard.writeText(text);
-    toast({ title: "📋 コピーしました" });
-  }
-
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
           <FileText className="w-6 h-6" />
-          PR FREE 自動記事作成
+          PR-FREE 自動記事作成＆投稿
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          AIがビジネスに合ったプレスリリース記事を自動生成します。PR TIMES FREEにコピー&投稿するだけ。
+          AIが記事を生成し、PR-FREE（pr-free.jp）に自動投稿します。
         </p>
       </div>
 
@@ -146,19 +293,9 @@ export default function PrFreePage() {
                 )}
               </Button>
             </div>
-          </div>
-
-          {/* PR TIMES FREE リンク */}
-          <div className="flex justify-end mb-4">
-            <a
-              href="https://prtimes.jp/main/html/rd/p/000000001.000000001.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-border rounded px-3 py-1.5"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-              PR TIMES FREEで投稿する
-            </a>
+            <p className="text-xs text-muted-foreground mt-2">
+              ※ 生成後、カテゴリを選択して「自動投稿」ボタンを押すとPR-FREEに直接送信されます
+            </p>
           </div>
 
           {/* 記事一覧 */}
@@ -174,76 +311,11 @@ export default function PrFreePage() {
           ) : (
             <div className="space-y-4">
               {articles.map((article) => (
-                <div key={article.id} className="border border-border rounded-lg overflow-hidden">
-                  {editingId === article.id ? (
-                    <div className="p-5 space-y-3">
-                      <Input
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        className="font-semibold"
-                        placeholder="タイトル"
-                      />
-                      <Textarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        rows={10}
-                        className="text-sm font-mono"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => updateMutation.mutate({ id: article.id, data: { title: editTitle, content: editContent } })}
-                          disabled={updateMutation.isPending}
-                        >
-                          保存
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditingId(null)}>キャンセル</Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-5">
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-sm leading-tight">{article.title}</h3>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {new Date(article.createdAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className={`text-[11px] px-2 py-0.5 rounded border font-medium ${statusLabel[article.status]?.color || ""}`}>
-                            {statusLabel[article.status]?.label || article.status}
-                          </span>
-                        </div>
-                      </div>
-
-                      <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed bg-muted/20 rounded p-3 max-h-48 overflow-y-auto mb-3">
-                        {article.content}
-                      </pre>
-
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => copyToClipboard(`${article.title}\n\n${article.content}`)}>
-                          <Copy className="w-3 h-3" />コピー
-                        </Button>
-                        <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => startEdit(article)}>
-                          <PenLine className="w-3 h-3" />編集
-                        </Button>
-                        <Button
-                          size="sm" variant="outline" className="gap-1.5 text-xs h-7"
-                          onClick={() => updateMutation.mutate({ id: article.id, data: { status: "posted", postedAt: new Date().toISOString() } })}
-                          disabled={article.status === "posted"}
-                        >
-                          投稿済みにする
-                        </Button>
-                        <Button
-                          size="sm" variant="ghost" className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive ml-auto"
-                          onClick={() => deleteMutation.mutate(article.id)}
-                        >
-                          <Trash2 className="w-3 h-3" />削除
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <ArticleCard
+                  key={article.id}
+                  article={article}
+                  onDelete={() => deleteMutation.mutate(article.id)}
+                />
               ))}
             </div>
           )}
