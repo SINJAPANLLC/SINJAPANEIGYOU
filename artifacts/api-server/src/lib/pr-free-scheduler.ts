@@ -62,7 +62,7 @@ function getServiceDescription(bizName: string, serviceUrl: string): string {
     return "人材紹介・人材派遣会社向けの求人案件・クライアント企業獲得支援サービス。人材業界の新規取引先開拓を効率化し、安定した求人案件のパイプラインを構築。人材会社の営業コストを削減しながら継続的な案件獲得を実現するBtoBマッチングサービス。";
   if (/人材.*協力|協力.*人材/i.test(n))
     return "人材業界の協力会社・業務提携パートナーを獲得するマッチングサービス。人材紹介・派遣各社のネットワーク拡充を支援し、紹介しきれない候補者の連携対応や合同案件への対応力を強化。人材会社間のパートナーシップ構築を促進するサービス。";
-  return `合同会社SIN JAPANが提供する「${bizName}」サービス。${serviceUrl ? `詳細は${serviceUrl}をご覧ください。` : ""}`;
+  return `合同会社SIN JAPANが提供する「${bizName}」サービス。`;
 }
 
 async function sleep(ms: number) {
@@ -128,7 +128,6 @@ async function generateArticle(biz: typeof businessesTable.$inferSelect): Promis
 会社名: 合同会社SIN JAPAN
 担当: 大谷
 メール: info@sinjapan.jp
-URL: ${siteUrl}
 
 記事全体で500〜800字程度。PR TIMESのルールに沿ったビジネスライクな文体で。
 `;
