@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { db, businessesTable, jimotyPostsTable } from "@workspace/db";
+import { db, businessesTable, jimotyPostsTable, jimotyAccountsTable } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import OpenAI from "openai";
 import { logger } from "./logger";
@@ -213,20 +213,55 @@ async function hasPostedTodayJST(businessId: number): Promise<boolean> {
   return rows.length > 0;
 }
 
-export async function jimotyGenerateAndPost(businessId: number): Promise<{ success: boolean; message: string; url?: string }> {
-  const email = process.env.JIMOTY_EMAIL;
-  const password = process.env.JIMOTY_PASSWORD;
+interface AccountCredential {
+  id: number | null;
+  label: string;
+  email: string;
+  password: string;
+}
 
-  if (!email || !password) {
-    return { success: false, message: "JIMOTY_EMAIL / JIMOTY_PASSWORD が設定されていません" };
+async function resolveAccount(businessId: number): Promise<AccountCredential | null> {
+  const [biz] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
+  if (!biz) return null;
+
+  if (biz.jimotyAccountId) {
+    const [acct] = await db.select().from(jimotyAccountsTable).where(eq(jimotyAccountsTable.id, biz.jimotyAccountId));
+    if (acct) return { id: acct.id, label: acct.label, email: acct.email, password: acct.password };
   }
 
+  const defaultAccounts = await db.select().from(jimotyAccountsTable).where(eq(jimotyAccountsTable.isDefault, true));
+  if (defaultAccounts.length > 0) {
+    const acct = defaultAccounts[0];
+    return { id: acct.id, label: acct.label, email: acct.email, password: acct.password };
+  }
+
+  const allAccounts = await db.select().from(jimotyAccountsTable);
+  if (allAccounts.length > 0) {
+    const acct = allAccounts[0];
+    return { id: acct.id, label: acct.label, email: acct.email, password: acct.password };
+  }
+
+  const envEmail = process.env.JIMOTY_EMAIL;
+  const envPassword = process.env.JIMOTY_PASSWORD;
+  if (envEmail && envPassword) {
+    return { id: null, label: "環境変数", email: envEmail, password: envPassword };
+  }
+
+  return null;
+}
+
+export async function jimotyGenerateAndPost(businessId: number): Promise<{ success: boolean; message: string; url?: string; accountLabel?: string }> {
   const [biz] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
   if (!biz) return { success: false, message: "ビジネスが見つかりません" };
 
+  const account = await resolveAccount(businessId);
+  if (!account) {
+    return { success: false, message: "ジモティーアカウントが設定されていません" };
+  }
+
   const [record] = await db
     .insert(jimotyPostsTable)
-    .values({ businessId, title: "生成中...", body: "", status: "draft" })
+    .values({ businessId, accountId: account.id, title: "生成中...", body: "", status: "draft" })
     .returning();
 
   try {
@@ -236,8 +271,8 @@ export async function jimotyGenerateAndPost(businessId: number): Promise<{ succe
       .set({ title, body })
       .where(eq(jimotyPostsTable.id, record.id));
 
-    logger.info({ businessId, bizName: biz.name }, "jimoty: ジモティーにログイン中");
-    const cookies = await loginToJimoty(email, password);
+    logger.info({ businessId, bizName: biz.name, accountLabel: account.label }, "jimoty: ログイン中");
+    const cookies = await loginToJimoty(account.email, account.password);
 
     logger.info({ businessId }, "jimoty: 投稿中");
     const url = await postToJimoty(cookies, title, body);
@@ -246,8 +281,8 @@ export async function jimotyGenerateAndPost(businessId: number): Promise<{ succe
       .set({ status: "posted", postedAt: new Date(), jimotyUrl: url })
       .where(eq(jimotyPostsTable.id, record.id));
 
-    logger.info({ businessId, url }, "jimoty: 投稿完了");
-    return { success: true, message: "投稿完了", url };
+    logger.info({ businessId, url, accountLabel: account.label }, "jimoty: 投稿完了");
+    return { success: true, message: "投稿完了", url, accountLabel: account.label };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ businessId, err: msg }, "jimoty: 投稿失敗");
@@ -261,24 +296,10 @@ export async function jimotyGenerateAndPost(businessId: number): Promise<{ succe
 }
 
 async function runDailyJimoty() {
-  const email = process.env.JIMOTY_EMAIL;
-  const password = process.env.JIMOTY_PASSWORD;
-  if (!email || !password) {
-    logger.warn("jimoty: JIMOTY_EMAIL / JIMOTY_PASSWORD 未設定 → スキップ");
-    return;
-  }
-
   logger.info("jimoty: 日次自動投稿開始");
 
-  let cookies: string;
-  try {
-    cookies = await loginToJimoty(email, password);
-  } catch (err) {
-    logger.error({ err }, "jimoty: ログイン失敗 → 中断");
-    return;
-  }
-
   const businesses = await db.select().from(businessesTable);
+  const accountSessions: Record<string, string> = {};
 
   for (let i = 0; i < businesses.length; i++) {
     const biz = businesses[i];
@@ -288,22 +309,39 @@ async function runDailyJimoty() {
       continue;
     }
 
+    const account = await resolveAccount(biz.id);
+    if (!account) {
+      logger.warn({ bizId: biz.id }, "jimoty: アカウント未設定 → スキップ");
+      continue;
+    }
+
+    const sessionKey = account.email;
+    if (!accountSessions[sessionKey]) {
+      try {
+        accountSessions[sessionKey] = await loginToJimoty(account.email, account.password);
+        logger.info({ accountLabel: account.label }, "jimoty: ログイン成功");
+      } catch (err) {
+        logger.error({ err, accountLabel: account.label }, "jimoty: ログイン失敗");
+        continue;
+      }
+    }
+
     const [record] = await db
       .insert(jimotyPostsTable)
-      .values({ businessId: biz.id, title: "生成中...", body: "", status: "draft" })
+      .values({ businessId: biz.id, accountId: account.id, title: "生成中...", body: "", status: "draft" })
       .returning();
 
     try {
       const { title, body } = await generateJimotyPost(biz.name);
       await db.update(jimotyPostsTable).set({ title, body }).where(eq(jimotyPostsTable.id, record.id));
 
-      const url = await postToJimoty(cookies, title, body);
+      const url = await postToJimoty(accountSessions[sessionKey], title, body);
 
       await db.update(jimotyPostsTable)
         .set({ status: "posted", postedAt: new Date(), jimotyUrl: url })
         .where(eq(jimotyPostsTable.id, record.id));
 
-      logger.info({ bizId: biz.id, url }, "jimoty: 投稿完了");
+      logger.info({ bizId: biz.id, url, account: account.label }, "jimoty: 投稿完了");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error({ bizId: biz.id, err: msg }, "jimoty: 投稿失敗");
