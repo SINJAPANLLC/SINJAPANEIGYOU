@@ -136,12 +136,13 @@ router.delete("/jimoty/posts/:id", requireAuth, async (req, res): Promise<void> 
 router.post("/jimoty/generate-and-post/:businessId", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
   const businessId = Number(req.params.businessId);
+  const overrideAccountId: number | undefined = req.body?.accountId ? Number(req.body.accountId) : undefined;
 
   if (!(await ownsBusiness(userId, businessId))) {
     res.status(403).json({ error: "Forbidden" }); return;
   }
 
-  const result = await jimotyGenerateAndPost(businessId);
+  const result = await jimotyGenerateAndPost(businessId, overrideAccountId);
   res.status(result.success ? 200 : 400).json(result);
 });
 

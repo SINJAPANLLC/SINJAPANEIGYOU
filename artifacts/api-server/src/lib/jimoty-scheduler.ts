@@ -92,6 +92,7 @@ export async function postToJimoty(
   body: string,
   area: string = DEFAULT_AREA,
   kind: string = DEFAULT_KIND,
+  contactInfo: string = "info@sinjapan.jp",
 ): Promise<string> {
   const newArticleResp = await axios.get(`${JIMOTY_BASE}/articles/new`, {
     headers: {
@@ -118,7 +119,7 @@ export async function postToJimoty(
       "article[body]": body,
       "article[kind]": kind,
       "article[area_code]": area,
-      "article[contact_info]": "info@sinjapan.jp",
+      "article[contact_info]": contactInfo,
       commit: "投稿する",
     }).toString(),
     {
@@ -250,11 +251,19 @@ async function resolveAccount(businessId: number): Promise<AccountCredential | n
   return null;
 }
 
-export async function jimotyGenerateAndPost(businessId: number): Promise<{ success: boolean; message: string; url?: string; accountLabel?: string }> {
+export async function jimotyGenerateAndPost(
+  businessId: number,
+  overrideAccountId?: number,
+): Promise<{ success: boolean; message: string; url?: string; accountLabel?: string }> {
   const [biz] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
   if (!biz) return { success: false, message: "ビジネスが見つかりません" };
 
-  const account = await resolveAccount(businessId);
+  let account: AccountCredential | null = null;
+  if (overrideAccountId != null) {
+    const [acct] = await db.select().from(jimotyAccountsTable).where(eq(jimotyAccountsTable.id, overrideAccountId));
+    if (acct) account = { id: acct.id, label: acct.label, email: acct.email, password: acct.password };
+  }
+  if (!account) account = await resolveAccount(businessId);
   if (!account) {
     return { success: false, message: "ジモティーアカウントが設定されていません" };
   }

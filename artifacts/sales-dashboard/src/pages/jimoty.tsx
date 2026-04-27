@@ -169,6 +169,8 @@ export default function JimotyPage() {
   const queryClient = useQueryClient();
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [activeTab, setActiveTab] = useState<"posts" | "accounts" | "assign">("posts");
+  const [openPostPanel, setOpenPostPanel] = useState<number | null>(null);
+  const [selectedBizForPost, setSelectedBizForPost] = useState<Record<number, number>>({});
 
   const { data: accounts = [] } = useQuery<JimotyAccount[]>({
     queryKey: ["/api/jimoty/accounts"],
@@ -283,6 +285,25 @@ export default function JimotyPage() {
     onError: (err: Error) => toast({ title: "❌ " + err.message, variant: "destructive" }),
   });
 
+  const postWithAccountMutation = useMutation({
+    mutationFn: async ({ bizId, accountId }: { bizId: number; accountId: number }) => {
+      const res = await fetch(`/api/jimoty/generate-and-post/${bizId}`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "失敗");
+      return data;
+    },
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jimoty/posts"] });
+      setOpenPostPanel(null);
+      toast({ title: data.url ? `✅ 投稿完了 (${data.accountLabel ?? ""})` : "✅ " + data.message });
+    },
+    onError: (err: Error) => toast({ title: "❌ " + err.message, variant: "destructive" }),
+  });
+
   const postedCount = posts.filter(p => p.status === "posted").length;
   const failedCount = posts.filter(p => p.status === "failed").length;
   const tabs = [
@@ -349,35 +370,73 @@ export default function JimotyPage() {
 
       {activeTab === "accounts" && (
         <div className="space-y-3">
-          {accounts.map(account => (
-            <div key={account.id} className="border border-border p-3 flex items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{account.label}</span>
-                  {account.isDefault && (
-                    <span className="text-[10px] border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 flex items-center gap-1">
-                      <Star className="w-2.5 h-2.5" />デフォルト
-                    </span>
-                  )}
+          {accounts.map(account => {
+            const isOpen = openPostPanel === account.id;
+            const selectedBiz = selectedBizForPost[account.id];
+            const isPosting = postWithAccountMutation.isPending;
+
+            return (
+              <div key={account.id} className="border border-border">
+                <div className="p-3 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{account.label}</span>
+                      {account.isDefault && (
+                        <span className="text-[10px] border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 flex items-center gap-1">
+                          <Star className="w-2.5 h-2.5" />デフォルト・自動投稿
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">{account.email}</p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button size="sm" variant={isOpen ? "secondary" : "ghost"}
+                      className="rounded-none h-7 text-xs gap-1 px-2"
+                      onClick={() => setOpenPostPanel(isOpen ? null : account.id)}>
+                      <MapPin className="w-3 h-3" />今すぐ投稿
+                    </Button>
+                    {!account.isDefault && (
+                      <Button size="sm" variant="ghost" className="rounded-none h-7 text-xs gap-1 px-2"
+                        onClick={() => setDefaultMutation.mutate(account.id)}
+                        disabled={setDefaultMutation.isPending}>
+                        <Star className="w-3 h-3" />デフォルト
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-none text-muted-foreground hover:text-red-400"
+                      onClick={() => deleteAccountMutation.mutate(account.id)}
+                      disabled={deleteAccountMutation.isPending}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{account.email}</p>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {!account.isDefault && (
-                  <Button size="sm" variant="ghost" className="rounded-none h-7 text-xs gap-1"
-                    onClick={() => setDefaultMutation.mutate(account.id)}
-                    disabled={setDefaultMutation.isPending}>
-                    <Star className="w-3 h-3" />デフォルト
-                  </Button>
+
+                {isOpen && (
+                  <div className="border-t border-border bg-muted/10 p-3 flex items-center gap-3">
+                    <div className="flex-1 flex items-center gap-2">
+                      <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="text-xs text-muted-foreground shrink-0">ビジネス選択:</span>
+                      <select
+                        className="flex-1 bg-background border border-border text-sm rounded-none px-2 py-1 h-8"
+                        value={selectedBiz ?? ""}
+                        onChange={e => setSelectedBizForPost(prev => ({ ...prev, [account.id]: Number(e.target.value) }))}
+                      >
+                        <option value="">-- ビジネスを選択 --</option>
+                        {businesses.map(b => (
+                          <option key={b.id} value={b.id}>{b.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <Button size="sm" className="rounded-none h-8 gap-1.5 shrink-0"
+                      disabled={!selectedBiz || isPosting}
+                      onClick={() => postWithAccountMutation.mutate({ bizId: selectedBiz!, accountId: account.id })}>
+                      {isPosting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                      AI生成して投稿
+                    </Button>
+                  </div>
                 )}
-                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-none text-muted-foreground hover:text-red-400"
-                  onClick={() => deleteAccountMutation.mutate(account.id)}
-                  disabled={deleteAccountMutation.isPending}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                </Button>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           {showAddAccount ? (
             <AccountForm onSave={() => setShowAddAccount(false)} onCancel={() => setShowAddAccount(false)} />
