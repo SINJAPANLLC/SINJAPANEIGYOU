@@ -11,6 +11,7 @@ import dashboardRouter from "./dashboard";
 import unsubscribeRouter from "./unsubscribe";
 import cronJobsRouter from "./cron-jobs";
 import xAutomationRouter from "./x-automation";
+import prArticlesRouter from "./pr-articles";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(dashboardRouter);
 router.use(unsubscribeRouter);
 router.use(cronJobsRouter);
 router.use(xAutomationRouter);
+router.use(prArticlesRouter);
 
 export default router;

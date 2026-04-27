@@ -11,6 +11,7 @@ import {
   ChevronDown,
   Clock,
   MessageSquare,
+  Newspaper,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,6 +35,7 @@ const navigation = [
   { name: "テンプレート", href: "/templates", icon: FileText },
   { name: "送信ログ", href: "/email-logs", icon: History },
   { name: "スケジュール", href: "/schedule", icon: Clock },
+  { name: "PR-FREE", href: "/pr-free", icon: Newspaper },
   { name: "SNS", href: "/sns", icon: MessageSquare },
 ];
 

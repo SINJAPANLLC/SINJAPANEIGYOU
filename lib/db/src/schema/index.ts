@@ -6,3 +6,4 @@ export * from "./email-logs";
 export * from "./unsubscribes";
 export * from "./cron-jobs";
 export * from "./x-automation";
+export * from "./pr-articles";
