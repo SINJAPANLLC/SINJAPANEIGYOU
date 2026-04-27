@@ -234,7 +234,7 @@ export default function PrFreePage() {
   const draftCount = articles.filter((a) => a.status === "draft").length;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6">
       {/* ヘッダー */}
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4">
