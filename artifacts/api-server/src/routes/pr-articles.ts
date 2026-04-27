@@ -17,13 +17,48 @@ async function ownsBusiness(userId: string, businessId: number) {
 router.get("/pr-articles", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
   const businessId = req.query.businessId ? Number(req.query.businessId) : null;
-  if (!businessId) { res.status(400).json({ error: "businessId is required" }); return; }
-  if (!(await ownsBusiness(userId, businessId))) { res.status(403).json({ error: "Forbidden" }); return; }
 
-  const articles = await db.select().from(prArticlesTable)
-    .where(eq(prArticlesTable.businessId, businessId))
-    .orderBy(desc(prArticlesTable.createdAt));
-  res.json(articles);
+  if (businessId) {
+    if (!(await ownsBusiness(userId, businessId))) { res.status(403).json({ error: "Forbidden" }); return; }
+    const articles = await db
+      .select({
+        id: prArticlesTable.id,
+        businessId: prArticlesTable.businessId,
+        businessName: businessesTable.name,
+        title: prArticlesTable.title,
+        content: prArticlesTable.content,
+        status: prArticlesTable.status,
+        scheduledAt: prArticlesTable.scheduledAt,
+        postedAt: prArticlesTable.postedAt,
+        createdAt: prArticlesTable.createdAt,
+      })
+      .from(prArticlesTable)
+      .innerJoin(businessesTable, eq(prArticlesTable.businessId, businessesTable.id))
+      .where(eq(prArticlesTable.businessId, businessId))
+      .orderBy(desc(prArticlesTable.createdAt));
+    res.json(articles);
+  } else {
+    // 全ビジネスの記事を返す
+    const userBizIds = (await db.select({ id: businessesTable.id }).from(businessesTable).where(eq(businessesTable.userId, userId))).map(b => b.id);
+    if (userBizIds.length === 0) { res.json([]); return; }
+    const articles = await db
+      .select({
+        id: prArticlesTable.id,
+        businessId: prArticlesTable.businessId,
+        businessName: businessesTable.name,
+        title: prArticlesTable.title,
+        content: prArticlesTable.content,
+        status: prArticlesTable.status,
+        scheduledAt: prArticlesTable.scheduledAt,
+        postedAt: prArticlesTable.postedAt,
+        createdAt: prArticlesTable.createdAt,
+      })
+      .from(prArticlesTable)
+      .innerJoin(businessesTable, eq(prArticlesTable.businessId, businessesTable.id))
+      .where(eq(businessesTable.userId, userId))
+      .orderBy(desc(prArticlesTable.createdAt));
+    res.json(articles);
+  }
 });
 
 router.post("/pr-articles/generate", requireAuth, async (req, res): Promise<void> => {

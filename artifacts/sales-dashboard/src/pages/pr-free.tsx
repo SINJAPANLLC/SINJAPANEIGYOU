@@ -5,7 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { Sparkles, Trash2, Copy, PenLine, FileText, Loader2, Send, ChevronDown, CalendarClock, PlayCircle } from "lucide-react";
+import {
+  Sparkles, Trash2, Copy, PenLine, FileText, Loader2,
+  Send, ChevronDown, CalendarClock, PlayCircle, Building2,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +19,7 @@ import {
 interface PrArticle {
   id: number;
   businessId: number;
+  businessName: string;
   title: string;
   content: string;
   status: string;
@@ -92,24 +96,10 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
   if (editing) {
     return (
       <div className="border border-border rounded-lg p-5 space-y-3">
-        <Input
-          value={editTitle}
-          onChange={(e) => setEditTitle(e.target.value)}
-          className="font-semibold"
-          placeholder="タイトル"
-        />
-        <Textarea
-          value={editContent}
-          onChange={(e) => setEditContent(e.target.value)}
-          rows={10}
-          className="text-sm font-mono"
-        />
+        <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} className="font-semibold" placeholder="タイトル" />
+        <Textarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={10} className="text-sm font-mono" />
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            onClick={() => updateMutation.mutate({ title: editTitle, content: editContent })}
-            disabled={updateMutation.isPending}
-          >
+          <Button size="sm" onClick={() => updateMutation.mutate({ title: editTitle, content: editContent })} disabled={updateMutation.isPending}>
             {updateMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "保存"}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>キャンセル</Button>
@@ -121,13 +111,18 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
   return (
     <div className="border border-border rounded-lg overflow-hidden">
       <div className="p-5">
+        {/* ヘッダー */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+              <span className="text-xs text-muted-foreground truncate">{article.businessName}</span>
+            </div>
             <h3 className="font-semibold text-sm leading-tight">{article.title}</h3>
             <p className="text-xs text-muted-foreground mt-1">
               {new Date(article.createdAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
               {article.postedAt && (
-                <span className="ml-2">
+                <span className="ml-2 text-green-400">
                   投稿: {new Date(article.postedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
                 </span>
               )}
@@ -138,11 +133,12 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
           </span>
         </div>
 
-        <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed bg-muted/20 rounded p-3 max-h-48 overflow-y-auto mb-4">
+        {/* 本文プレビュー */}
+        <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-sans leading-relaxed bg-muted/20 rounded p-3 max-h-40 overflow-y-auto mb-4">
           {article.content}
         </pre>
 
-        {/* 自動投稿セクション */}
+        {/* 自動投稿 */}
         {article.status !== "posted" && (
           <div className="flex items-center gap-2 mb-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <Send className="w-4 h-4 text-blue-400 shrink-0" />
@@ -150,15 +146,12 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-blue-500/30 hover:border-blue-400">
-                  {selectedCategory}
-                  <ChevronDown className="w-3 h-3" />
+                  {selectedCategory}<ChevronDown className="w-3 h-3" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
                 {PR_FREE_CATEGORIES.map((cat) => (
-                  <DropdownMenuItem key={cat} onClick={() => setSelectedCategory(cat)}>
-                    {cat}
-                  </DropdownMenuItem>
+                  <DropdownMenuItem key={cat} onClick={() => setSelectedCategory(cat)}>{cat}</DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -168,15 +161,12 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
               onClick={() => autoPostMutation.mutate()}
               disabled={autoPostMutation.isPending}
             >
-              {autoPostMutation.isPending ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" />送信中...</>
-              ) : (
-                <><Send className="w-3.5 h-3.5" />自動投稿</>
-              )}
+              {autoPostMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />送信中...</> : <><Send className="w-3.5 h-3.5" />自動投稿</>}
             </Button>
           </div>
         )}
 
+        {/* アクション */}
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={copyToClipboard}>
             <Copy className="w-3 h-3" />コピー
@@ -185,17 +175,12 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
             <PenLine className="w-3 h-3" />編集
           </Button>
           {article.status !== "posted" && (
-            <Button
-              size="sm" variant="outline" className="gap-1.5 text-xs h-7"
-              onClick={() => updateMutation.mutate({ status: "posted", postedAt: new Date().toISOString() })}
-            >
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7"
+              onClick={() => updateMutation.mutate({ status: "posted", postedAt: new Date().toISOString() })}>
               投稿済みにする
             </Button>
           )}
-          <Button
-            size="sm" variant="ghost" className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive ml-auto"
-            onClick={onDelete}
-          >
+          <Button size="sm" variant="ghost" className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive ml-auto" onClick={onDelete}>
             <Trash2 className="w-3 h-3" />削除
           </Button>
         </div>
@@ -209,6 +194,7 @@ export default function PrFreePage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [topic, setTopic] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
 
   const runDailyMutation = useMutation({
     mutationFn: async () => {
@@ -226,14 +212,14 @@ export default function PrFreePage() {
     onError: () => toast({ title: "エラー", description: "実行に失敗しました", variant: "destructive" }),
   });
 
+  // 全ビジネスの記事を常に取得
   const { data: articles = [], isLoading } = useQuery<PrArticle[]>({
-    queryKey: ["/api/pr-articles", selectedBusinessId],
+    queryKey: ["/api/pr-articles"],
     queryFn: async () => {
-      const res = await fetch(`/api/pr-articles?businessId=${selectedBusinessId}`, { credentials: "include" });
+      const res = await fetch("/api/pr-articles", { credentials: "include" });
       if (!res.ok) throw new Error("fetch failed");
       return res.json();
     },
-    enabled: !!selectedBusinessId,
   });
 
   const generateMutation = useMutation({
@@ -248,7 +234,7 @@ export default function PrFreePage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles", selectedBusinessId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
       setTopic("");
       toast({ title: "✅ 記事を生成しました" });
     },
@@ -260,13 +246,18 @@ export default function PrFreePage() {
       await fetch(`/api/pr-articles/${id}`, { method: "DELETE", credentials: "include" });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles", selectedBusinessId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
       toast({ title: "削除しました" });
     },
   });
 
+  const filtered = filterStatus === "all" ? articles : articles.filter((a) => a.status === filterStatus);
+  const postedCount = articles.filter((a) => a.status === "posted").length;
+  const draftCount = articles.filter((a) => a.status === "draft").length;
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
+      {/* ヘッダー */}
       <div className="mb-6">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -286,11 +277,9 @@ export default function PrFreePage() {
               onClick={() => runDailyMutation.mutate()}
               disabled={runDailyMutation.isPending}
             >
-              {runDailyMutation.isPending ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" />実行中...</>
-              ) : (
-                <><PlayCircle className="w-3.5 h-3.5" />今すぐ全ビジネス投稿</>
-              )}
+              {runDailyMutation.isPending
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />実行中...</>
+                : <><PlayCircle className="w-3.5 h-3.5" />今すぐ全ビジネス投稿</>}
             </Button>
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <CalendarClock className="w-3 h-3" />
@@ -300,65 +289,81 @@ export default function PrFreePage() {
         </div>
       </div>
 
-      {!selectedBusinessId ? (
-        <div className="border border-dashed border-border rounded p-12 text-center text-muted-foreground">
-          左のサイドバーからビジネスを選択してください
+      {/* AI生成フォーム */}
+      <div className="border border-border rounded-lg p-5 mb-6 bg-muted/10">
+        <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-blue-400" />
+          AI記事生成
+          {!selectedBusinessId && <span className="text-xs font-normal text-yellow-400 ml-1">（サイドバーでビジネスを選択してください）</span>}
+        </h2>
+        <div className="flex gap-3">
+          <Input
+            placeholder="テーマ・トピック（任意）例: 新サービス開始、実績紹介..."
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            className="flex-1"
+            disabled={!selectedBusinessId}
+            onKeyDown={(e) => e.key === "Enter" && selectedBusinessId && generateMutation.mutate()}
+          />
+          <Button
+            onClick={() => generateMutation.mutate()}
+            disabled={!selectedBusinessId || generateMutation.isPending}
+            className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {generateMutation.isPending
+              ? <><Loader2 className="w-4 h-4 animate-spin" />生成中...</>
+              : <><Sparkles className="w-4 h-4" />記事を生成</>}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          ※ 生成後、カテゴリを選択して「自動投稿」ボタンを押すとPR-FREEに直接送信されます
+        </p>
+      </div>
+
+      {/* 集計バッジ */}
+      {articles.length > 0 && (
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-sm text-muted-foreground">全 {articles.length} 件</span>
+          <div className="flex gap-2">
+            {(["all", "posted", "draft"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setFilterStatus(s)}
+                className={`text-xs px-3 py-1 rounded-full border transition-colors ${
+                  filterStatus === s
+                    ? "bg-foreground text-background border-foreground"
+                    : "border-border text-muted-foreground hover:border-foreground/50"
+                }`}
+              >
+                {s === "all" ? `すべて (${articles.length})` : s === "posted" ? `投稿済み (${postedCount})` : `下書き (${draftCount})`}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 記事一覧 */}
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" />読み込み中...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="border border-dashed border-border rounded-lg p-16 text-center text-muted-foreground">
+          <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">
+            {articles.length === 0 ? "まだ記事がありません。上のボタンで生成してください。" : "該当する記事がありません。"}
+          </p>
         </div>
       ) : (
-        <>
-          {/* 記事生成フォーム */}
-          <div className="border border-border rounded-lg p-5 mb-6 bg-muted/10">
-            <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-blue-400" />
-              AI記事生成
-            </h2>
-            <div className="flex gap-3">
-              <Input
-                placeholder="テーマ・トピック（任意）例: 新サービス開始、実績紹介..."
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="flex-1"
-                onKeyDown={(e) => e.key === "Enter" && generateMutation.mutate()}
-              />
-              <Button
-                onClick={() => generateMutation.mutate()}
-                disabled={generateMutation.isPending}
-                className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                {generateMutation.isPending ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" />生成中...</>
-                ) : (
-                  <><Sparkles className="w-4 h-4" />記事を生成</>
-                )}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground mt-2">
-              ※ 生成後、カテゴリを選択して「自動投稿」ボタンを押すとPR-FREEに直接送信されます
-            </p>
-          </div>
-
-          {/* 記事一覧 */}
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />読み込み中...
-            </div>
-          ) : articles.length === 0 ? (
-            <div className="border border-dashed border-border rounded p-12 text-center text-muted-foreground">
-              <FileText className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">まだ記事がありません。上のボタンで生成してください。</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {articles.map((article) => (
-                <ArticleCard
-                  key={article.id}
-                  article={article}
-                  onDelete={() => deleteMutation.mutate(article.id)}
-                />
-              ))}
-            </div>
-          )}
-        </>
+        <div className="space-y-4">
+          {filtered.map((article) => (
+            <ArticleCard
+              key={article.id}
+              article={article}
+              onDelete={() => deleteMutation.mutate(article.id)}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
