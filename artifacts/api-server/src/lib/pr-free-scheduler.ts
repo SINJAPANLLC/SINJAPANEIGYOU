@@ -28,11 +28,11 @@ const FIXED_CONTACT = {
 };
 
 function detectCategory(bizName: string): string {
-  if (/AI|DX|テック|IT|システム/i.test(bizName)) return "ＩＴ・通信";
   if (/TikTok|SNS|動画|広告|マーケ/i.test(bizName)) return "広告・マーケティング";
   if (/人材|採用|求人|スタッフ|SAIYOU/i.test(bizName)) return "教育・資格・人材";
   if (/物流|配送|貨物|運輸|軽貨物|一般貨物|KEI|TRA/i.test(bizName)) return "素材・化学・エネルギー・運輸";
   if (/コンサル|営業|フルコミ/i.test(bizName)) return "コンサルティング・シンクタンク";
+  if (/\bAI\b|DX|テック|\bIT\b|システム/i.test(bizName)) return "ＩＴ・通信";
   return "その他";
 }
 
