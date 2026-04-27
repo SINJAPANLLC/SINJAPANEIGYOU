@@ -14,7 +14,7 @@ const openai = new OpenAI({
 });
 
 const JIMOTY_BASE = "https://jmty.jp";
-const DEFAULT_AREA = process.env.JIMOTY_AREA || "osaka-fu";
+const DEFAULT_AREA = process.env.JIMOTY_AREA || "nagano-ken";
 const DEFAULT_KIND = "biz-partner";
 
 export async function getJimotySettings(): Promise<{ area: string; cronExpression: string }> {
