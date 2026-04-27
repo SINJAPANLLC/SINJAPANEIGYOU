@@ -46,26 +46,27 @@ router.get("/jimoty/accounts", requireAuth, async (_req, res): Promise<void> => 
     email: jimotyAccountsTable.email,
     isDefault: jimotyAccountsTable.isDefault,
     accountType: jimotyAccountsTable.accountType,
+    defaultArea: jimotyAccountsTable.defaultArea,
     createdAt: jimotyAccountsTable.createdAt,
   }).from(jimotyAccountsTable).orderBy(jimotyAccountsTable.createdAt);
   res.json(accounts);
 });
 
 router.post("/jimoty/accounts", requireAuth, async (req, res): Promise<void> => {
-  const { label, email, password, isDefault, accountType } = req.body;
+  const { label, email, password, isDefault, accountType, defaultArea } = req.body;
   if (!label || !email || !password) {
     res.status(400).json({ error: "label, email, password は必須です" }); return;
   }
   if (isDefault) await db.update(jimotyAccountsTable).set({ isDefault: false });
   const [account] = await db.insert(jimotyAccountsTable)
-    .values({ label, email, password, isDefault: !!isDefault, accountType: accountType ?? "business" })
-    .returning({ id: jimotyAccountsTable.id, label: jimotyAccountsTable.label, email: jimotyAccountsTable.email, isDefault: jimotyAccountsTable.isDefault, accountType: jimotyAccountsTable.accountType, createdAt: jimotyAccountsTable.createdAt });
+    .values({ label, email, password, isDefault: !!isDefault, accountType: accountType ?? "business", defaultArea: defaultArea ?? null })
+    .returning({ id: jimotyAccountsTable.id, label: jimotyAccountsTable.label, email: jimotyAccountsTable.email, isDefault: jimotyAccountsTable.isDefault, accountType: jimotyAccountsTable.accountType, defaultArea: jimotyAccountsTable.defaultArea, createdAt: jimotyAccountsTable.createdAt });
   res.json(account);
 });
 
 router.patch("/jimoty/accounts/:id", requireAuth, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
-  const { label, email, password, isDefault, accountType } = req.body;
+  const { label, email, password, isDefault, accountType, defaultArea } = req.body;
   if (isDefault) await db.update(jimotyAccountsTable).set({ isDefault: false });
   const updates: Record<string, unknown> = {};
   if (label !== undefined) updates.label = label;
@@ -73,6 +74,7 @@ router.patch("/jimoty/accounts/:id", requireAuth, async (req, res): Promise<void
   if (password !== undefined && password !== "") updates.password = password;
   if (isDefault !== undefined) updates.isDefault = isDefault;
   if (accountType !== undefined) updates.accountType = accountType;
+  if (defaultArea !== undefined) updates.defaultArea = defaultArea || null;
   await db.update(jimotyAccountsTable).set(updates).where(eq(jimotyAccountsTable.id, id));
   res.json({ success: true });
 });

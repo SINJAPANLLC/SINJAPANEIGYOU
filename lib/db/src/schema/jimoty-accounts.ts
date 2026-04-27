@@ -9,6 +9,7 @@ export const jimotyAccountsTable = pgTable("jimoty_accounts", {
   password: text("password").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
   accountType: text("account_type").notNull().default("business"),
+  defaultArea: text("default_area"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

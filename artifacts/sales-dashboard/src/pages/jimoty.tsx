@@ -70,7 +70,7 @@ const CRON_PRESETS = [
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface JimotyAccount { id: number; label: string; email: string; isDefault: boolean; accountType: string; createdAt: string; }
+interface JimotyAccount { id: number; label: string; email: string; isDefault: boolean; accountType: string; defaultArea: string | null; createdAt: string; }
 interface JimotyPost { id: number; businessId: number | null; businessName: string | null; accountId: number | null; title: string; body: string; status: string; postedAt: string | null; jimotyUrl: string | null; errorMsg: string | null; createdAt: string; }
 interface BizWithAccount { id: number; name: string; jimotyAccountId: number | null; }
 interface JimotyStatus { configured: boolean; accountCount: number; hasEnvCreds: boolean; scheduledTime: string; cronExpression: string; area: string; }
@@ -234,20 +234,21 @@ function PostCard({ post, accounts }: { post: JimotyPost; accounts: JimotyAccoun
 
 // ─── PostingPanel ─────────────────────────────────────────────────────────────
 function PostingPanel({
-  account, businesses, defaultArea, onClose,
+  account, businesses, globalDefaultArea, onClose,
 }: {
   account: JimotyAccount;
   businesses: BizWithAccount[];
-  defaultArea: string;
+  globalDefaultArea: string;
   onClose: () => void;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isPersonal = account.accountType === "personal";
+  const initialArea = account.defaultArea ?? globalDefaultArea;
 
   const [state, setState] = useState<PanelState>({
     selectedBiz: "",
-    area: defaultArea,
+    area: initialArea,
     preview: null,
     generating: false,
   });
@@ -530,6 +531,22 @@ export default function JimotyPage() {
     },
   });
 
+  const setAreaMutation = useMutation({
+    mutationFn: async ({ id, defaultArea }: { id: number; defaultArea: string | null }) => {
+      const res = await fetch(`/api/jimoty/accounts/${id}`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultArea }),
+      });
+      if (!res.ok) throw new Error("更新失敗");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jimoty/accounts"] });
+      toast({ title: "✅ デフォルトエリアを設定しました" });
+    },
+    onError: (err: Error) => toast({ title: "❌ " + err.message, variant: "destructive" }),
+  });
+
   const assignAccountMutation = useMutation({
     mutationFn: async ({ bizId, accountId }: { bizId: number; accountId: number | null }) => {
       const res = await fetch(`/api/jimoty/businesses/${bizId}/account`, {
@@ -657,7 +674,20 @@ export default function JimotyPage() {
                         </span>
                       ) : null}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{isPersonal ? "個人名・メールアドレス非公開" : account.email}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-xs text-muted-foreground">{isPersonal ? "個人名・メールアドレス非公開" : account.email}</p>
+                      <div className="flex items-center gap-1">
+                        <MapPin className="w-2.5 h-2.5 text-muted-foreground" />
+                        <select
+                          value={account.defaultArea ?? ""}
+                          onChange={e => setAreaMutation.mutate({ id: account.id, defaultArea: e.target.value || null })}
+                          className="bg-transparent border-0 text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors p-0 h-auto focus:outline-none"
+                        >
+                          <option value="">グローバル設定 ({PREFECTURES.find(p => p.value === defaultArea)?.label ?? defaultArea})</option>
+                          {PREFECTURES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                        </select>
+                      </div>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Button size="sm" variant={isOpen ? "secondary" : "ghost"} className="rounded-none h-7 text-xs gap-1 px-2"
@@ -685,7 +715,7 @@ export default function JimotyPage() {
                   <PostingPanel
                     account={account}
                     businesses={businesses}
-                    defaultArea={defaultArea}
+                    globalDefaultArea={defaultArea}
                     onClose={() => setOpenPostPanel(null)}
                   />
                 )}
