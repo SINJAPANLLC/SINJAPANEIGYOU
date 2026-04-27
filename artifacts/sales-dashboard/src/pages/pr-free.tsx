@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useBusiness } from "@/contexts/BusinessContext";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Sparkles, Trash2, Copy, PenLine, FileText, Loader2,
+  Trash2, Copy, PenLine, FileText, Loader2,
   Send, ChevronDown, CalendarClock, PlayCircle, Building2,
 } from "lucide-react";
 import {
@@ -190,10 +189,8 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
 }
 
 export default function PrFreePage() {
-  const { selectedBusinessId } = useBusiness();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [topic, setTopic] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
   const runDailyMutation = useMutation({
@@ -222,25 +219,6 @@ export default function PrFreePage() {
     },
   });
 
-  const generateMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/pr-articles/generate", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessId: selectedBusinessId, topic }),
-      });
-      if (!res.ok) throw new Error("生成失敗");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
-      setTopic("");
-      toast({ title: "✅ 記事を生成しました" });
-    },
-    onError: () => toast({ title: "エラー", description: "記事生成に失敗しました", variant: "destructive" }),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       await fetch(`/api/pr-articles/${id}`, { method: "DELETE", credentials: "include" });
@@ -263,10 +241,10 @@ export default function PrFreePage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <FileText className="w-6 h-6" />
-              PR-FREE 自動記事作成＆投稿
+              PR-FREE 自動投稿
             </h1>
             <p className="text-muted-foreground text-sm mt-1">
-              AIが記事を生成し、PR-FREE（pr-free.jp）に自動投稿します。
+              全ビジネスのPR-FREE（pr-free.jp）投稿を管理します。
             </p>
           </div>
           <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -287,37 +265,6 @@ export default function PrFreePage() {
             </span>
           </div>
         </div>
-      </div>
-
-      {/* AI生成フォーム */}
-      <div className="border border-border rounded-lg p-5 mb-6 bg-muted/10">
-        <h2 className="text-sm font-semibold mb-3 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-blue-400" />
-          AI記事生成
-          {!selectedBusinessId && <span className="text-xs font-normal text-yellow-400 ml-1">（サイドバーでビジネスを選択してください）</span>}
-        </h2>
-        <div className="flex gap-3">
-          <Input
-            placeholder="テーマ・トピック（任意）例: 新サービス開始、実績紹介..."
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            className="flex-1"
-            disabled={!selectedBusinessId}
-            onKeyDown={(e) => e.key === "Enter" && selectedBusinessId && generateMutation.mutate()}
-          />
-          <Button
-            onClick={() => generateMutation.mutate()}
-            disabled={!selectedBusinessId || generateMutation.isPending}
-            className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"
-          >
-            {generateMutation.isPending
-              ? <><Loader2 className="w-4 h-4 animate-spin" />生成中...</>
-              : <><Sparkles className="w-4 h-4" />記事を生成</>}
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          ※ 生成後、カテゴリを選択して「自動投稿」ボタンを押すとPR-FREEに直接送信されます
-        </p>
       </div>
 
       {/* 集計バッジ */}
