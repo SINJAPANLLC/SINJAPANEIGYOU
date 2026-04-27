@@ -3,6 +3,12 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, prArticlesTable, businessesTable } from "@workspace/db";
 import { requireAuth, getUserId } from "../lib/auth";
 import OpenAI from "openai";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const router: IRouter = Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -175,35 +181,41 @@ router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise
   }
 
   const siteUrl = biz.serviceUrl || "https://sinjapan-sales.site";
-  const formBody = new URLSearchParams({
-    "_wpcf7": "25868",
-    "_wpcf7_version": "5.2",
-    "_wpcf7_locale": "ja",
-    "_wpcf7_unit_tag": "wpcf7-f25868-p2821-o1",
-    "_wpcf7_container_post": "2821",
-    "_wpcf7_posted_data_hash": "",
-    "your-teamname": biz.name,
-    "your-name": biz.senderName,
-    "your-email": biz.senderEmail,
-    "url-adress": siteUrl,
-    "category": category,
-    "companyname": biz.companyName || "合同会社SIN JAPAN",
-    "your-subject": article.title.slice(0, 140),
-    "subtitle": "",
-    "your-message": article.content,
-  });
+
+  const formData = new FormData();
+  formData.append("_wpcf7", "25868");
+  formData.append("_wpcf7_version", "5.2");
+  formData.append("_wpcf7_locale", "ja");
+  formData.append("_wpcf7_unit_tag", "wpcf7-f25868-p2821-o1");
+  formData.append("_wpcf7_container_post", "2821");
+  formData.append("_wpcf7_posted_data_hash", "");
+  formData.append("your-teamname", "合同会社SIN JAPAN");
+  formData.append("your-name", "大谷");
+  formData.append("your-email", "info@sinjapan.jp");
+  formData.append("url-adress", siteUrl);
+  formData.append("category", category);
+  formData.append("companyname", "合同会社SIN JAPAN");
+  formData.append("your-subject", article.title.slice(0, 140));
+  formData.append("subtitle", "");
+  formData.append("your-message", article.content);
+
+  try {
+    const logoBuffer = readFileSync(join(__dirname, "../lib/sinjapan-logo.jpg"));
+    formData.append("file-img1", new Blob([logoBuffer], { type: "image/jpeg" }), "sinjapan-logo.jpg");
+  } catch {
+    // ロゴなしで続行
+  }
 
   const cfRes = await fetch(
     "https://pr-free.jp/wp-json/contact-form-7/v1/contact-forms/25868/feedback",
     {
       method: "POST",
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
         "Referer": "https://pr-free.jp/prform/",
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "Origin": "https://pr-free.jp",
       },
-      body: formBody.toString(),
+      body: formData,
     }
   );
 

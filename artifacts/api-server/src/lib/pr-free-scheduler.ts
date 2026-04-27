@@ -1,21 +1,33 @@
 import cron from "node-cron";
 import { db, businessesTable, prArticlesTable } from "@workspace/db";
-import { eq, and, gte, desc } from "drizzle-orm";
+import { eq, and, gte } from "drizzle-orm";
 import OpenAI from "openai";
 import { logger } from "./logger";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const PR_FREE_CF7_ENDPOINT =
   "https://pr-free.jp/wp-json/contact-form-7/v1/contact-forms/25868/feedback";
 
+const FIXED_CONTACT = {
+  teamname: "合同会社SIN JAPAN",
+  name: "大谷",
+  email: "info@sinjapan.jp",
+  companyname: "合同会社SIN JAPAN",
+};
+
 function detectCategory(bizName: string): string {
-  const n = bizName;
-  if (/AI|DX|テック|IT|システム/i.test(n)) return "ＩＴ・通信";
-  if (/TikTok|SNS|動画|広告|マーケ/i.test(n)) return "広告・マーケティング";
-  if (/人材|採用|求人|スタッフ/i.test(n)) return "教育・資格・人材";
-  if (/物流|配送|貨物|運輸|軽貨物|一般貨物|KEI|TRA/i.test(n)) return "素材・化学・エネルギー・運輸";
-  if (/コンサル|営業|フルコミ/i.test(n)) return "コンサルティング・シンクタンク";
+  if (/AI|DX|テック|IT|システム/i.test(bizName)) return "ＩＴ・通信";
+  if (/TikTok|SNS|動画|広告|マーケ/i.test(bizName)) return "広告・マーケティング";
+  if (/人材|採用|求人|スタッフ/i.test(bizName)) return "教育・資格・人材";
+  if (/物流|配送|貨物|運輸|軽貨物|一般貨物|KEI|TRA/i.test(bizName)) return "素材・化学・エネルギー・運輸";
+  if (/コンサル|営業|フルコミ/i.test(bizName)) return "コンサルティング・シンクタンク";
   return "その他";
 }
 
@@ -44,37 +56,40 @@ async function hasPostedTodayJST(businessId: number): Promise<boolean> {
   return rows.length > 0;
 }
 
-async function generateAndPost(biz: typeof businessesTable.$inferSelect): Promise<void> {
-  const bizId = biz.id;
-  const category = detectCategory(biz.name);
+interface GeneratedArticle {
+  title: string;
+  subtitle: string;
+  content: string;
+}
 
-  logger.info({ bizId, bizName: biz.name, category }, "pr-free: start generate+post");
-
+async function generateArticle(biz: typeof businessesTable.$inferSelect): Promise<GeneratedArticle> {
   const prompt = `
 あなたは日本語のプレスリリース（PR FREE向け）ライターです。
 以下のビジネス情報をもとに、PR FREEに投稿できるプレスリリース記事を作成してください。
 
 ビジネス名: ${biz.name}
-会社名: ${biz.companyName || "合同会社SIN JAPAN"}
+会社名: 合同会社SIN JAPAN
+サービスURL: ${biz.serviceUrl || "https://sinjapan-sales.site"}
 
-【フォーマット】
-タイトル: （キャッチーで検索されやすい20〜40文字）
+【出力フォーマット（必ずこの形式で）】
+タイトル: （20〜40文字のキャッチーなタイトル）
+サブタイトル: （20〜30文字の補足タイトル）
 ---
-本文:
 （リード文：2〜3行でニュースの要点を伝える）
 
 【サービス概要】
-（ビジネスのサービス内容を300〜400字で説明）
+（300〜400字でサービス内容を説明）
 
 【特徴・強み】
 ・（箇条書き3〜5項目）
 
 【お問い合わせ】
-会社名: ${biz.companyName || "合同会社SIN JAPAN"}
-メール: ${biz.senderEmail}
-${biz.serviceUrl ? `URL: ${biz.serviceUrl}` : ""}
+会社名: 合同会社SIN JAPAN
+担当: 大谷
+メール: info@sinjapan.jp
+${biz.serviceUrl ? `URL: ${biz.serviceUrl}` : "URL: https://sinjapan-sales.site"}
 
-記事全体で500〜800字程度で作成してください。PR TIMESのルールに沿ったビジネスライクな文体で。
+記事全体で500〜800字程度。PR TIMESのルールに沿ったビジネスライクな文体で。
 `;
 
   const completion = await openai.chat.completions.create({
@@ -85,44 +100,82 @@ ${biz.serviceUrl ? `URL: ${biz.serviceUrl}` : ""}
 
   const rawText = completion.choices[0].message.content || "";
   const titleMatch = rawText.match(/タイトル[:：]\s*(.+)/);
+  const subtitleMatch = rawText.match(/サブタイトル[:：]\s*(.+)/);
   const title = titleMatch ? titleMatch[1].trim() : `${biz.name} プレスリリース`;
-  const content = rawText.replace(/タイトル[:：]\s*.+\n?-{3,}\n?/, "").trim();
+  const subtitle = subtitleMatch ? subtitleMatch[1].trim() : "";
+  const content = rawText
+    .replace(/タイトル[:：]\s*.+\n?/, "")
+    .replace(/サブタイトル[:：]\s*.+\n?/, "")
+    .replace(/^-{3,}\n?/, "")
+    .trim();
 
-  const [article] = await db
+  return { title, subtitle, content };
+}
+
+function buildFormData(
+  biz: typeof businessesTable.$inferSelect,
+  article: GeneratedArticle,
+  category: string,
+  logoBuffer: Buffer,
+): FormData {
+  const siteUrl = biz.serviceUrl || "https://sinjapan-sales.site";
+  const formData = new FormData();
+
+  formData.append("_wpcf7", "25868");
+  formData.append("_wpcf7_version", "5.2");
+  formData.append("_wpcf7_locale", "ja");
+  formData.append("_wpcf7_unit_tag", "wpcf7-f25868-p2821-o1");
+  formData.append("_wpcf7_container_post", "2821");
+  formData.append("_wpcf7_posted_data_hash", "");
+
+  formData.append("your-teamname", FIXED_CONTACT.teamname);
+  formData.append("your-name", FIXED_CONTACT.name);
+  formData.append("your-email", FIXED_CONTACT.email);
+  formData.append("url-adress", siteUrl);
+  formData.append("category", category);
+  formData.append("companyname", FIXED_CONTACT.companyname);
+  formData.append("your-subject", article.title.slice(0, 140));
+  formData.append("subtitle", article.subtitle.slice(0, 140));
+  formData.append("your-message", article.content);
+
+  const logoBlob = new Blob([logoBuffer], { type: "image/jpeg" });
+  formData.append("file-img1", logoBlob, "sinjapan-logo.jpg");
+
+  return formData;
+}
+
+export async function generateAndPost(biz: typeof businessesTable.$inferSelect): Promise<void> {
+  const bizId = biz.id;
+  const category = detectCategory(biz.name);
+
+  logger.info({ bizId, bizName: biz.name, category }, "pr-free: start generate+post");
+
+  const article = await generateArticle(biz);
+
+  const [savedArticle] = await db
     .insert(prArticlesTable)
-    .values({ businessId: bizId, title, content, status: "draft" })
+    .values({ businessId: bizId, title: article.title, content: article.content, status: "draft" })
     .returning();
 
-  const siteUrl = biz.serviceUrl || "https://sinjapan-sales.site";
+  let logoBuffer: Buffer;
+  try {
+    logoBuffer = readFileSync(join(__dirname, "sinjapan-logo.jpg"));
+  } catch {
+    logger.warn({ bizId }, "pr-free: logo not found, sending without image");
+    logoBuffer = Buffer.alloc(0);
+  }
 
-  const formBody = new URLSearchParams({
-    _wpcf7: "25868",
-    _wpcf7_version: "5.2",
-    _wpcf7_locale: "ja",
-    _wpcf7_unit_tag: "wpcf7-f25868-p2821-o1",
-    _wpcf7_container_post: "2821",
-    _wpcf7_posted_data_hash: "",
-    "your-teamname": biz.name,
-    "your-name": biz.senderName,
-    "your-email": biz.senderEmail,
-    "url-adress": siteUrl,
-    category,
-    companyname: biz.companyName || "合同会社SIN JAPAN",
-    "your-subject": title.slice(0, 140),
-    subtitle: "",
-    "your-message": content,
-  });
+  const formData = buildFormData(biz, article, category, logoBuffer);
 
   const cfRes = await fetch(PR_FREE_CF7_ENDPOINT, {
     method: "POST",
     headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
       Referer: "https://pr-free.jp/prform/",
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
       Origin: "https://pr-free.jp",
     },
-    body: formBody.toString(),
+    body: formData,
   });
 
   const cfJson = (await cfRes.json()) as { status: string; message?: string };
@@ -131,14 +184,10 @@ ${biz.serviceUrl ? `URL: ${biz.serviceUrl}` : ""}
     await db
       .update(prArticlesTable)
       .set({ status: "posted", postedAt: new Date(), updatedAt: new Date() })
-      .where(eq(prArticlesTable.id, article.id));
-    logger.info({ bizId, bizName: biz.name, articleId: article.id }, "pr-free: posted successfully");
+      .where(eq(prArticlesTable.id, savedArticle.id));
+    logger.info({ bizId, bizName: biz.name, articleId: savedArticle.id }, "pr-free: posted successfully");
   } else {
     logger.warn({ bizId, bizName: biz.name, cfStatus: cfJson.status, cfMessage: cfJson.message }, "pr-free: post failed");
-    await db
-      .update(prArticlesTable)
-      .set({ status: "draft", updatedAt: new Date() })
-      .where(eq(prArticlesTable.id, article.id));
   }
 }
 
@@ -163,13 +212,10 @@ export async function runPrFreeDailyNow() {
 }
 
 export function startPrFreeScheduler() {
-  // 毎朝 01:00 UTC = 10:00 JST
   cron.schedule("0 1 * * *", async () => {
     logger.info("pr-free: daily scheduler started");
-
     const businesses = await db.select().from(businessesTable);
     logger.info({ count: businesses.length }, "pr-free: processing businesses");
-
     for (let i = 0; i < businesses.length; i++) {
       const biz = businesses[i];
       try {
@@ -178,22 +224,14 @@ export function startPrFreeScheduler() {
           logger.info({ bizId: biz.id, bizName: biz.name }, "pr-free: already posted today, skip");
           continue;
         }
-
         await generateAndPost(biz);
       } catch (err) {
         logger.error({ err, bizId: biz.id, bizName: biz.name }, "pr-free: error processing business");
       }
-
-      // 2分待機（次のビジネスまで）
-      if (i < businesses.length - 1) {
-        await sleep(2 * 60 * 1000);
-      }
+      if (i < businesses.length - 1) await sleep(2 * 60 * 1000);
     }
-
     logger.info("pr-free: daily scheduler finished");
-  }, {
-    timezone: "UTC",
-  });
+  }, { timezone: "UTC" });
 
   logger.info("pr-free: scheduler registered (daily 10:00 JST)");
 }
