@@ -192,6 +192,8 @@ function getJimotyDescription(bizName: string): string {
   if (/SIN JAPAN AI/i.test(n)) return "【営業DX・AI自動化】リード獲得からメール送信まで営業プロセスをAI自動化。中小企業の営業効率を大幅改善。合同会社SIN JAPAN";
   if (/TikTok/i.test(n)) return "【TikTok ONE公認代理店】TikTok広告運用・クリエイターPR施策を代行。中小企業からの依頼歓迎。合同会社SIN JAPAN";
   if (/フルコミ|フル・コミ/i.test(n)) return "【フルコミ営業パートナー募集】完全成果報酬型の営業代理人を求む。固定費ゼロで即戦力営業人材確保。合同会社SIN JAPAN";
+  if (/軽貨物.*ドライバー|ドライバー.*軽貨物/i.test(n)) return "【軽貨物ドライバー募集】未経験OK・週払い対応。在宅配送から独立開業まで幅広く支援。高収入・安定稼働を実現。合同会社SIN JAPAN";
+  if (/チャットレディ/i.test(n)) return "【チャットレディ募集】在宅・スマホ1台でできる女性の仕事。未経験者歓迎・安心サポート完備。高収入・自由シフト制。合同会社SIN JAPAN";
   if (/軽貨物.*案件|案件.*軽貨物/i.test(n)) return "【軽貨物案件獲得支援】安定した高単価案件を継続紹介。個人事業主・法人どちらも対応。合同会社SIN JAPAN";
   if (/軽貨物.*協力|協力.*軽貨物/i.test(n)) return "【軽貨物協力会社募集】配送需要拡大につき協力会社・傭車パートナーを募集中。合同会社SIN JAPAN";
   if (/一般貨物.*案件|案件.*一般貨物/i.test(n)) return "【一般貨物案件獲得】長距離・チャーター高単価案件を継続紹介。空車率削減・安定稼働を実現。合同会社SIN JAPAN";
