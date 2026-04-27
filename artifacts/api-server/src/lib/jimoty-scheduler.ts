@@ -1,7 +1,7 @@
 import cron from "node-cron";
 import axios from "axios";
 import * as cheerio from "cheerio";
-import { db, businessesTable, jimotyPostsTable, jimotyAccountsTable } from "@workspace/db";
+import { db, businessesTable, jimotyPostsTable, jimotyAccountsTable, jimotySettingsTable } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import OpenAI from "openai";
 import { logger } from "./logger";
@@ -16,6 +16,38 @@ const openai = new OpenAI({
 const JIMOTY_BASE = "https://jmty.jp";
 const DEFAULT_AREA = process.env.JIMOTY_AREA || "osaka-fu";
 const DEFAULT_KIND = "biz-partner";
+
+export async function getJimotySettings(): Promise<{ area: string; cronExpression: string }> {
+  const rows = await db.select().from(jimotySettingsTable).limit(1);
+  if (rows.length > 0) return { area: rows[0].area, cronExpression: rows[0].cronExpression };
+  const [created] = await db.insert(jimotySettingsTable).values({}).returning();
+  return { area: created.area, cronExpression: created.cronExpression };
+}
+
+export async function updateJimotySettings(updates: { area?: string; cronExpression?: string }): Promise<void> {
+  const rows = await db.select().from(jimotySettingsTable).limit(1);
+  if (rows.length === 0) {
+    await db.insert(jimotySettingsTable).values({ area: updates.area ?? DEFAULT_AREA, cronExpression: updates.cronExpression ?? "0 2 * * *" });
+  } else {
+    const set: Record<string, string> = {};
+    if (updates.area !== undefined) set.area = updates.area;
+    if (updates.cronExpression !== undefined) set.cronExpression = updates.cronExpression;
+    await db.update(jimotySettingsTable).set(set).where(eq(jimotySettingsTable.id, rows[0].id));
+  }
+  if (updates.cronExpression !== undefined) {
+    reschedule(updates.cronExpression);
+  }
+}
+
+export async function generateJimotyPreview(businessId: number): Promise<{ title: string; body: string }> {
+  const [biz] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
+  if (!biz) throw new Error("ビジネスが見つかりません");
+  return generateJimotyPost(biz.name);
+}
+
+export async function generatePersonalJimotyPreview(): Promise<{ title: string; body: string }> {
+  return generatePersonalJimotyPost();
+}
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -290,6 +322,9 @@ async function resolveAccount(businessId: number): Promise<AccountCredential | n
 export async function jimotyGenerateAndPost(
   businessId: number,
   overrideAccountId?: number,
+  overrideArea?: string,
+  previewTitle?: string,
+  previewBody?: string,
 ): Promise<{ success: boolean; message: string; url?: string; accountLabel?: string }> {
   const [biz] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
   if (!biz) return { success: false, message: "ビジネスが見つかりません" };
@@ -306,21 +341,30 @@ export async function jimotyGenerateAndPost(
 
   const [record] = await db
     .insert(jimotyPostsTable)
-    .values({ businessId, accountId: account.id, title: "生成中...", body: "", status: "draft" })
+    .values({ businessId, accountId: account.id, title: previewTitle ?? "生成中...", body: previewBody ?? "", status: "draft" })
     .returning();
 
   try {
-    const { title, body } = await generateJimotyPost(biz.name);
+    let title = previewTitle;
+    let body = previewBody;
+    if (!title || !body) {
+      const generated = await generateJimotyPost(biz.name);
+      title = generated.title;
+      body = generated.body;
+    }
 
     await db.update(jimotyPostsTable)
       .set({ title, body })
       .where(eq(jimotyPostsTable.id, record.id));
 
+    const settings = await getJimotySettings();
+    const area = overrideArea ?? settings.area;
+
     logger.info({ businessId, bizName: biz.name, accountLabel: account.label }, "jimoty: ログイン中");
     const cookies = await loginToJimoty(account.email, account.password);
 
     logger.info({ businessId }, "jimoty: 投稿中");
-    const url = await postToJimoty(cookies, title, body);
+    const url = await postToJimoty(cookies, title, body, area);
 
     await db.update(jimotyPostsTable)
       .set({ status: "posted", postedAt: new Date(), jimotyUrl: url })
@@ -342,27 +386,39 @@ export async function jimotyGenerateAndPost(
 
 export async function jimotyPersonalPost(
   accountId: number,
+  overrideArea?: string,
+  previewTitle?: string,
+  previewBody?: string,
 ): Promise<{ success: boolean; message: string; url?: string; accountLabel?: string }> {
   const [acct] = await db.select().from(jimotyAccountsTable).where(eq(jimotyAccountsTable.id, accountId));
   if (!acct) return { success: false, message: "アカウントが見つかりません" };
 
   const [record] = await db
     .insert(jimotyPostsTable)
-    .values({ businessId: null as any, accountId: acct.id, title: "生成中...", body: "", status: "draft" })
+    .values({ businessId: null as any, accountId: acct.id, title: previewTitle ?? "生成中...", body: previewBody ?? "", status: "draft" })
     .returning();
 
   try {
-    const { title, body } = await generatePersonalJimotyPost();
+    let title = previewTitle;
+    let body = previewBody;
+    if (!title || !body) {
+      const generated = await generatePersonalJimotyPost();
+      title = generated.title;
+      body = generated.body;
+    }
 
     await db.update(jimotyPostsTable)
       .set({ title, body })
       .where(eq(jimotyPostsTable.id, record.id));
 
+    const settings = await getJimotySettings();
+    const area = overrideArea ?? settings.area;
+
     logger.info({ accountLabel: acct.label }, "jimoty: 個人投稿 ログイン中");
     const cookies = await loginToJimoty(acct.email, acct.password);
 
     logger.info({ accountLabel: acct.label }, "jimoty: 個人投稿 投稿中");
-    const url = await postToJimoty(cookies, title, body, DEFAULT_AREA, "friend", "");
+    const url = await postToJimoty(cookies, title, body, area, "friend", "");
 
     await db.update(jimotyPostsTable)
       .set({ status: "posted", postedAt: new Date(), jimotyUrl: url })
@@ -445,12 +501,27 @@ async function runDailyJimoty() {
   logger.info("jimoty: 日次自動投稿完了");
 }
 
-export function startJimotyScheduler() {
-  cron.schedule("0 2 * * *", () => {
+let currentTask: cron.ScheduledTask | null = null;
+
+function reschedule(expression: string) {
+  if (currentTask) {
+    currentTask.stop();
+    currentTask = null;
+  }
+  if (!cron.validate(expression)) {
+    logger.error({ expression }, "jimoty: 無効なCRON式 → スキップ");
+    return;
+  }
+  currentTask = cron.schedule(expression, () => {
     runDailyJimoty().catch((err) =>
       logger.error({ err }, "jimoty: scheduler uncaught error")
     );
   }, { timezone: "UTC" });
+  logger.info({ expression }, "jimoty: scheduler 再スケジュール完了");
+}
 
-  logger.info({ expr: "0 2 * * * (= 11:00 JST)" }, "jimoty: scheduler registered");
+export async function startJimotyScheduler() {
+  const settings = await getJimotySettings().catch(() => ({ area: DEFAULT_AREA, cronExpression: "0 2 * * *" }));
+  reschedule(settings.cronExpression);
+  logger.info({ expr: settings.cronExpression }, "jimoty: scheduler registered");
 }

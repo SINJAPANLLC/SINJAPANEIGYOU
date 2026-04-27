@@ -9,3 +9,4 @@ export * from "./x-automation";
 export * from "./pr-articles";
 export * from "./jimoty-posts";
 export * from "./jimoty-accounts";
+export * from "./jimoty-settings";

@@ -29,5 +29,5 @@ app.listen(port, (err) => {
   startCronRunner();
   startXScheduler();
   startPrFreeScheduler();
-  startJimotyScheduler();
+  startJimotyScheduler().catch((err) => console.error("jimoty scheduler start failed", err));
 });
