@@ -169,6 +169,41 @@ function getJimotyDescription(bizName: string): string {
   return `【${bizName}】合同会社SIN JAPANのサービスです。詳細はお問い合わせください。`;
 }
 
+async function generatePersonalJimotyPost(): Promise<{ title: string; body: string }> {
+  const themes = [
+    "異業種交流会や勉強会に参加したい",
+    "ビジネスパートナーや仲間を探している",
+    "地元で友人・仲間を作りたい",
+    "起業仲間や副業に興味がある人と繋がりたい",
+    "趣味や仕事を通じた人脈を広げたい",
+    "地域のコミュニティやイベント仲間を探している",
+  ];
+  const theme = themes[Math.floor(Math.random() * themes.length)];
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: "あなたはジモティーの「一緒にやろう・仲間募集」カテゴリへの投稿文を作成するアシスタントです。個人として人脈・つながりを広げたい人の自然な投稿文を作成してください。個人名・メールアドレス・会社名は一切含めないでください。",
+      },
+      {
+        role: "user",
+        content: `テーマ「${theme}」でジモティーに投稿する文章を作成してください。\n\n要件:\n- タイトル: 20〜30文字、親しみやすく自然な文体\n- 本文: 150〜300文字、個人として気軽に声をかけたい雰囲気\n- 個人名・メールアドレス・会社名・電話番号は一切含めない\n- 「ジモティーのメッセージ機能でご連絡ください」のみ連絡手段として記載\n- 宣伝っぽくない、自然な個人の投稿文として\n\n以下のJSON形式で返してください:\n{"title": "...", "body": "..."}`,
+      },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.85,
+  });
+
+  const raw = completion.choices[0].message.content ?? "{}";
+  const parsed = JSON.parse(raw);
+  return {
+    title: parsed.title ?? "一緒に活動しませんか",
+    body: parsed.body ?? "人脈を広げたいと思っています。お気軽にメッセージください。",
+  };
+}
+
 async function generateJimotyPost(bizName: string): Promise<{ title: string; body: string }> {
   const desc = getJimotyDescription(bizName);
 
@@ -296,6 +331,48 @@ export async function jimotyGenerateAndPost(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ businessId, err: msg }, "jimoty: 投稿失敗");
+
+    await db.update(jimotyPostsTable)
+      .set({ status: "failed", errorMsg: msg })
+      .where(eq(jimotyPostsTable.id, record.id));
+
+    return { success: false, message: msg };
+  }
+}
+
+export async function jimotyPersonalPost(
+  accountId: number,
+): Promise<{ success: boolean; message: string; url?: string; accountLabel?: string }> {
+  const [acct] = await db.select().from(jimotyAccountsTable).where(eq(jimotyAccountsTable.id, accountId));
+  if (!acct) return { success: false, message: "アカウントが見つかりません" };
+
+  const [record] = await db
+    .insert(jimotyPostsTable)
+    .values({ businessId: null as any, accountId: acct.id, title: "生成中...", body: "", status: "draft" })
+    .returning();
+
+  try {
+    const { title, body } = await generatePersonalJimotyPost();
+
+    await db.update(jimotyPostsTable)
+      .set({ title, body })
+      .where(eq(jimotyPostsTable.id, record.id));
+
+    logger.info({ accountLabel: acct.label }, "jimoty: 個人投稿 ログイン中");
+    const cookies = await loginToJimoty(acct.email, acct.password);
+
+    logger.info({ accountLabel: acct.label }, "jimoty: 個人投稿 投稿中");
+    const url = await postToJimoty(cookies, title, body, DEFAULT_AREA, "friend", "");
+
+    await db.update(jimotyPostsTable)
+      .set({ status: "posted", postedAt: new Date(), jimotyUrl: url })
+      .where(eq(jimotyPostsTable.id, record.id));
+
+    logger.info({ url, accountLabel: acct.label }, "jimoty: 個人投稿 完了");
+    return { success: true, message: "投稿完了", url, accountLabel: acct.label };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ accountId, err: msg }, "jimoty: 個人投稿 失敗");
 
     await db.update(jimotyPostsTable)
       .set({ status: "failed", errorMsg: msg })

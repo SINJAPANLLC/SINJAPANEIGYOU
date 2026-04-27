@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import {
   Trash2, Loader2, PlayCircle, ExternalLink, MapPin, Building2,
-  AlertCircle, CheckCircle2, Clock, Plus, Star, User, X,
+  AlertCircle, CheckCircle2, Clock, Plus, Star, User, Users,
 } from "lucide-react";
 
 interface JimotyAccount {
@@ -13,13 +13,14 @@ interface JimotyAccount {
   label: string;
   email: string;
   isDefault: boolean;
+  accountType: string;
   createdAt: string;
 }
 
 interface JimotyPost {
   id: number;
-  businessId: number;
-  businessName: string;
+  businessId: number | null;
+  businessName: string | null;
   accountId: number | null;
   title: string;
   body: string;
@@ -56,13 +57,14 @@ function AccountForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isDefault, setIsDefault] = useState(false);
+  const [accountType, setAccountType] = useState<"business" | "personal">("business");
 
   const createMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/jimoty/accounts", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label, email, password, isDefault }),
+        body: JSON.stringify({ label, email, password, isDefault, accountType }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "作成失敗");
@@ -84,11 +86,23 @@ function AccountForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
         <Input placeholder="ラベル（例：法人アカウント）" value={label} onChange={e => setLabel(e.target.value)} className="rounded-none text-sm h-8" />
         <Input placeholder="メールアドレス" type="email" value={email} onChange={e => setEmail(e.target.value)} className="rounded-none text-sm h-8" />
         <Input placeholder="パスワード" type="password" value={password} onChange={e => setPassword(e.target.value)} className="rounded-none text-sm h-8" />
+        <div className="flex gap-3 items-center">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="accountType" value="business" checked={accountType === "business"} onChange={() => setAccountType("business")} />
+            法人・ビジネス
+          </label>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="radio" name="accountType" value="personal" checked={accountType === "personal"} onChange={() => setAccountType("personal")} />
+            個人
+          </label>
+        </div>
+      </div>
+      {accountType === "business" && (
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} className="rounded" />
           デフォルトアカウントにする
         </label>
-      </div>
+      )}
       <div className="flex gap-2">
         <Button size="sm" className="rounded-none h-8 gap-1.5" onClick={() => createMutation.mutate()} disabled={createMutation.isPending || !label || !email || !password}>
           {createMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
@@ -118,6 +132,7 @@ function PostCard({ post, accounts, onDelete }: { post: JimotyPost; accounts: Ji
 
   const sc = statusConfig[post.status] ?? statusConfig.draft;
   const account = accounts.find(a => a.id === post.accountId);
+  const isPersonal = account?.accountType === "personal";
 
   return (
     <div className="border border-border bg-card p-4 space-y-3">
@@ -127,11 +142,17 @@ function PostCard({ post, accounts, onDelete }: { post: JimotyPost; accounts: Ji
             <span className={`inline-flex items-center gap-1 text-[10px] border px-1.5 py-0.5 ${sc.color}`}>
               {sc.icon}{sc.label}
             </span>
-            <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-              <Building2 className="w-3 h-3" />{post.businessName}
-            </span>
+            {post.businessName ? (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Building2 className="w-3 h-3" />{post.businessName}
+              </span>
+            ) : (
+              <span className="text-[10px] text-purple-400 flex items-center gap-1">
+                <Users className="w-3 h-3" />個人投稿
+              </span>
+            )}
             {account && (
-              <span className="text-[10px] text-blue-400 flex items-center gap-1">
+              <span className={`text-[10px] flex items-center gap-1 ${isPersonal ? "text-purple-400" : "text-blue-400"}`}>
                 <User className="w-3 h-3" />{account.label}
               </span>
             )}
@@ -236,6 +257,21 @@ export default function JimotyPage() {
     },
   });
 
+  const setTypeMutation = useMutation({
+    mutationFn: async ({ id, accountType }: { id: number; accountType: string }) => {
+      const res = await fetch(`/api/jimoty/accounts/${id}`, {
+        method: "PATCH", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountType }),
+      });
+      if (!res.ok) throw new Error("更新失敗");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jimoty/accounts"] });
+      toast({ title: "✅ アカウント種別を変更しました" });
+    },
+  });
+
   const assignAccountMutation = useMutation({
     mutationFn: async ({ bizId, accountId }: { bizId: number; accountId: number | null }) => {
       const res = await fetch(`/api/jimoty/businesses/${bizId}/account`, {
@@ -296,10 +332,28 @@ export default function JimotyPage() {
       if (!res.ok) throw new Error(data.message || "失敗");
       return data;
     },
-    onSuccess: (data, vars) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/jimoty/posts"] });
       setOpenPostPanel(null);
       toast({ title: data.url ? `✅ 投稿完了 (${data.accountLabel ?? ""})` : "✅ " + data.message });
+    },
+    onError: (err: Error) => toast({ title: "❌ " + err.message, variant: "destructive" }),
+  });
+
+  const personalPostMutation = useMutation({
+    mutationFn: async (accountId: number) => {
+      const res = await fetch(`/api/jimoty/personal-post/${accountId}`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "失敗");
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jimoty/posts"] });
+      setOpenPostPanel(null);
+      toast({ title: data.url ? "✅ 個人投稿完了" : "✅ " + data.message });
     },
     onError: (err: Error) => toast({ title: "❌ " + err.message, variant: "destructive" }),
   });
@@ -311,6 +365,8 @@ export default function JimotyPage() {
     { id: "accounts", label: `アカウント (${accounts.length})` },
     { id: "assign", label: "割り当て" },
   ] as const;
+
+  const businessAccounts = accounts.filter(a => a.accountType === "business");
 
   return (
     <div className="p-6 space-y-5">
@@ -371,35 +427,57 @@ export default function JimotyPage() {
       {activeTab === "accounts" && (
         <div className="space-y-3">
           {accounts.map(account => {
+            const isPersonal = account.accountType === "personal";
             const isOpen = openPostPanel === account.id;
             const selectedBiz = selectedBizForPost[account.id];
-            const isPosting = postWithAccountMutation.isPending;
+            const isBusinessPosting = postWithAccountMutation.isPending;
+            const isPersonalPosting = personalPostMutation.isPending;
 
             return (
-              <div key={account.id} className="border border-border">
+              <div key={account.id} className={`border ${isPersonal ? "border-purple-500/30" : "border-border"}`}>
                 <div className="p-3 flex items-center justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium">{account.label}</span>
-                      {account.isDefault && (
+                      {isPersonal ? (
+                        <span className="text-[10px] border border-purple-500/40 bg-purple-500/10 text-purple-400 px-1.5 py-0.5 flex items-center gap-1">
+                          <Users className="w-2.5 h-2.5" />個人・人脈
+                        </span>
+                      ) : account.isDefault ? (
                         <span className="text-[10px] border border-yellow-500/40 bg-yellow-500/10 text-yellow-400 px-1.5 py-0.5 flex items-center gap-1">
                           <Star className="w-2.5 h-2.5" />デフォルト・自動投稿
                         </span>
-                      )}
+                      ) : null}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">{account.email}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {isPersonal ? "個人名・メールアドレス非公開" : account.email}
+                    </p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <Button size="sm" variant={isOpen ? "secondary" : "ghost"}
                       className="rounded-none h-7 text-xs gap-1 px-2"
                       onClick={() => setOpenPostPanel(isOpen ? null : account.id)}>
-                      <MapPin className="w-3 h-3" />今すぐ投稿
+                      {isPersonal ? <Users className="w-3 h-3" /> : <MapPin className="w-3 h-3" />}
+                      今すぐ投稿
                     </Button>
-                    {!account.isDefault && (
+                    {!isPersonal && !account.isDefault && (
                       <Button size="sm" variant="ghost" className="rounded-none h-7 text-xs gap-1 px-2"
                         onClick={() => setDefaultMutation.mutate(account.id)}
                         disabled={setDefaultMutation.isPending}>
                         <Star className="w-3 h-3" />デフォルト
+                      </Button>
+                    )}
+                    {isPersonal ? (
+                      <Button size="sm" variant="ghost" className="rounded-none h-7 text-xs gap-1 px-2 text-muted-foreground"
+                        onClick={() => setTypeMutation.mutate({ id: account.id, accountType: "business" })}
+                        disabled={setTypeMutation.isPending}>
+                        法人に変更
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="rounded-none h-7 text-xs gap-1 px-2 text-muted-foreground"
+                        onClick={() => setTypeMutation.mutate({ id: account.id, accountType: "personal" })}
+                        disabled={setTypeMutation.isPending}>
+                        個人に変更
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-none text-muted-foreground hover:text-red-400"
@@ -411,27 +489,44 @@ export default function JimotyPage() {
                 </div>
 
                 {isOpen && (
-                  <div className="border-t border-border bg-muted/10 p-3 flex items-center gap-3">
-                    <div className="flex-1 flex items-center gap-2">
-                      <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="text-xs text-muted-foreground shrink-0">ビジネス選択:</span>
-                      <select
-                        className="flex-1 bg-background border border-border text-sm rounded-none px-2 py-1 h-8"
-                        value={selectedBiz ?? ""}
-                        onChange={e => setSelectedBizForPost(prev => ({ ...prev, [account.id]: Number(e.target.value) }))}
-                      >
-                        <option value="">-- ビジネスを選択 --</option>
-                        {businesses.map(b => (
-                          <option key={b.id} value={b.id}>{b.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <Button size="sm" className="rounded-none h-8 gap-1.5 shrink-0"
-                      disabled={!selectedBiz || isPosting}
-                      onClick={() => postWithAccountMutation.mutate({ bizId: selectedBiz!, accountId: account.id })}>
-                      {isPosting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-                      AI生成して投稿
-                    </Button>
+                  <div className={`border-t p-3 ${isPersonal ? "border-purple-500/20 bg-purple-500/5" : "border-border bg-muted/10"}`}>
+                    {isPersonal ? (
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs text-purple-400 font-medium">人脈・出会い系の投稿をAIが自動生成します</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">個人名・メールアドレスは一切含まれません</p>
+                        </div>
+                        <Button size="sm" className="rounded-none h-8 gap-1.5 shrink-0 bg-purple-600 hover:bg-purple-700"
+                          disabled={isPersonalPosting}
+                          onClick={() => personalPostMutation.mutate(account.id)}>
+                          {isPersonalPosting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                          AI生成して投稿
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 flex items-center gap-2">
+                          <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                          <span className="text-xs text-muted-foreground shrink-0">ビジネス選択:</span>
+                          <select
+                            className="flex-1 bg-background border border-border text-sm rounded-none px-2 py-1 h-8"
+                            value={selectedBiz ?? ""}
+                            onChange={e => setSelectedBizForPost(prev => ({ ...prev, [account.id]: Number(e.target.value) }))}
+                          >
+                            <option value="">-- ビジネスを選択 --</option>
+                            {businesses.map(b => (
+                              <option key={b.id} value={b.id}>{b.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <Button size="sm" className="rounded-none h-8 gap-1.5 shrink-0"
+                          disabled={!selectedBiz || isBusinessPosting}
+                          onClick={() => postWithAccountMutation.mutate({ bizId: selectedBiz!, accountId: account.id })}>
+                          {isBusinessPosting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
+                          AI生成して投稿
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -465,7 +560,7 @@ export default function JimotyPage() {
                   })}
                 >
                   <option value="">デフォルト</option>
-                  {accounts.map(a => (
+                  {businessAccounts.map(a => (
                     <option key={a.id} value={a.id}>{a.label}</option>
                   ))}
                 </select>

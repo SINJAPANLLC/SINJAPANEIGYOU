@@ -5,7 +5,7 @@ import { businessesTable } from "./businesses";
 
 export const jimotyPostsTable = pgTable("jimoty_posts", {
   id: serial("id").primaryKey(),
-  businessId: integer("business_id").notNull().references(() => businessesTable.id, { onDelete: "cascade" }),
+  businessId: integer("business_id").references(() => businessesTable.id, { onDelete: "cascade" }),
   accountId: integer("account_id"),
   title: text("title").notNull(),
   body: text("body").notNull(),

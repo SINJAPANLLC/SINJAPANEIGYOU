@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc, and } from "drizzle-orm";
 import { db, jimotyPostsTable, businessesTable, jimotyAccountsTable } from "@workspace/db";
 import { requireAuth, getUserId } from "../lib/auth";
-import { jimotyGenerateAndPost } from "../lib/jimoty-scheduler";
+import { jimotyGenerateAndPost, jimotyPersonalPost } from "../lib/jimoty-scheduler";
 
 const router: IRouter = Router();
 
@@ -19,13 +19,14 @@ router.get("/jimoty/accounts", requireAuth, async (_req, res): Promise<void> => 
     label: jimotyAccountsTable.label,
     email: jimotyAccountsTable.email,
     isDefault: jimotyAccountsTable.isDefault,
+    accountType: jimotyAccountsTable.accountType,
     createdAt: jimotyAccountsTable.createdAt,
   }).from(jimotyAccountsTable).orderBy(jimotyAccountsTable.createdAt);
   res.json(accounts);
 });
 
 router.post("/jimoty/accounts", requireAuth, async (req, res): Promise<void> => {
-  const { label, email, password, isDefault } = req.body;
+  const { label, email, password, isDefault, accountType } = req.body;
   if (!label || !email || !password) {
     res.status(400).json({ error: "label, email, password は必須です" }); return;
   }
@@ -35,15 +36,15 @@ router.post("/jimoty/accounts", requireAuth, async (req, res): Promise<void> => 
   }
 
   const [account] = await db.insert(jimotyAccountsTable)
-    .values({ label, email, password, isDefault: !!isDefault })
-    .returning({ id: jimotyAccountsTable.id, label: jimotyAccountsTable.label, email: jimotyAccountsTable.email, isDefault: jimotyAccountsTable.isDefault, createdAt: jimotyAccountsTable.createdAt });
+    .values({ label, email, password, isDefault: !!isDefault, accountType: accountType ?? "business" })
+    .returning({ id: jimotyAccountsTable.id, label: jimotyAccountsTable.label, email: jimotyAccountsTable.email, isDefault: jimotyAccountsTable.isDefault, accountType: jimotyAccountsTable.accountType, createdAt: jimotyAccountsTable.createdAt });
 
   res.json(account);
 });
 
 router.patch("/jimoty/accounts/:id", requireAuth, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
-  const { label, email, password, isDefault } = req.body;
+  const { label, email, password, isDefault, accountType } = req.body;
 
   if (isDefault) {
     await db.update(jimotyAccountsTable).set({ isDefault: false });
@@ -54,9 +55,16 @@ router.patch("/jimoty/accounts/:id", requireAuth, async (req, res): Promise<void
   if (email !== undefined) updates.email = email;
   if (password !== undefined && password !== "") updates.password = password;
   if (isDefault !== undefined) updates.isDefault = isDefault;
+  if (accountType !== undefined) updates.accountType = accountType;
 
   await db.update(jimotyAccountsTable).set(updates).where(eq(jimotyAccountsTable.id, id));
   res.json({ success: true });
+});
+
+router.post("/jimoty/personal-post/:accountId", requireAuth, async (req, res): Promise<void> => {
+  const accountId = Number(req.params.accountId);
+  const result = await jimotyPersonalPost(accountId);
+  res.status(result.success ? 200 : 400).json(result);
 });
 
 router.delete("/jimoty/accounts/:id", requireAuth, async (req, res): Promise<void> => {
