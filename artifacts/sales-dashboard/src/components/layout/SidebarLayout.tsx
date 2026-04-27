@@ -35,6 +35,9 @@ const navigation = [
   { name: "テンプレート", href: "/templates", icon: FileText },
   { name: "送信ログ", href: "/email-logs", icon: History },
   { name: "スケジュール", href: "/schedule", icon: Clock },
+];
+
+const navigationExtra = [
   { name: "PR-FREE", href: "/pr-free", icon: Newspaper },
   { name: "SNS", href: "/sns", icon: MessageSquare },
 ];
@@ -86,6 +89,30 @@ export function SidebarLayout({ children }: { children: ReactNode }) {
             <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground mb-2 px-2">メニュー</div>
             <SidebarMenu>
               {navigation.map((item) => {
+                const isActive = location === item.href;
+                return (
+                  <SidebarMenuItem key={item.name}>
+                    <SidebarMenuButton asChild isActive={isActive} className="rounded-none">
+                      <Link
+                        href={item.href}
+                        className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors ${
+                          isActive
+                            ? "bg-foreground text-background font-medium"
+                            : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                        }`}
+                        data-testid={`nav-${item.name}`}
+                      >
+                        <item.icon className="w-4 h-4" />
+                        <span>{item.name}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+            <div className="my-3 border-t border-border" />
+            <SidebarMenu>
+              {navigationExtra.map((item) => {
                 const isActive = location === item.href;
                 return (
                   <SidebarMenuItem key={item.name}>
