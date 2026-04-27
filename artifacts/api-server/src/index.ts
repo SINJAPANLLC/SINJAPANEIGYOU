@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { startCronRunner } from "./lib/cron-runner";
 import { startXScheduler } from "./lib/x-scheduler";
 import { startPrFreeScheduler } from "./lib/pr-free-scheduler";
+import { startJimotyScheduler } from "./lib/jimoty-scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -28,4 +29,5 @@ app.listen(port, (err) => {
   startCronRunner();
   startXScheduler();
   startPrFreeScheduler();
+  startJimotyScheduler();
 });

@@ -7,3 +7,4 @@ export * from "./unsubscribes";
 export * from "./cron-jobs";
 export * from "./x-automation";
 export * from "./pr-articles";
+export * from "./jimoty-posts";

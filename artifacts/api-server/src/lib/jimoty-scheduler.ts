@@ -1,0 +1,331 @@
+import cron from "node-cron";
+import axios from "axios";
+import * as cheerio from "cheerio";
+import { db, businessesTable, jimotyPostsTable } from "@workspace/db";
+import { eq, and, gte } from "drizzle-orm";
+import OpenAI from "openai";
+import { logger } from "./logger";
+
+const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
+const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+const openai = new OpenAI({
+  apiKey: openaiApiKey,
+  ...(openaiBaseURL ? { baseURL: openaiBaseURL } : {}),
+});
+
+const JIMOTY_BASE = "https://jmty.jp";
+const DEFAULT_AREA = process.env.JIMOTY_AREA || "osaka-fu";
+const DEFAULT_KIND = "biz-partner";
+
+const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+function extractCookies(headers: Record<string, string | string[] | undefined>): string {
+  const raw = headers["set-cookie"];
+  if (!raw) return "";
+  const arr = Array.isArray(raw) ? raw : [raw];
+  return arr.map((c: string) => c.split(";")[0]).join("; ");
+}
+
+function mergeCookies(existing: string, newCookies: string): string {
+  const map: Record<string, string> = {};
+  for (const pair of existing.split(";")) {
+    const [k, v] = pair.trim().split("=");
+    if (k) map[k.trim()] = v?.trim() ?? "";
+  }
+  for (const pair of newCookies.split(";")) {
+    const [k, v] = pair.trim().split("=");
+    if (k) map[k.trim()] = v?.trim() ?? "";
+  }
+  return Object.entries(map).map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+export async function loginToJimoty(email: string, password: string): Promise<string> {
+  const loginPageResp = await axios.get(`${JIMOTY_BASE}/users/sign_in`, {
+    headers: { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml" },
+    maxRedirects: 5,
+  });
+
+  let cookies = extractCookies(loginPageResp.headers as Record<string, string | string[]>);
+  const $login = cheerio.load(loginPageResp.data);
+  const csrfToken = $login('input[name="authenticity_token"]').first().val() as string;
+
+  if (!csrfToken) throw new Error("ジモティーのCSRFトークンが取得できませんでした");
+
+  const loginResp = await axios.post(
+    `${JIMOTY_BASE}/users/sign_in`,
+    new URLSearchParams({
+      authenticity_token: csrfToken,
+      "user[email]": email,
+      "user[password]": password,
+      commit: "ログイン",
+    }).toString(),
+    {
+      headers: {
+        "User-Agent": UA,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": cookies,
+        "Referer": `${JIMOTY_BASE}/users/sign_in`,
+        "Accept": "text/html,application/xhtml+xml",
+      },
+      maxRedirects: 0,
+      validateStatus: (s) => s < 400,
+    }
+  );
+
+  const newCookies = extractCookies(loginResp.headers as Record<string, string | string[]>);
+  cookies = mergeCookies(cookies, newCookies);
+
+  if (loginResp.status !== 302 && loginResp.status !== 200) {
+    throw new Error(`ログイン失敗: status=${loginResp.status}`);
+  }
+
+  if (!cookies.includes("_jmty_session") && !cookies.includes("remember_user_token")) {
+    throw new Error("ログイン失敗: セッションクッキーが取得できませんでした");
+  }
+
+  return cookies;
+}
+
+export async function postToJimoty(
+  cookies: string,
+  title: string,
+  body: string,
+  area: string = DEFAULT_AREA,
+  kind: string = DEFAULT_KIND,
+): Promise<string> {
+  const newArticleResp = await axios.get(`${JIMOTY_BASE}/articles/new`, {
+    headers: {
+      "User-Agent": UA,
+      "Cookie": cookies,
+      "Accept": "text/html,application/xhtml+xml",
+    },
+    maxRedirects: 5,
+  });
+
+  const newCookies = extractCookies(newArticleResp.headers as Record<string, string | string[]>);
+  cookies = mergeCookies(cookies, newCookies);
+
+  const $ = cheerio.load(newArticleResp.data);
+  const csrfToken = $('input[name="authenticity_token"]').first().val() as string;
+
+  if (!csrfToken) throw new Error("記事フォームのCSRFトークンが取得できませんでした");
+
+  const postResp = await axios.post(
+    `${JIMOTY_BASE}/articles`,
+    new URLSearchParams({
+      authenticity_token: csrfToken,
+      "article[title]": title,
+      "article[body]": body,
+      "article[kind]": kind,
+      "article[area_code]": area,
+      "article[contact_info]": "info@sinjapan.jp",
+      commit: "投稿する",
+    }).toString(),
+    {
+      headers: {
+        "User-Agent": UA,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": cookies,
+        "Referer": `${JIMOTY_BASE}/articles/new`,
+        "Accept": "text/html,application/xhtml+xml",
+      },
+      maxRedirects: 0,
+      validateStatus: (s) => s < 500,
+    }
+  );
+
+  const location = postResp.headers["location"] as string | undefined;
+  if (postResp.status === 302 && location) {
+    return location.startsWith("http") ? location : `${JIMOTY_BASE}${location}`;
+  }
+
+  if (postResp.status === 200) {
+    const $post = cheerio.load(postResp.data);
+    const canonical = $post('link[rel="canonical"]').attr("href") ?? "";
+    if (canonical.includes("/articles/")) return canonical;
+    const articleLink = $post('a[href*="/articles/"]').first().attr("href") ?? "";
+    if (articleLink) return articleLink.startsWith("http") ? articleLink : `${JIMOTY_BASE}${articleLink}`;
+  }
+
+  throw new Error(`投稿失敗: status=${postResp.status}`);
+}
+
+function getJimotyDescription(bizName: string): string {
+  const n = bizName;
+  if (/KEI MATCH/i.test(n)) return "【軽貨物マッチング】ドライバー・荷主の直接契約を実現。仲介なし・完全成果報酬型。初期費用ゼロで案件獲得・協力会社募集をサポート。合同会社SIN JAPAN";
+  if (/TRA MATCH/i.test(n)) return "【一般貨物マッチング】トラック運送会社と荷主をダイレクト接続。傭車コスト削減・新規取引先開拓に。合同会社SIN JAPAN";
+  if (/KEI SAIYOU/i.test(n)) return "【軽貨物ドライバー採用】独立・副業ドライバー獲得に特化した採用支援。採用コスト削減で即戦力確保。合同会社SIN JAPAN";
+  if (/SIN JAPAN AI/i.test(n)) return "【営業DX・AI自動化】リード獲得からメール送信まで営業プロセスをAI自動化。中小企業の営業効率を大幅改善。合同会社SIN JAPAN";
+  if (/TikTok/i.test(n)) return "【TikTok ONE公認代理店】TikTok広告運用・クリエイターPR施策を代行。中小企業からの依頼歓迎。合同会社SIN JAPAN";
+  if (/フルコミ|フル・コミ/i.test(n)) return "【フルコミ営業パートナー募集】完全成果報酬型の営業代理人を求む。固定費ゼロで即戦力営業人材確保。合同会社SIN JAPAN";
+  if (/軽貨物.*案件|案件.*軽貨物/i.test(n)) return "【軽貨物案件獲得支援】安定した高単価案件を継続紹介。個人事業主・法人どちらも対応。合同会社SIN JAPAN";
+  if (/軽貨物.*協力|協力.*軽貨物/i.test(n)) return "【軽貨物協力会社募集】配送需要拡大につき協力会社・傭車パートナーを募集中。合同会社SIN JAPAN";
+  if (/一般貨物.*案件|案件.*一般貨物/i.test(n)) return "【一般貨物案件獲得】長距離・チャーター高単価案件を継続紹介。空車率削減・安定稼働を実現。合同会社SIN JAPAN";
+  if (/一般貨物.*協力|協力.*一般貨物/i.test(n)) return "【一般貨物協力会社募集】急な運送依頼に対応できる傭車パートナーを全国募集。合同会社SIN JAPAN";
+  if (/人材.*案件|案件.*人材/i.test(n)) return "【人材案件獲得支援】人材紹介・派遣会社向けに新規クライアント企業を継続紹介。合同会社SIN JAPAN";
+  if (/人材.*協力|協力.*人材/i.test(n)) return "【人材協力会社募集】業務提携・候補者連携パートナーを募集。人材会社間のネットワーク拡充を支援。合同会社SIN JAPAN";
+  return `【${bizName}】合同会社SIN JAPANのサービスです。詳細はお問い合わせください。`;
+}
+
+async function generateJimotyPost(bizName: string): Promise<{ title: string; body: string }> {
+  const desc = getJimotyDescription(bizName);
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: "あなたはジモティーの掲示板投稿文を作成するアシスタントです。ジモティーは地域の掲示板サービスです。ビジネス募集・お知らせカテゴリに投稿するための、簡潔で実用的な日本語の投稿文を作成してください。",
+      },
+      {
+        role: "user",
+        content: `以下のサービスについてジモティーへの投稿文を作成してください。\n\nサービス情報: ${desc}\n\n要件:\n- タイトル: 30文字以内、具体的で目を引く内容\n- 本文: 200〜400文字、サービス内容・メリット・連絡先(info@sinjapan.jp)を含める\n- 宣伝っぽすぎず、実際の募集・お知らせとして自然な文体\n\n以下のJSON形式で返してください:\n{"title": "...", "body": "..."}`,
+      },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.7,
+  });
+
+  const raw = completion.choices[0].message.content ?? "{}";
+  const parsed = JSON.parse(raw);
+  return {
+    title: parsed.title ?? bizName,
+    body: parsed.body ?? desc,
+  };
+}
+
+async function hasPostedTodayJST(businessId: number): Promise<boolean> {
+  const nowJST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const startOfDayJST = new Date(nowJST);
+  startOfDayJST.setUTCHours(0, 0, 0, 0);
+  startOfDayJST.setTime(startOfDayJST.getTime() - 9 * 60 * 60 * 1000);
+
+  const rows = await db
+    .select({ id: jimotyPostsTable.id })
+    .from(jimotyPostsTable)
+    .where(
+      and(
+        eq(jimotyPostsTable.businessId, businessId),
+        eq(jimotyPostsTable.status, "posted"),
+        gte(jimotyPostsTable.postedAt, startOfDayJST)
+      )
+    );
+  return rows.length > 0;
+}
+
+export async function jimotyGenerateAndPost(businessId: number): Promise<{ success: boolean; message: string; url?: string }> {
+  const email = process.env.JIMOTY_EMAIL;
+  const password = process.env.JIMOTY_PASSWORD;
+
+  if (!email || !password) {
+    return { success: false, message: "JIMOTY_EMAIL / JIMOTY_PASSWORD が設定されていません" };
+  }
+
+  const [biz] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
+  if (!biz) return { success: false, message: "ビジネスが見つかりません" };
+
+  const [record] = await db
+    .insert(jimotyPostsTable)
+    .values({ businessId, title: "生成中...", body: "", status: "draft" })
+    .returning();
+
+  try {
+    const { title, body } = await generateJimotyPost(biz.name);
+
+    await db.update(jimotyPostsTable)
+      .set({ title, body })
+      .where(eq(jimotyPostsTable.id, record.id));
+
+    logger.info({ businessId, bizName: biz.name }, "jimoty: ジモティーにログイン中");
+    const cookies = await loginToJimoty(email, password);
+
+    logger.info({ businessId }, "jimoty: 投稿中");
+    const url = await postToJimoty(cookies, title, body);
+
+    await db.update(jimotyPostsTable)
+      .set({ status: "posted", postedAt: new Date(), jimotyUrl: url })
+      .where(eq(jimotyPostsTable.id, record.id));
+
+    logger.info({ businessId, url }, "jimoty: 投稿完了");
+    return { success: true, message: "投稿完了", url };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error({ businessId, err: msg }, "jimoty: 投稿失敗");
+
+    await db.update(jimotyPostsTable)
+      .set({ status: "failed", errorMsg: msg })
+      .where(eq(jimotyPostsTable.id, record.id));
+
+    return { success: false, message: msg };
+  }
+}
+
+async function runDailyJimoty() {
+  const email = process.env.JIMOTY_EMAIL;
+  const password = process.env.JIMOTY_PASSWORD;
+  if (!email || !password) {
+    logger.warn("jimoty: JIMOTY_EMAIL / JIMOTY_PASSWORD 未設定 → スキップ");
+    return;
+  }
+
+  logger.info("jimoty: 日次自動投稿開始");
+
+  let cookies: string;
+  try {
+    cookies = await loginToJimoty(email, password);
+  } catch (err) {
+    logger.error({ err }, "jimoty: ログイン失敗 → 中断");
+    return;
+  }
+
+  const businesses = await db.select().from(businessesTable);
+
+  for (let i = 0; i < businesses.length; i++) {
+    const biz = businesses[i];
+
+    if (await hasPostedTodayJST(biz.id)) {
+      logger.info({ bizId: biz.id, name: biz.name }, "jimoty: 本日投稿済み → スキップ");
+      continue;
+    }
+
+    const [record] = await db
+      .insert(jimotyPostsTable)
+      .values({ businessId: biz.id, title: "生成中...", body: "", status: "draft" })
+      .returning();
+
+    try {
+      const { title, body } = await generateJimotyPost(biz.name);
+      await db.update(jimotyPostsTable).set({ title, body }).where(eq(jimotyPostsTable.id, record.id));
+
+      const url = await postToJimoty(cookies, title, body);
+
+      await db.update(jimotyPostsTable)
+        .set({ status: "posted", postedAt: new Date(), jimotyUrl: url })
+        .where(eq(jimotyPostsTable.id, record.id));
+
+      logger.info({ bizId: biz.id, url }, "jimoty: 投稿完了");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ bizId: biz.id, err: msg }, "jimoty: 投稿失敗");
+      await db.update(jimotyPostsTable)
+        .set({ status: "failed", errorMsg: msg })
+        .where(eq(jimotyPostsTable.id, record.id));
+    }
+
+    if (i < businesses.length - 1) {
+      await new Promise((r) => setTimeout(r, 3 * 60 * 1000));
+    }
+  }
+
+  logger.info("jimoty: 日次自動投稿完了");
+}
+
+export function startJimotyScheduler() {
+  cron.schedule("0 2 * * *", () => {
+    runDailyJimoty().catch((err) =>
+      logger.error({ err }, "jimoty: scheduler uncaught error")
+    );
+  }, { timezone: "UTC" });
+
+  logger.info({ expr: "0 2 * * * (= 11:00 JST)" }, "jimoty: scheduler registered");
+}

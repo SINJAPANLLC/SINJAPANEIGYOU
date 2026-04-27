@@ -12,6 +12,7 @@ import {
   Clock,
   MessageSquare,
   Newspaper,
+  MapPin,
 } from "lucide-react";
 import {
   Sidebar,
@@ -40,6 +41,7 @@ const navigation = [
 const navigationExtra = [
   { name: "PR-FREE", href: "/pr-free", icon: Newspaper },
   { name: "SNS", href: "/sns", icon: MessageSquare },
+  { name: "ジモティー", href: "/jimoty", icon: MapPin },
 ];
 
 export function SidebarLayout({ children }: { children: ReactNode }) {

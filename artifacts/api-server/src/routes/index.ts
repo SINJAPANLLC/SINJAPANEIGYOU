@@ -12,6 +12,7 @@ import unsubscribeRouter from "./unsubscribe";
 import cronJobsRouter from "./cron-jobs";
 import xAutomationRouter from "./x-automation";
 import prArticlesRouter from "./pr-articles";
+import jimotyRouter from "./jimoty";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(unsubscribeRouter);
 router.use(cronJobsRouter);
 router.use(xAutomationRouter);
 router.use(prArticlesRouter);
+router.use(jimotyRouter);
 
 export default router;

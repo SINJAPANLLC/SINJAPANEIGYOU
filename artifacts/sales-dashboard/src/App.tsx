@@ -16,6 +16,7 @@ import EmailLogsPage from "@/pages/email-logs";
 import SchedulePage from "@/pages/schedule";
 import SnsPage from "@/pages/sns";
 import PrFreePage from "@/pages/pr-free";
+import JimotyPage from "@/pages/jimoty";
 import NotFound from "@/pages/not-found";
 
 function HomeRedirect() {
@@ -48,6 +49,7 @@ function AppRoutes() {
       <Route path="/schedule"><ProtectedRoute component={SchedulePage} /></Route>
       <Route path="/sns"><ProtectedRoute component={SnsPage} /></Route>
       <Route path="/pr-free"><ProtectedRoute component={PrFreePage} /></Route>
+      <Route path="/jimoty"><ProtectedRoute component={JimotyPage} /></Route>
 
       <Route component={NotFound} />
     </Switch>
