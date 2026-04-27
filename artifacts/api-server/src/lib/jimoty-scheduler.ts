@@ -80,7 +80,8 @@ export async function loginToJimoty(email: string, password: string): Promise<st
   }
 
   if (!cookies.includes("_jmty_session") && !cookies.includes("remember_user_token")) {
-    throw new Error("ログイン失敗: セッションクッキーが取得できませんでした");
+    const cookieKeys = cookies.split(";").map(c => c.trim().split("=")[0]).filter(Boolean).slice(0, 10).join(", ");
+    throw new Error(`ログイン失敗: セッションクッキーなし (status=${loginResp.status}, cookies=[${cookieKeys || "none"}])`);
   }
 
   return cookies;
