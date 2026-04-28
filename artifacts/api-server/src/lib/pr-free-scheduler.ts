@@ -236,6 +236,31 @@ export async function generateAndPost(biz: typeof businessesTable.$inferSelect):
   }
 }
 
+// 1日3枠（9:00/13:00/17:00 JST）に1件ずつ投稿し、全ビジネスをローテーション
+// 同一日に同じビジネスが重複投稿されないよう hasPostedTodayJST でチェック
+async function runSlot(slotIndex: number) {
+  const businesses = await db.select().from(businessesTable).orderBy(businessesTable.id);
+  if (businesses.length === 0) return;
+
+  // 今日の枠インデックス = (エポック日数 * 3 + slotIndex) % 総ビジネス数
+  const dayIndex = Math.floor(Date.now() / 86_400_000); // UTC日数
+  const bizIndex = (dayIndex * 3 + slotIndex) % businesses.length;
+  const biz = businesses[bizIndex];
+
+  logger.info({ slotIndex, bizIndex, bizId: biz.id, bizName: biz.name }, "pr-free: slot run start");
+
+  if (await hasPostedTodayJST(biz.id)) {
+    logger.info({ bizId: biz.id, bizName: biz.name }, "pr-free: already posted today, skip");
+    return;
+  }
+
+  try {
+    await generateAndPost(biz);
+  } catch (err) {
+    logger.error({ err, bizId: biz.id, bizName: biz.name }, "pr-free: slot error");
+  }
+}
+
 export async function runPrFreeDailyNow() {
   logger.info("pr-free: manual daily run triggered");
   const businesses = await db.select().from(businessesTable);
@@ -257,26 +282,12 @@ export async function runPrFreeDailyNow() {
 }
 
 export function startPrFreeScheduler() {
-  cron.schedule("0 1 * * *", async () => {
-    logger.info("pr-free: daily scheduler started");
-    const businesses = await db.select().from(businessesTable);
-    logger.info({ count: businesses.length }, "pr-free: processing businesses");
-    for (let i = 0; i < businesses.length; i++) {
-      const biz = businesses[i];
-      try {
-        const alreadyPosted = await hasPostedTodayJST(biz.id);
-        if (alreadyPosted) {
-          logger.info({ bizId: biz.id, bizName: biz.name }, "pr-free: already posted today, skip");
-          continue;
-        }
-        await generateAndPost(biz);
-      } catch (err) {
-        logger.error({ err, bizId: biz.id, bizName: biz.name }, "pr-free: error processing business");
-      }
-      if (i < businesses.length - 1) await sleep(2 * 60 * 1000);
-    }
-    logger.info("pr-free: daily scheduler finished");
-  }, { timezone: "UTC" });
+  // 9:00 JST (00:00 UTC) — 枠0
+  cron.schedule("0 0 * * *", () => runSlot(0), { timezone: "UTC" });
+  // 13:00 JST (04:00 UTC) — 枠1
+  cron.schedule("0 4 * * *", () => runSlot(1), { timezone: "UTC" });
+  // 17:00 JST (08:00 UTC) — 枠2
+  cron.schedule("0 8 * * *", () => runSlot(2), { timezone: "UTC" });
 
-  logger.info("pr-free: scheduler registered (daily 10:00 JST)");
+  logger.info("pr-free: scheduler registered (9:00 / 13:00 / 17:00 JST, 1件ずつローテーション)");
 }
