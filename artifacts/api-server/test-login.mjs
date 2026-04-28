@@ -1,7 +1,7 @@
 const BASE = 'https://jmty.jp';
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-const EMAIL = process.env.JIMOTY_EMAIL;
-const PASS = process.env.JIMOTY_PASSWORD;
+const EMAIL = 'sin_llc@icloud.com';
+const PASS = 'Kazuya8008';
 
 const { default: axios } = await import('axios');
 const { load } = await import('cheerio');
@@ -19,7 +19,8 @@ function merge(a, b) {
 }
 
 async function run() {
-  console.log('Step1: GET /users/sign_in');
+  console.log('=== 個人アカウント(' + EMAIL + ')でログインテスト ===');
+
   const r1 = await axios.get(BASE+'/users/sign_in', {
     headers:{'User-Agent':UA,'Accept':'text/html,application/xhtml+xml'},
     maxRedirects:5
@@ -27,10 +28,8 @@ async function run() {
   let cookies = extractCookies(r1.headers);
   const $1 = load(r1.data);
   const csrf = $1('input[name="authenticity_token"]').first().val();
-  console.log('csrf:', csrf ? csrf.slice(0,20)+'...' : '❌ NOT FOUND');
-  console.log('cookies:', cookies.split(';').map(c=>c.trim().split('=')[0]).join(', '));
+  console.log('CSRF:', csrf ? '取得OK' : '❌ NOT FOUND');
 
-  console.log('\nStep2: POST login');
   const r2 = await axios.post(BASE+'/users/sign_in',
     new URLSearchParams({ authenticity_token:csrf,'user[email]':EMAIL,'user[password]':PASS,commit:'ログイン' }).toString(),
     {
@@ -41,34 +40,65 @@ async function run() {
   );
   const nc = extractCookies(r2.headers);
   cookies = merge(cookies, nc);
-  console.log('login status:', r2.status, '| location:', r2.headers.location||'(none)');
+  console.log('ログイン status:', r2.status, '| location:', r2.headers.location||'(none)');
   const keys = cookies.split(';').map(c=>c.trim().split('=')[0]).filter(Boolean);
-  console.log('cookie keys:', keys.join(', '));
-  console.log('has _jmty_session:', cookies.includes('_jmty_session'));
-  console.log('has remember_user_token:', cookies.includes('remember_user_token'));
+  console.log('Cookies:', keys.join(', '));
+  console.log('セッション有:', cookies.includes('_jmty_session') || cookies.includes('remember_user_token'));
 
   if (!cookies.includes('_jmty_session') && !cookies.includes('remember_user_token')) {
     const $2 = load(r2.data);
     const err = $2('[class*="alert"],[class*="notice"],[class*="error"],[class*="flash"]').first().text().trim().slice(0,300);
-    console.log('page title:', $2('title').text().trim());
-    console.log('alert text:', err||'(none found)');
-    const m = r2.data.match(/(二段階|2段階|two.factor|OTP|verification|confirm|認証コード|メールを送|phone|電話)/i);
-    console.log('2FA/verify hint:', m?.[0]||'(none)');
+    console.log('❌ ログイン失敗:', err || r2.data.slice(0,200));
     return;
   }
+  console.log('✅ ログイン成功！');
 
-  console.log('\n✅ Login OK!');
-  console.log('\nStep3: GET /articles/new');
+  console.log('\n=== GET /articles/new ===');
   const r3 = await axios.get(BASE+'/articles/new', {
     headers:{'User-Agent':UA,Cookie:cookies,'Accept':'text/html,application/xhtml+xml'},
     maxRedirects:5, validateStatus:s=>true
   });
   console.log('articles/new status:', r3.status);
   const $3 = load(r3.data);
-  console.log('page title:', $3('title').text().trim());
-  console.log('has form csrf:', !!$3('input[name="authenticity_token"]').first().val());
-  if (r3.status !== 200) {
-    console.log('body[0:500]:', r3.data.slice(0,500));
+  console.log('Page title:', $3('title').text().trim());
+  const csrf2 = $3('input[name="authenticity_token"]').first().val();
+  console.log('フォームCSRF:', csrf2 ? '取得OK' : '❌ NOT FOUND');
+
+  if (r3.status !== 200 || !csrf2) {
+    console.log('❌ 記事フォームにアクセスできません');
+    const alert3 = $3('[class*="alert"],[class*="notice"],[class*="error"]').first().text().trim().slice(0,200);
+    if (alert3) console.log('Alert:', alert3);
+    return;
+  }
+
+  console.log('\n=== テスト投稿実行 ===');
+  const nc3 = extractCookies(r3.headers);
+  cookies = merge(cookies, nc3);
+
+  const r4 = await axios.post(BASE+'/articles',
+    new URLSearchParams({
+      authenticity_token: csrf2,
+      'article[title]': 'ビジネスパートナー・仲間募集しています',
+      'article[body]': 'はじめまして。ビジネスに興味のある方、一緒に勉強会や交流会に参加できる仲間を探しています。業種問わず、向上心のある方を歓迎します。ジモティーのメッセージ機能でご連絡ください。',
+      'article[kind]': 'neighbor',
+      'article[area_code]': 'nagano-ken',
+      commit: '投稿する',
+    }).toString(),
+    {
+      headers:{'User-Agent':UA,'Content-Type':'application/x-www-form-urlencoded',Cookie:cookies,Referer:BASE+'/articles/new','Accept':'text/html,application/xhtml+xml'},
+      maxRedirects:0,
+      validateStatus:s=>s<500
+    }
+  );
+  console.log('投稿 status:', r4.status);
+  console.log('Location:', r4.headers.location||'(none)');
+  if (r4.status === 302 && r4.headers.location) {
+    const loc = r4.headers.location;
+    console.log('✅ 投稿成功！URL:', loc.startsWith('http') ? loc : BASE+loc);
+  } else {
+    const $4 = load(r4.data);
+    const err4 = $4('[class*="alert"],[class*="error"],[class*="notice"]').first().text().trim().slice(0,300);
+    console.log('エラー:', err4 || r4.data.slice(0,300));
   }
 }
 
