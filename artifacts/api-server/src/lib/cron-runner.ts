@@ -9,6 +9,22 @@ import { v4 as uuidv4 } from "uuid";
 const activeTasks = new Map<number, ReturnType<typeof cron.schedule>>();
 const COMPANY_WEBSITE = process.env.COMPANY_WEBSITE || "https://sinjapan.work";
 
+// 同時に実行できるリード検索ジョブは1つだけ（Yahoo Japan への並列リクエストを防ぐ）
+let searchLock = false;
+async function acquireSearchLock(jobId: number, timeoutMs = 10 * 60 * 1000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (searchLock) {
+    if (Date.now() > deadline) {
+      logger.warn({ jobId }, "cron: search lock timeout, skipping job");
+      return false;
+    }
+    await new Promise(r => setTimeout(r, 5000)); // 5秒ごとに再チェック
+  }
+  searchLock = true;
+  return true;
+}
+function releaseSearchLock() { searchLock = false; }
+
 function buildUnsubscribeLink(token: string) {
   const base = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || "localhost"}`;
   return `${base}/api/unsubscribe/${token}`;
@@ -47,6 +63,7 @@ async function runLeadSearch(jobId: number, businessId: number, config: Record<s
   }
 
   logger.info({ jobId, keyword, location, maxResults, persona, targetEmailCount }, "cron:lead_search start");
+  if (!await acquireSearchLock(jobId)) return;
   try {
     const results = await searchAndCrawlLeads(keyword, location, maxResults, persona, targetEmailCount);
     let saved = 0;
@@ -73,6 +90,8 @@ async function runLeadSearch(jobId: number, businessId: number, config: Record<s
     logger.info({ jobId, found: results.length, saved }, "cron:lead_search done");
   } catch (err) {
     logger.error({ err, jobId }, "cron:lead_search error");
+  } finally {
+    releaseSearchLock();
   }
 }
 
@@ -153,9 +172,10 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
   }
 
   logger.info({ jobId, keyword, location, maxResults, persona, targetEmailCount }, "cron:lead_search_and_send start");
+  if (!await acquireSearchLock(jobId)) return;
 
   const [business] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
-  if (!business) return;
+  if (!business) { releaseSearchLock(); return; }
 
   const templateId = config.templateId ? Number(config.templateId) : null;
   let template = null;
@@ -172,6 +192,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
     results = await searchAndCrawlLeads(keyword, location, maxResults, persona, targetEmailCount);
   } catch (err) {
     logger.error({ err, jobId }, "cron:lead_search_and_send search error");
+    releaseSearchLock();
     return;
   }
 
@@ -201,6 +222,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
 
   if (!template) {
     logger.warn({ jobId }, "cron:lead_search_and_send no template, skipping email");
+    releaseSearchLock();
     return;
   }
 
@@ -239,6 +261,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
   }
 
   logger.info({ jobId, sent }, "cron:lead_search_and_send emails done");
+  releaseSearchLock();
 }
 
 async function syncJobs() {

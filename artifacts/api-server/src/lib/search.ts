@@ -153,11 +153,22 @@ async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// 429レート制限を受けたとき、次のリクエストまで待機する最小時刻（グローバル）
+let yahooRateLimitUntil = 0;
+
 export async function searchYahooJapan(
   query: string,
   count = 20,
   page = 1,
 ): Promise<SearchResult[]> {
+  // レート制限中なら解除まで待機
+  const now = Date.now();
+  if (yahooRateLimitUntil > now) {
+    const wait = yahooRateLimitUntil - now;
+    logger.warn({ wait, query }, "searchYahooJapan: rate limit waiting");
+    await sleep(wait);
+  }
+
   logger.info({ query, count, page }, "searchYahooJapan start");
   try {
     await sleep(600 + Math.random() * 800);
@@ -200,7 +211,14 @@ export async function searchYahooJapan(
     logger.info({ count: results.length, query, page }, "searchYahooJapan done");
     return results;
   } catch (err: any) {
-    logger.error({ err: err?.message, query, page }, "Yahoo Japan search failed");
+    if (err?.response?.status === 429 || err?.message?.includes("429")) {
+      // 429はレート制限 → 90秒間は全リクエストを止める
+      const backoff = 90_000 + Math.random() * 30_000;
+      yahooRateLimitUntil = Date.now() + backoff;
+      logger.warn({ query, page, backoffSec: Math.round(backoff / 1000) }, "Yahoo Japan 429: rate limit set");
+    } else {
+      logger.error({ err: err?.message, query, page }, "Yahoo Japan search failed");
+    }
     return [];
   }
 }
