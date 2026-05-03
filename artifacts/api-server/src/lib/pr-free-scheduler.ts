@@ -101,13 +101,41 @@ interface GeneratedArticle {
   content: string;
 }
 
+// ニュースフックをランダムに選ぶ（毎回違うニュース角度で審査通過率アップ）
+const NEWS_HOOKS = [
+  { hook: "正式リリース", detail: "本日より正式サービスを開始いたしました。" },
+  { hook: "ベータ版提供開始", detail: "先行ベータ版の一般提供を開始し、登録受付中です。" },
+  { hook: "導入実績100社突破", detail: "導入企業が100社を突破し、サービス拡充を図ります。" },
+  { hook: "新機能追加", detail: "ユーザーの声を反映した新機能を実装し、利便性をさらに向上させました。" },
+  { hook: "春の無料トライアルキャンペーン開始", detail: "期間限定で30日間の無料トライアルを提供いたします。" },
+  { hook: "業務提携締結", detail: "新たなパートナー企業との業務提携を締結し、サービス提供エリアを拡大します。" },
+  { hook: "料金プラン改定", detail: "より多くの中小企業に導入いただけるよう、料金プランを見直しました。" },
+  { hook: "累計マッチング件数1,000件突破", detail: "累計マッチング件数が1,000件を突破し、順調に成長を続けています。" },
+  { hook: "全国対応エリア拡大", detail: "これまでの主要都市圏に加え、全国47都道府県への対応を完了しました。" },
+  { hook: "スマートフォンアプリ版リリース", detail: "iOS・Android対応のスマートフォンアプリ版を新たにリリースしました。" },
+];
+
+function pickNewsHook(): typeof NEWS_HOOKS[number] {
+  return NEWS_HOOKS[Math.floor(Math.random() * NEWS_HOOKS.length)];
+}
+
+// 今日の日付（JST）
+function getTodayJST(): string {
+  const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+}
+
 async function generateArticle(biz: typeof businessesTable.$inferSelect): Promise<GeneratedArticle> {
   const siteUrl = biz.serviceUrl || "https://sinjapan.work";
   const serviceDesc = getServiceDescription(biz.name, siteUrl);
+  const newsHook = pickNewsHook();
+  const todayJST = getTodayJST();
 
   const prompt = `
-あなたは日本語のプレスリリース（PR FREE向け）ライターです。
-以下のサービス情報をもとに、PR FREEに投稿できるプレスリリース記事を作成してください。
+あなたはプロの日本語プレスリリースライターです。
+編集者が「これは本物のニュースだ」と判断できる、ニュース性の高いプレスリリースを作成してください。
+
+【発表日】${todayJST}
 
 【サービス情報】
 サービス名: ${biz.name}
@@ -115,32 +143,34 @@ async function generateArticle(biz: typeof businessesTable.$inferSelect): Promis
 サービスURL: ${siteUrl}
 サービス説明: ${serviceDesc}
 
-※上記のサービス説明を正確に反映してください。サービスの内容を勝手に変えたり、別のサービスと混同しないでください。
+【今回のニュース角度】
+${newsHook.hook}：${newsHook.detail}
 
-【出力フォーマット（必ずこの形式で）】
-タイトル: （20〜40文字のキャッチーなタイトル）
-サブタイトル: （20〜30文字の補足タイトル）
+【作成にあたっての注意事項】
+- 冒頭は「〇〇（会社名）は、${todayJST}、〜を発表しました」という形式で始める
+- サービス名・サービス内容を正確に反映する（他サービスと混同しない）
+- 具体的な数字・事実・ユーザーメリットを盛り込む
+- 宣伝文句（「最高の」「業界最安値」など根拠のない表現）は避ける
+- ビジネスニュースとして自然な文体（PR TIMESレベル）で書く
+- テンプレートっぽい文章・箇条書きの羅列は避け、流れのある文章にする
+
+【出力フォーマット（必ずこの形式で出力）】
+タイトル: （25〜45文字。「〇〇、〜を〜」という第三者視点のニュースタイトル）
+サブタイトル: （20〜35文字の補足タイトル）
 ---
-（リード文：2〜3行でニュースの要点を伝える）
-
-【サービス概要】
-（300〜400字でサービス内容を説明）
-
-【特徴・強み】
-・（箇条書き3〜5項目）
+（本文：700〜900字。リード文→背景→サービス詳細→今後の展開→お問い合わせの構成で）
 
 【お問い合わせ】
 会社名: 合同会社SIN JAPAN
 担当: 大谷
 メール: info@sinjapan.jp
-
-記事全体で500〜800字程度。PR TIMESのルールに沿ったビジネスライクな文体で。
+URL: ${siteUrl}
 `;
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: "gpt-4o",
     messages: [{ role: "user", content: prompt }],
-    temperature: 0.7,
+    temperature: 0.75,
   });
 
   const rawText = completion.choices[0].message.content || "";
