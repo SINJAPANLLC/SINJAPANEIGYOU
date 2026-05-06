@@ -9,6 +9,26 @@ import { v4 as uuidv4 } from "uuid";
 const activeTasks = new Map<number, ReturnType<typeof cron.schedule>>();
 const COMPANY_WEBSITE = process.env.COMPANY_WEBSITE || "https://sinjapan.work";
 
+// 1日あたりの全ジョブ合計メール送信上限（環境変数 DAILY_EMAIL_LIMIT で変更可能）
+const DAILY_EMAIL_LIMIT = parseInt(process.env.DAILY_EMAIL_LIMIT || "100");
+let dailyEmailsSent = 0;
+let dailyResetDate = new Date().toDateString();
+
+function checkAndIncrementDailyLimit(): boolean {
+  const today = new Date().toDateString();
+  if (today !== dailyResetDate) {
+    dailyEmailsSent = 0;
+    dailyResetDate = today;
+    logger.info({ DAILY_EMAIL_LIMIT }, "cron: daily email counter reset");
+  }
+  if (dailyEmailsSent >= DAILY_EMAIL_LIMIT) {
+    logger.warn({ dailyEmailsSent, DAILY_EMAIL_LIMIT }, "cron: daily email limit reached, skipping send");
+    return false;
+  }
+  dailyEmailsSent++;
+  return true;
+}
+
 // 同時に実行できるリード検索ジョブは1つだけ（Yahoo Japan への並列リクエストを防ぐ）
 let searchLock = false;
 async function acquireSearchLock(jobId: number, timeoutMs = 10 * 60 * 1000): Promise<boolean> {
@@ -146,6 +166,7 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
         + (withSite.includes(unsubUrl) ? "" : fallbackUnsubLink)
         + (business.signatureHtml || "");
 
+      if (!checkAndIncrementDailyLimit()) break;
       const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });
       if (result.success) {
         sent++;
@@ -154,7 +175,7 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
         await new Promise(r => setTimeout(r, 3000));
       }
     }
-    logger.info({ jobId, sent, maxPerRun }, "cron:email_send done");
+    logger.info({ jobId, sent, maxPerRun, dailyTotal: dailyEmailsSent, dailyLimit: DAILY_EMAIL_LIMIT }, "cron:email_send done");
   } catch (err) {
     logger.error({ err, jobId }, "cron:email_send error");
   }
@@ -255,6 +276,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
       + (withSite.includes(unsubUrl) ? "" : fallbackUnsubLink)
       + (business.signatureHtml || "");
 
+    if (!checkAndIncrementDailyLimit()) break;
     const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });
     if (result.success) {
       sent++;
@@ -264,7 +286,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
     }
   }
 
-  logger.info({ jobId, sent, maxPerRun }, "cron:lead_search_and_send emails done");
+  logger.info({ jobId, sent, maxPerRun, dailyTotal: dailyEmailsSent, dailyLimit: DAILY_EMAIL_LIMIT }, "cron:lead_search_and_send emails done");
   releaseSearchLock();
 }
 
