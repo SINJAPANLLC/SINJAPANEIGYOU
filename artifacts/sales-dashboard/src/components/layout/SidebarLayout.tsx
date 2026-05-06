@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Newspaper,
   MapPin,
+  Music2,
 } from "lucide-react";
 import {
   Sidebar,
@@ -41,6 +42,7 @@ const navigation = [
 const navigationExtra = [
   { name: "PR-FREE", href: "/pr-free", icon: Newspaper },
   { name: "SNS", href: "/sns", icon: MessageSquare },
+  { name: "TikTok DM", href: "/tiktok-dm", icon: Music2 },
   { name: "ジモティー", href: "/jimoty", icon: MapPin },
 ];
 

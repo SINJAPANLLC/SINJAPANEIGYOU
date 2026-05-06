@@ -10,3 +10,4 @@ export * from "./pr-articles";
 export * from "./jimoty-posts";
 export * from "./jimoty-accounts";
 export * from "./jimoty-settings";
+export * from "./tiktok-dm";

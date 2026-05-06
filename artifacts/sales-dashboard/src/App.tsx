@@ -17,6 +17,7 @@ import SchedulePage from "@/pages/schedule";
 import SnsPage from "@/pages/sns";
 import PrFreePage from "@/pages/pr-free";
 import JimotyPage from "@/pages/jimoty";
+import TikTokDmPage from "@/pages/tiktok-dm";
 import NotFound from "@/pages/not-found";
 
 function HomeRedirect() {
@@ -50,6 +51,7 @@ function AppRoutes() {
       <Route path="/sns"><ProtectedRoute component={SnsPage} /></Route>
       <Route path="/pr-free"><ProtectedRoute component={PrFreePage} /></Route>
       <Route path="/jimoty"><ProtectedRoute component={JimotyPage} /></Route>
+      <Route path="/tiktok-dm"><ProtectedRoute component={TikTokDmPage} /></Route>
 
       <Route component={NotFound} />
     </Switch>

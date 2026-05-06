@@ -13,6 +13,7 @@ import cronJobsRouter from "./cron-jobs";
 import xAutomationRouter from "./x-automation";
 import prArticlesRouter from "./pr-articles";
 import jimotyRouter from "./jimoty";
+import tiktokDmRouter from "./tiktok-dm";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(cronJobsRouter);
 router.use(xAutomationRouter);
 router.use(prArticlesRouter);
 router.use(jimotyRouter);
+router.use(tiktokDmRouter);
 
 export default router;
