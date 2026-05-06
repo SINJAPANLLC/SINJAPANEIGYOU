@@ -176,69 +176,64 @@ export async function searchTikTokUsersPlaywright(
 
   try {
     const page = await context.newPage();
-    const searchUrl = `https://www.tiktok.com/search/user?q=${encodeURIComponent(keyword)}`;
-    logger.info({ keyword, searchUrl }, "tiktok: navigating to user search");
 
+    // ① ハッシュタグページからクリエイターを収集（メイン手法）
+    const hashtagUrl = `https://www.tiktok.com/tag/${encodeURIComponent(keyword)}`;
+    logger.info({ keyword, hashtagUrl }, "tiktok: navigating to hashtag page");
     try {
-      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      await page.goto(hashtagUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     } catch {
-      logger.warn({ keyword }, "tiktok: page load timeout, trying to extract content anyway");
+      logger.warn({ keyword }, "tiktok: hashtag page load timeout");
     }
     await randomSleep(4000, 6000);
 
-    // デバッグ: ページタイトルとURLを記録
     const pageTitle = await page.title();
     const pageUrl = page.url();
-    logger.info({ keyword, pageTitle, pageUrl }, "tiktok: page loaded");
+    logger.info({ keyword, pageTitle, pageUrl }, "tiktok: hashtag page loaded");
 
-    // デバッグ用スクリーンショットを保存
+    // デバッグ用スクリーンショット
     try {
       await page.screenshot({ path: "/tmp/tiktok-search-debug.png", fullPage: false });
-      logger.info("tiktok: debug screenshot saved to /tmp/tiktok-search-debug.png");
     } catch { /* ignore */ }
 
-    const selectors = [
-      '[data-e2e="search-user-item"]',
-      '[data-e2e="user-item"]',
-      '[data-e2e="search-user-card"]',
-      '[class*="UserCard"]',
-      '[class*="user-card"]',
-      '[class*="user-item"]',
-      '[class*="UserItem"]',
-      'div[class*="DivUserCard"]',
+    // 動画アイテムから投稿者リンクを収集
+    const seen = new Set<string>();
+    const videoAuthorSelectors = [
+      '[data-e2e="challenge-item"] a[href*="/@"]',
+      '[data-e2e="video-author-uniqueid"]',
+      'a[href*="/@"][class*="author"]',
+      'a[href*="/@"][class*="Author"]',
+      '[class*="VideoCard"] a[href*="/@"]',
+      '[class*="video-card"] a[href*="/@"]',
+      'div[class*="DivContainer"] a[href*="/@"]',
     ];
 
-    let found = false;
-    for (const sel of selectors) {
+    for (const sel of videoAuthorSelectors) {
       const els = await page.$$(sel);
       if (els.length > 0) {
-        logger.info({ selector: sel, count: els.length }, "tiktok: found user cards");
-        found = true;
-        for (const el of els.slice(0, count * 3)) {
+        logger.info({ selector: sel, count: els.length }, "tiktok: found author links on hashtag page");
+        for (const el of els) {
           try {
-            const linkEl = await el.$("a[href*='/@']");
-            if (!linkEl) continue;
-            const href = await linkEl.getAttribute("href") || "";
+            const href = await el.getAttribute("href") || "";
             const match = href.match(/\/@([^/?]+)/);
             if (!match) continue;
             const username = match[1];
-            const nameEl = await el.$('[data-e2e="search-user-unique-id"], [class*="UniqueId"], [class*="username"]');
-            const displayName = nameEl ? (await nameEl.textContent() || username) : username;
-            if (username && !users.find(u => u.username === username)) {
-              users.push({ username, displayName: displayName.replace(/^@/, "") });
-            }
+            if (seen.has(username) || username.length < 2) continue;
+            seen.add(username);
+            const displayName = (await el.textContent() || username).replace(/^@/, "").trim();
+            users.push({ username, displayName: displayName || username });
+            if (users.length >= count * 3) break;
           } catch { continue; }
         }
-        break;
+        if (users.length > 0) break;
       }
     }
 
-    if (!found) {
-      // フォールバック: ページ内の/@リンクを全て収集
+    // ② フォールバック: ページ内全/@リンクをスキャン
+    if (users.length === 0) {
       const links = await page.$$("a[href*='/@']");
-      logger.info({ linkCount: links.length, keyword }, "tiktok: fallback link scan");
-      const seen = new Set<string>();
-      for (const link of links.slice(0, count * 3)) {
+      logger.info({ linkCount: links.length, keyword }, "tiktok: fallback /@link scan");
+      for (const link of links) {
         const href = await link.getAttribute("href") || "";
         const match = href.match(/\/@([^/?]+)/);
         if (!match) continue;
@@ -246,7 +241,28 @@ export async function searchTikTokUsersPlaywright(
         if (seen.has(username) || username.length < 2) continue;
         seen.add(username);
         users.push({ username, displayName: username });
-        if (users.length >= count * 2) break;
+        if (users.length >= count * 3) break;
+      }
+    }
+
+    // ③ ハッシュタグで0件なら動画検索にフォールバック
+    if (users.length === 0) {
+      const videoSearchUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}&type=video`;
+      logger.info({ keyword, videoSearchUrl }, "tiktok: fallback to video search");
+      try {
+        await page.goto(videoSearchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+      } catch { /* ignore */ }
+      await randomSleep(4000, 6000);
+      const links = await page.$$("a[href*='/@']");
+      for (const link of links) {
+        const href = await link.getAttribute("href") || "";
+        const match = href.match(/\/@([^/?]+)/);
+        if (!match) continue;
+        const username = match[1];
+        if (seen.has(username) || username.length < 2) continue;
+        seen.add(username);
+        users.push({ username, displayName: username });
+        if (users.length >= count * 3) break;
       }
     }
 
