@@ -4,6 +4,7 @@ import { startCronRunner } from "./lib/cron-runner";
 import { startXScheduler } from "./lib/x-scheduler";
 import { startPrFreeScheduler } from "./lib/pr-free-scheduler";
 import { startJimotyScheduler } from "./lib/jimoty-scheduler";
+import { startTikTokDmScheduler } from "./lib/tiktok-dm-scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -30,4 +31,5 @@ app.listen(port, (err) => {
   startXScheduler();
   startPrFreeScheduler();
   startJimotyScheduler().catch((err) => console.error("jimoty scheduler start failed", err));
+  startTikTokDmScheduler();
 });
