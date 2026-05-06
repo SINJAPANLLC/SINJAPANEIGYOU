@@ -179,69 +179,79 @@ export async function searchTikTokUsersPlaywright(
 
     const seen = new Set<string>();
 
-    // ページ読み込み共通ヘルパー
-    const navigateAndExtract = async (url: string, label: string): Promise<void> => {
-      logger.info({ keyword, url }, `tiktok: navigating to ${label}`);
-      try {
-        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
-      } catch {
-        logger.warn({ keyword, url }, `tiktok: ${label} load timeout`);
-      }
-      // ページが実際にコンテンツを持つまで待機（最大10秒）
-      try {
-        await page.waitForFunction(
-          () => document.body && document.body.innerHTML.length > 500,
-          { timeout: 10000 }
-        );
-      } catch { /* ignore */ }
-      await randomSleep(3000, 5000);
-
+    // /@リンクをページから収集するヘルパー
+    const extractUsersFromPage = async (label: string): Promise<number> => {
       const pageTitle = await page.title();
       const pageUrl = page.url();
       const bodyLen = await page.evaluate(() => document.body?.innerHTML?.length ?? 0);
       logger.info({ keyword, pageTitle, pageUrl, bodyLen }, `tiktok: ${label} loaded`);
 
-      // デバッグ用スクリーンショット
       try {
         await page.screenshot({ path: "/tmp/tiktok-search-debug.png", fullPage: false });
       } catch { /* ignore */ }
 
-      // /@リンクを全収集
+      const before = users.length;
       const links = await page.$$("a[href*='/@']");
       logger.info({ linkCount: links.length, label }, "tiktok: /@links found");
       for (const link of links) {
-        const href = await link.getAttribute("href") || "";
-        const match = href.match(/\/@([^/?]+)/);
-        if (!match) continue;
-        const username = match[1];
-        if (seen.has(username) || username.length < 2) continue;
-        seen.add(username);
-        const displayName = (await link.textContent() || username).replace(/^@/, "").trim();
-        users.push({ username, displayName: displayName || username });
-        if (users.length >= count * 3) break;
+        try {
+          const href = await link.getAttribute("href") || "";
+          const match = href.match(/\/@([^/?]+)/);
+          if (!match) continue;
+          const username = match[1];
+          if (seen.has(username) || username.length < 2) continue;
+          seen.add(username);
+          const displayName = (await link.textContent() || username).replace(/^@/, "").trim();
+          users.push({ username, displayName: displayName || username });
+          if (users.length >= count * 3) break;
+        } catch { continue; }
       }
+      return users.length - before;
     };
 
-    // ① 動画検索タブ（前回ページが読み込めた実績あり）
-    await navigateAndExtract(
-      `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}&type=video`,
-      "video search"
-    );
+    // ① ユーザー検索URLをウォームアップ（このURLは確実に読み込める）
+    const userSearchUrl = `https://www.tiktok.com/search/user?q=${encodeURIComponent(keyword)}`;
+    logger.info({ keyword, userSearchUrl }, "tiktok: warmup via user search");
+    try {
+      await page.goto(userSearchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    } catch {
+      logger.warn({ keyword }, "tiktok: warmup timeout");
+    }
+    await randomSleep(3000, 5000);
+    await extractUsersFromPage("user search (warmup)");
 
-    // ② 動画検索で0件ならハッシュタグページ
+    // ② ページが読み込めたら、JSナビゲーションで動画タブへ移動
     if (users.length === 0) {
-      await navigateAndExtract(
-        `https://www.tiktok.com/tag/${encodeURIComponent(keyword)}`,
-        "hashtag page"
-      );
+      const videoSearchUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}`;
+      logger.info({ keyword }, "tiktok: JS navigate to top search");
+      try {
+        await page.evaluate((url: string) => { window.location.href = url; }, videoSearchUrl);
+        await page.waitForURL(/tiktok\.com\/search/, { timeout: 30000 });
+      } catch { /* ignore */ }
+      await randomSleep(4000, 6000);
+      await extractUsersFromPage("top search (JS nav)");
     }
 
-    // ③ まだ0件なら注目タブ（デフォルト検索）
+    // ③ それでも0件なら動画タブクリックを試みる
     if (users.length === 0) {
-      await navigateAndExtract(
-        `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}`,
-        "top search"
-      );
+      logger.info({ keyword }, "tiktok: trying to click video tab");
+      const videoTabSelectors = [
+        '[data-e2e="search-video-tab"]',
+        'a[href*="type=video"]',
+        'span:has-text("動画")',
+        'button:has-text("動画")',
+      ];
+      for (const sel of videoTabSelectors) {
+        try {
+          const el = await page.$(sel);
+          if (el) {
+            await el.click();
+            await randomSleep(3000, 5000);
+            await extractUsersFromPage("video tab click");
+            break;
+          }
+        } catch { continue; }
+      }
     }
 
     logger.info({ keyword, found: users.length }, "tiktok: user search complete");
