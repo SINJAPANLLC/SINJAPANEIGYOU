@@ -287,10 +287,10 @@ function AccountPanel({ account, onDeleted }: { account: TikTokAccount; onDelete
                     <code className="bg-muted px-1">{"{{username}}"}</code> でユーザー名に自動置換されます
                   </div>
                   <Textarea
-                    placeholder={"はじめまして！{{username}}さん\n軽貨物ドライバーの案件を多数ご紹介しています。\nご興味があればぜひDMでご連絡ください！"}
+                    placeholder={"はじめまして。\n合同会社SIN JAPANの大谷と申します。\n\n突然のご連絡失礼いたします。\n\nTikTokでのご活動を拝見し、\n発信内容や方向性に大きな可能性を感じ、ご連絡させていただきました。\n\n初期費用は一切不要で、\n売上に応じたレベニューシェア（成果報酬型）でのご提携を想定しております。\n\nもし少しでもご興味があれば、ぜひ一度お話の機会を頂戴できましたら幸いです。"}
                     value={ruleEdit.messageTemplate}
                     onChange={e => setRuleEdit(r => r ? { ...r, messageTemplate: e.target.value } : r)}
-                    className="rounded-none min-h-[120px] text-sm"
+                    className="rounded-none min-h-[240px] text-sm"
                   />
                 </div>
 
