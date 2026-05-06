@@ -96,7 +96,8 @@ async function runLeadSearch(jobId: number, businessId: number, config: Record<s
 }
 
 async function runEmailSend(jobId: number, businessId: number, config: Record<string, unknown>) {
-  logger.info({ jobId, businessId }, "cron:email_send start");
+  const maxPerRun = Number(config.maxPerRun || 30);
+  logger.info({ jobId, businessId, maxPerRun }, "cron:email_send start");
   try {
     const [business] = await db.select().from(businessesTable).where(eq(businessesTable.id, businessId));
     if (!business) return;
@@ -118,7 +119,7 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
     const leads = await db.select().from(leadsTable).where(
       and(eq(leadsTable.businessId, businessId), eq(leadsTable.status, "unsent"))
     );
-    const leadsWithEmail = leads.filter(l => l.email);
+    const leadsWithEmail = leads.filter(l => l.email).slice(0, maxPerRun);
 
     const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
     const fromName = business.senderName || business.name;
@@ -150,9 +151,10 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
         sent++;
         await db.update(leadsTable).set({ status: "sent" }).where(eq(leadsTable.id, lead.id));
         await db.insert(emailLogsTable).values({ leadId: lead.id, subject, html, status: "sent", sentAt: new Date() });
+        await new Promise(r => setTimeout(r, 3000));
       }
     }
-    logger.info({ jobId, sent }, "cron:email_send done");
+    logger.info({ jobId, sent, maxPerRun }, "cron:email_send done");
   } catch (err) {
     logger.error({ err, jobId }, "cron:email_send error");
   }
@@ -162,6 +164,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
   const keyword = String(config.keyword || "");
   const location = config.location ? String(config.location) : null;
   const maxResults = Number(config.maxResults || 10);
+  const maxPerRun = Number(config.maxPerRun || 30);
   const persona = config.persona ? String(config.persona) as PersonaType : detectPersona(keyword);
   // メール送信するので、メールあり件数をmaxResultsに合わせて確保
   const targetEmailCount = Number(config.targetEmailCount || maxResults);
@@ -226,7 +229,7 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
     return;
   }
 
-  const leadsWithEmail = newLeads.filter(l => l.email);
+  const leadsWithEmail = newLeads.filter(l => l.email).slice(0, maxPerRun);
   const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
   const fromName = business.senderName || business.name;
   let sent = 0;
@@ -257,10 +260,11 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
       sent++;
       await db.update(leadsTable).set({ status: "sent" }).where(eq(leadsTable.id, lead.id));
       await db.insert(emailLogsTable).values({ leadId: lead.id, subject, html, status: "sent", sentAt: new Date() });
+      await new Promise(r => setTimeout(r, 3000));
     }
   }
 
-  logger.info({ jobId, sent }, "cron:lead_search_and_send emails done");
+  logger.info({ jobId, sent, maxPerRun }, "cron:lead_search_and_send emails done");
   releaseSearchLock();
 }
 

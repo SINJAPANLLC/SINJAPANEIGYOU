@@ -66,6 +66,7 @@ const DEFAULT_FORM = {
   keyword: "",
   location: "",
   maxResults: "10",
+  maxPerRun: "30",
   templateId: "",
 };
 
@@ -114,6 +115,7 @@ export default function SchedulePage() {
     }
     if (form.type === "email_send" || form.type === "lead_search_and_send") {
       if (form.templateId && form.templateId !== "none") config.templateId = Number(form.templateId);
+      config.maxPerRun = Number(form.maxPerRun);
     }
 
     const res = await fetch("/api/cron-jobs", {
@@ -333,6 +335,20 @@ export default function SchedulePage() {
                       )}
                       <p className="text-[10px] text-muted-foreground font-mono">未選択の場合は最初のテンプレートが使われます</p>
                     </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-mono text-muted-foreground">1回あたり送信上限</Label>
+                      <Select value={form.maxPerRun} onValueChange={v => setForm(f => ({ ...f, maxPerRun: v }))}>
+                        <SelectTrigger className="rounded-none border-border h-9 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="rounded-none border-border">
+                          {["5", "10", "20", "30", "50", "100"].map(n => (
+                            <SelectItem key={n} value={n} className="rounded-none text-sm">{n}件</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[10px] text-muted-foreground font-mono">Hostinger制限対策：1回30件・3秒間隔で送信します</p>
+                    </div>
                     <div className="bg-muted/30 border border-border p-3 text-[11px] font-mono text-muted-foreground space-y-1">
                       {form.type === "lead_search_and_send"
                         ? <p>対象: 今回収集した新規リード（email あり）に即時送信</p>
@@ -414,6 +430,9 @@ export default function SchedulePage() {
                           <Mail className="w-3 h-3" />
                           テンプレート: <span className="text-foreground">{templateName ?? "最初のテンプレート"}</span>
                         </span>
+                      )}
+                      {(job.type === "email_send" || job.type === "lead_search_and_send") && (
+                        <span>送信上限: <span className="text-foreground">{config.maxPerRun ?? 30}件/回</span></span>
                       )}
                     </div>
                     <div className="flex items-center gap-5 text-[10px] font-mono text-muted-foreground/60">
