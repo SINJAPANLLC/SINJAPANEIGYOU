@@ -177,83 +177,38 @@ export async function searchTikTokUsersPlaywright(
   try {
     const page = await context.newPage();
 
-    // ① ハッシュタグページからクリエイターを収集（メイン手法）
-    const hashtagUrl = `https://www.tiktok.com/tag/${encodeURIComponent(keyword)}`;
-    logger.info({ keyword, hashtagUrl }, "tiktok: navigating to hashtag page");
-    try {
-      await page.goto(hashtagUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-    } catch {
-      logger.warn({ keyword }, "tiktok: hashtag page load timeout");
-    }
-    await randomSleep(4000, 6000);
-
-    const pageTitle = await page.title();
-    const pageUrl = page.url();
-    logger.info({ keyword, pageTitle, pageUrl }, "tiktok: hashtag page loaded");
-
-    // デバッグ用スクリーンショット
-    try {
-      await page.screenshot({ path: "/tmp/tiktok-search-debug.png", fullPage: false });
-    } catch { /* ignore */ }
-
-    // 動画アイテムから投稿者リンクを収集
     const seen = new Set<string>();
-    const videoAuthorSelectors = [
-      '[data-e2e="challenge-item"] a[href*="/@"]',
-      '[data-e2e="video-author-uniqueid"]',
-      'a[href*="/@"][class*="author"]',
-      'a[href*="/@"][class*="Author"]',
-      '[class*="VideoCard"] a[href*="/@"]',
-      '[class*="video-card"] a[href*="/@"]',
-      'div[class*="DivContainer"] a[href*="/@"]',
-    ];
 
-    for (const sel of videoAuthorSelectors) {
-      const els = await page.$$(sel);
-      if (els.length > 0) {
-        logger.info({ selector: sel, count: els.length }, "tiktok: found author links on hashtag page");
-        for (const el of els) {
-          try {
-            const href = await el.getAttribute("href") || "";
-            const match = href.match(/\/@([^/?]+)/);
-            if (!match) continue;
-            const username = match[1];
-            if (seen.has(username) || username.length < 2) continue;
-            seen.add(username);
-            const displayName = (await el.textContent() || username).replace(/^@/, "").trim();
-            users.push({ username, displayName: displayName || username });
-            if (users.length >= count * 3) break;
-          } catch { continue; }
-        }
-        if (users.length > 0) break;
-      }
-    }
-
-    // ② フォールバック: ページ内全/@リンクをスキャン
-    if (users.length === 0) {
-      const links = await page.$$("a[href*='/@']");
-      logger.info({ linkCount: links.length, keyword }, "tiktok: fallback /@link scan");
-      for (const link of links) {
-        const href = await link.getAttribute("href") || "";
-        const match = href.match(/\/@([^/?]+)/);
-        if (!match) continue;
-        const username = match[1];
-        if (seen.has(username) || username.length < 2) continue;
-        seen.add(username);
-        users.push({ username, displayName: username });
-        if (users.length >= count * 3) break;
-      }
-    }
-
-    // ③ ハッシュタグで0件なら動画検索にフォールバック
-    if (users.length === 0) {
-      const videoSearchUrl = `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}&type=video`;
-      logger.info({ keyword, videoSearchUrl }, "tiktok: fallback to video search");
+    // ページ読み込み共通ヘルパー
+    const navigateAndExtract = async (url: string, label: string): Promise<void> => {
+      logger.info({ keyword, url }, `tiktok: navigating to ${label}`);
       try {
-        await page.goto(videoSearchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      } catch {
+        logger.warn({ keyword, url }, `tiktok: ${label} load timeout`);
+      }
+      // ページが実際にコンテンツを持つまで待機（最大10秒）
+      try {
+        await page.waitForFunction(
+          () => document.body && document.body.innerHTML.length > 500,
+          { timeout: 10000 }
+        );
       } catch { /* ignore */ }
-      await randomSleep(4000, 6000);
+      await randomSleep(3000, 5000);
+
+      const pageTitle = await page.title();
+      const pageUrl = page.url();
+      const bodyLen = await page.evaluate(() => document.body?.innerHTML?.length ?? 0);
+      logger.info({ keyword, pageTitle, pageUrl, bodyLen }, `tiktok: ${label} loaded`);
+
+      // デバッグ用スクリーンショット
+      try {
+        await page.screenshot({ path: "/tmp/tiktok-search-debug.png", fullPage: false });
+      } catch { /* ignore */ }
+
+      // /@リンクを全収集
       const links = await page.$$("a[href*='/@']");
+      logger.info({ linkCount: links.length, label }, "tiktok: /@links found");
       for (const link of links) {
         const href = await link.getAttribute("href") || "";
         const match = href.match(/\/@([^/?]+)/);
@@ -261,9 +216,32 @@ export async function searchTikTokUsersPlaywright(
         const username = match[1];
         if (seen.has(username) || username.length < 2) continue;
         seen.add(username);
-        users.push({ username, displayName: username });
+        const displayName = (await link.textContent() || username).replace(/^@/, "").trim();
+        users.push({ username, displayName: displayName || username });
         if (users.length >= count * 3) break;
       }
+    };
+
+    // ① 動画検索タブ（前回ページが読み込めた実績あり）
+    await navigateAndExtract(
+      `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}&type=video`,
+      "video search"
+    );
+
+    // ② 動画検索で0件ならハッシュタグページ
+    if (users.length === 0) {
+      await navigateAndExtract(
+        `https://www.tiktok.com/tag/${encodeURIComponent(keyword)}`,
+        "hashtag page"
+      );
+    }
+
+    // ③ まだ0件なら注目タブ（デフォルト検索）
+    if (users.length === 0) {
+      await navigateAndExtract(
+        `https://www.tiktok.com/search?q=${encodeURIComponent(keyword)}`,
+        "top search"
+      );
     }
 
     logger.info({ keyword, found: users.length }, "tiktok: user search complete");
