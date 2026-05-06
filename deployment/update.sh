@@ -3,6 +3,8 @@ set -e
 cd /var/www/sinjapan-sales
 git pull origin main
 pnpm install --frozen-lockfile
+# Playwright Chromiumのインストール（初回・更新時）
+npx -y playwright install chromium --with-deps 2>/dev/null || true
 (cd lib/db && npx tsc -p tsconfig.json)
 (cd lib/api-zod && npx tsc -p tsconfig.json)
 (cd artifacts/api-server && pnpm run build)

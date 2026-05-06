@@ -26,6 +26,7 @@
     "openai": "^6.33.0",
     "pino": "^9",
     "pino-http": "^10",
+    "playwright": "^1.59.1",
     "twitter-api-v2": "^1.29.0",
     "uuid": "^13.0.0"
   },
