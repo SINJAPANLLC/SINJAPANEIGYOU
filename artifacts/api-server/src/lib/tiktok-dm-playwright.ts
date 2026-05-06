@@ -184,14 +184,28 @@ export async function searchTikTokUsersPlaywright(
     } catch {
       logger.warn({ keyword }, "tiktok: page load timeout, trying to extract content anyway");
     }
-    await randomSleep(3000, 5000);
+    await randomSleep(4000, 6000);
+
+    // デバッグ: ページタイトルとURLを記録
+    const pageTitle = await page.title();
+    const pageUrl = page.url();
+    logger.info({ keyword, pageTitle, pageUrl }, "tiktok: page loaded");
+
+    // デバッグ用スクリーンショットを保存
+    try {
+      await page.screenshot({ path: "/tmp/tiktok-search-debug.png", fullPage: false });
+      logger.info("tiktok: debug screenshot saved to /tmp/tiktok-search-debug.png");
+    } catch { /* ignore */ }
 
     const selectors = [
       '[data-e2e="search-user-item"]',
       '[data-e2e="user-item"]',
-      '.tiktok-1qb12g8-DivUserCard',
+      '[data-e2e="search-user-card"]',
       '[class*="UserCard"]',
+      '[class*="user-card"]',
       '[class*="user-item"]',
+      '[class*="UserItem"]',
+      'div[class*="DivUserCard"]',
     ];
 
     let found = false;
@@ -220,7 +234,9 @@ export async function searchTikTokUsersPlaywright(
     }
 
     if (!found) {
+      // フォールバック: ページ内の/@リンクを全て収集
       const links = await page.$$("a[href*='/@']");
+      logger.info({ linkCount: links.length, keyword }, "tiktok: fallback link scan");
       const seen = new Set<string>();
       for (const link of links.slice(0, count * 3)) {
         const href = await link.getAttribute("href") || "";
