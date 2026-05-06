@@ -3,12 +3,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, prArticlesTable, businessesTable } from "@workspace/db";
 import { requireAuth, getUserId } from "../lib/auth";
 import OpenAI from "openai";
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { postToPrFreePlaywright } from "../lib/pr-free-playwright";
 
 const router: IRouter = Router();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -182,54 +177,27 @@ router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise
 
   const siteUrl = biz.serviceUrl || "https://sinjapan.work";
 
-  const formData = new FormData();
-  formData.append("_wpcf7", "25868");
-  formData.append("_wpcf7_version", "5.2");
-  formData.append("_wpcf7_locale", "ja");
-  formData.append("_wpcf7_unit_tag", "wpcf7-f25868-p2821-o1");
-  formData.append("_wpcf7_container_post", "2821");
-  formData.append("_wpcf7_posted_data_hash", "");
-  formData.append("your-teamname", "合同会社SIN JAPAN");
-  formData.append("your-name", "大谷");
-  formData.append("your-email", "info@sinjapan.jp");
-  formData.append("url-adress", siteUrl);
-  formData.append("category", category);
-  formData.append("companyname", "合同会社SIN JAPAN");
-  formData.append("your-subject", article.title.slice(0, 140));
-  formData.append("subtitle", "");
-  formData.append("your-message", article.content);
+  const result = await postToPrFreePlaywright({
+    teamname: "合同会社SIN JAPAN",
+    name: "大谷",
+    email: "info@sinjapan.jp",
+    url: siteUrl,
+    category,
+    companyname: "合同会社SIN JAPAN",
+    title: article.title,
+    subtitle: "",
+    content: article.content,
+  });
 
-  try {
-    const logoBuffer = readFileSync(join(__dirname, "../lib/sinjapan-logo.jpg"));
-    formData.append("file-img1", new Blob([logoBuffer], { type: "image/jpeg" }), "sinjapan-logo.jpg");
-  } catch {
-    // ロゴなしで続行
-  }
-
-  const cfRes = await fetch(
-    "https://pr-free.jp/wp-json/contact-form-7/v1/contact-forms/25868/feedback",
-    {
-      method: "POST",
-      headers: {
-        "Referer": "https://pr-free.jp/prform/",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-        "Origin": "https://pr-free.jp",
-      },
-      body: formData,
-    }
-  );
-
-  const cfJson = await cfRes.json() as { status: string; message?: string };
-
-  if (cfJson.status === "mail_sent") {
+  if (result.success) {
     await db.update(prArticlesTable).set({
       status: "posted",
       postedAt: new Date(),
       updatedAt: new Date(),
     }).where(eq(prArticlesTable.id, id));
-    res.json({ ok: true, message: cfJson.message || "投稿成功" });
+    res.json({ ok: true, message: result.message || "投稿成功（Playwright）" });
   } else {
-    res.status(422).json({ error: cfJson.message || "PR-FREE送信失敗", detail: cfJson });
+    res.status(422).json({ error: result.message || "PR-FREE送信失敗", detail: result });
   }
 });
 

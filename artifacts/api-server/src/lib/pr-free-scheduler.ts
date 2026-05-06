@@ -3,12 +3,7 @@ import { db, businessesTable, prArticlesTable } from "@workspace/db";
 import { eq, and, gte } from "drizzle-orm";
 import OpenAI from "openai";
 import { logger } from "./logger";
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { postToPrFreePlaywright } from "./pr-free-playwright";
 
 const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
 const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
@@ -16,9 +11,6 @@ const openai = new OpenAI({
   apiKey: openaiApiKey,
   ...(openaiBaseURL ? { baseURL: openaiBaseURL } : {}),
 });
-
-const PR_FREE_CF7_ENDPOINT =
-  "https://pr-free.jp/wp-json/contact-form-7/v1/contact-forms/25868/feedback";
 
 const FIXED_CONTACT = {
   teamname: "合同会社SIN JAPAN",
@@ -70,7 +62,7 @@ function getServiceDescription(bizName: string, serviceUrl: string): string {
   return `合同会社SIN JAPANが提供する「${bizName}」サービス。`;
 }
 
-async function sleep(ms: number) {
+function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
@@ -101,7 +93,6 @@ interface GeneratedArticle {
   content: string;
 }
 
-// ニュースフックをランダムに選ぶ（毎回違うニュース角度で審査通過率アップ）
 const NEWS_HOOKS = [
   { hook: "正式リリース", detail: "本日より正式サービスを開始いたしました。" },
   { hook: "ベータ版提供開始", detail: "先行ベータ版の一般提供を開始し、登録受付中です。" },
@@ -119,7 +110,6 @@ function pickNewsHook(): typeof NEWS_HOOKS[number] {
   return NEWS_HOOKS[Math.floor(Math.random() * NEWS_HOOKS.length)];
 }
 
-// 今日の日付（JST）
 function getTodayJST(): string {
   const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
   return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
@@ -187,43 +177,12 @@ URL: ${siteUrl}
   return { title, subtitle, content };
 }
 
-function buildFormData(
-  biz: typeof businessesTable.$inferSelect,
-  article: GeneratedArticle,
-  category: string,
-  logoBuffer: Buffer,
-): FormData {
-  const siteUrl = biz.serviceUrl || "https://sinjapan.work";
-  const formData = new FormData();
-
-  formData.append("_wpcf7", "25868");
-  formData.append("_wpcf7_version", "5.2");
-  formData.append("_wpcf7_locale", "ja");
-  formData.append("_wpcf7_unit_tag", "wpcf7-f25868-p2821-o1");
-  formData.append("_wpcf7_container_post", "2821");
-  formData.append("_wpcf7_posted_data_hash", "");
-
-  formData.append("your-teamname", FIXED_CONTACT.teamname);
-  formData.append("your-name", FIXED_CONTACT.name);
-  formData.append("your-email", FIXED_CONTACT.email);
-  formData.append("url-adress", siteUrl);
-  formData.append("category", category);
-  formData.append("companyname", FIXED_CONTACT.companyname);
-  formData.append("your-subject", article.title.slice(0, 140));
-  formData.append("subtitle", article.subtitle.slice(0, 140));
-  formData.append("your-message", article.content);
-
-  const logoBlob = new Blob([logoBuffer], { type: "image/jpeg" });
-  formData.append("file-img1", logoBlob, "sinjapan-logo.jpg");
-
-  return formData;
-}
-
 export async function generateAndPost(biz: typeof businessesTable.$inferSelect): Promise<void> {
   const bizId = biz.id;
   const category = detectCategory(biz.name);
+  const siteUrl = biz.serviceUrl || "https://sinjapan.work";
 
-  logger.info({ bizId, bizName: biz.name, category }, "pr-free: start generate+post");
+  logger.info({ bizId, bizName: biz.name, category }, "pr-free: start generate+post (Playwright)");
 
   const article = await generateArticle(biz);
 
@@ -232,42 +191,41 @@ export async function generateAndPost(biz: typeof businessesTable.$inferSelect):
     .values({ businessId: bizId, title: article.title, content: article.content, status: "draft" })
     .returning();
 
-  let logoBuffer: Buffer;
-  try {
-    logoBuffer = readFileSync(join(__dirname, "sinjapan-logo.jpg"));
-  } catch {
-    logger.warn({ bizId }, "pr-free: logo not found, sending without image");
-    logoBuffer = Buffer.alloc(0);
-  }
-
-  const formData = buildFormData(biz, article, category, logoBuffer);
-
-  const cfRes = await fetch(PR_FREE_CF7_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Referer: "https://pr-free.jp/prform/",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-      Origin: "https://pr-free.jp",
-    },
-    body: formData,
+  const result = await postToPrFreePlaywright({
+    teamname: FIXED_CONTACT.teamname,
+    name: FIXED_CONTACT.name,
+    email: FIXED_CONTACT.email,
+    url: siteUrl,
+    category,
+    companyname: FIXED_CONTACT.companyname,
+    title: article.title,
+    subtitle: article.subtitle,
+    content: article.content,
   });
 
-  const cfJson = (await cfRes.json()) as { status: string; message?: string };
-
-  if (cfJson.status === "mail_sent") {
+  if (result.success) {
     await db
       .update(prArticlesTable)
       .set({ status: "posted", postedAt: new Date(), updatedAt: new Date() })
       .where(eq(prArticlesTable.id, savedArticle.id));
-    logger.info({ bizId, bizName: biz.name, articleId: savedArticle.id }, "pr-free: posted successfully");
+    logger.info(
+      { bizId, bizName: biz.name, articleId: savedArticle.id, message: result.message },
+      "pr-free: posted successfully via Playwright",
+    );
   } else {
-    logger.warn({ bizId, bizName: biz.name, cfStatus: cfJson.status, cfMessage: cfJson.message }, "pr-free: post failed");
+    await db
+      .update(prArticlesTable)
+      .set({ status: "failed", updatedAt: new Date() } as any)
+      .where(eq(prArticlesTable.id, savedArticle.id));
+    logger.warn(
+      { bizId, bizName: biz.name, message: result.message },
+      "pr-free: post failed via Playwright",
+    );
   }
 }
 
 export async function runPrFreeDailyNow() {
-  logger.info("pr-free: manual daily run triggered");
+  logger.info("pr-free: manual daily run triggered (Playwright)");
   const businesses = await db.select().from(businessesTable);
   for (let i = 0; i < businesses.length; i++) {
     const biz = businesses[i];
@@ -281,7 +239,7 @@ export async function runPrFreeDailyNow() {
     } catch (err) {
       logger.error({ err, bizId: biz.id, bizName: biz.name }, "pr-free: error processing business");
     }
-    if (i < businesses.length - 1) await sleep(2 * 60 * 1000);
+    if (i < businesses.length - 1) await sleep(3 * 60 * 1000);
   }
   logger.info("pr-free: manual daily run finished");
 }
@@ -289,7 +247,7 @@ export async function runPrFreeDailyNow() {
 export function startPrFreeScheduler() {
   // 9:00 JST (00:00 UTC) 開始、ビジネスごとに45分間隔で順次投稿
   cron.schedule("0 0 * * *", async () => {
-    logger.info("pr-free: daily scheduler started");
+    logger.info("pr-free: daily scheduler started (Playwright)");
     const businesses = await db.select().from(businessesTable);
     logger.info({ count: businesses.length }, "pr-free: processing businesses");
     for (let i = 0; i < businesses.length; i++) {
@@ -304,10 +262,10 @@ export function startPrFreeScheduler() {
       } catch (err) {
         logger.error({ err, bizId: biz.id, bizName: biz.name }, "pr-free: error processing business");
       }
-      if (i < businesses.length - 1) await sleep(45 * 60 * 1000); // 45分間隔
+      if (i < businesses.length - 1) await sleep(45 * 60 * 1000);
     }
     logger.info("pr-free: daily scheduler finished");
   }, { timezone: "UTC" });
 
-  logger.info("pr-free: scheduler registered (毎日9:00 JST開始、45分間隔で全件投稿)");
+  logger.info("pr-free: scheduler registered (毎日9:00 JST開始、Playwright投稿、45分間隔)");
 }
