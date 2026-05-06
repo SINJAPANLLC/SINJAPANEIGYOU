@@ -71,7 +71,8 @@ function parseFollowers(text: string): number {
 }
 
 async function createBrowserContext(sessionCookie: string): Promise<{ browser: Browser; context: BrowserContext }> {
-  const browser = await chromium.launch({
+  const proxyUrl = process.env.TIKTOK_PROXY;
+  const browserOpts: Parameters<typeof chromium.launch>[0] = {
     headless: true,
     args: [
       "--no-sandbox",
@@ -80,10 +81,20 @@ async function createBrowserContext(sessionCookie: string): Promise<{ browser: B
       "--disable-infobars",
       "--disable-dev-shm-usage",
     ],
-  });
+  };
+  if (proxyUrl) {
+    const u = new URL(proxyUrl);
+    browserOpts.proxy = {
+      server: `${u.protocol}//${u.host}`,
+      username: u.username || undefined,
+      password: u.password || undefined,
+    };
+    logger.info({ proxyHost: u.host }, "tiktok: using proxy");
+  }
+  const browser = await chromium.launch(browserOpts);
 
   const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     viewport: { width: 1280, height: 800 },
     locale: "ja-JP",
     timezoneId: "Asia/Tokyo",
@@ -168,7 +179,11 @@ export async function searchTikTokUsersPlaywright(
     const searchUrl = `https://www.tiktok.com/search/user?q=${encodeURIComponent(keyword)}`;
     logger.info({ keyword, searchUrl }, "tiktok: navigating to user search");
 
-    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    try {
+      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    } catch {
+      logger.warn({ keyword }, "tiktok: page load timeout, trying to extract content anyway");
+    }
     await randomSleep(3000, 5000);
 
     const selectors = [
@@ -241,7 +256,11 @@ export async function sendTikTokDmPlaywright(
     const page = await context.newPage();
     const profileUrl = `https://www.tiktok.com/@${username}`;
     logger.info({ username, profileUrl }, "tiktok: navigating to profile");
-    await page.goto(profileUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+    try {
+      await page.goto(profileUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    } catch {
+      logger.warn({ username }, "tiktok: profile page load timeout, trying to continue");
+    }
 
     // ログイン状態確認
     const loginBtn = await page.$('[data-e2e="top-login-button"]');
