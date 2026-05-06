@@ -30,6 +30,8 @@ interface DmRule {
   executedToday: number;
   lastRunAt: string | null;
   scheduleTimes: string;
+  minFollowers: number;
+  genderFilter: "any" | "female" | "male";
 }
 
 interface DmLog {
@@ -295,6 +297,62 @@ function AccountPanel({ account, onDeleted }: { account: TikTokAccount; onDelete
                 </div>
 
                 <div className="border border-border p-5 space-y-4">
+                  <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">ターゲットフィルター</div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">性別フィルター</label>
+                    <div className="flex gap-2">
+                      {(["any", "female", "male"] as const).map(g => (
+                        <button
+                          key={g}
+                          onClick={() => setRuleEdit(r => r ? { ...r, genderFilter: g } : r)}
+                          className={`px-3 py-1.5 text-xs border rounded-none transition-colors ${
+                            ruleEdit.genderFilter === g
+                              ? "border-[#fe2c55] bg-[#fe2c55]/10 text-[#fe2c55]"
+                              : "border-border text-muted-foreground hover:border-foreground"
+                          }`}
+                        >
+                          {g === "any" ? "指定なし" : g === "female" ? "女性のみ" : "男性のみ"}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted-foreground/70 mt-1">
+                      ※ プロフィール・自己紹介文のキーワードと絵文字で判定（推定）
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">最低フォロワー数</label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="number"
+                        min={0}
+                        step={1000}
+                        value={ruleEdit.minFollowers}
+                        onChange={e => setRuleEdit(r => r ? { ...r, minFollowers: Number(e.target.value) } : r)}
+                        className="rounded-none w-36"
+                      />
+                      <span className="text-xs text-muted-foreground">人以上</span>
+                    </div>
+                    <div className="flex gap-1.5 mt-1.5">
+                      {[0, 1000, 5000, 10000, 50000].map(v => (
+                        <button
+                          key={v}
+                          onClick={() => setRuleEdit(r => r ? { ...r, minFollowers: v } : r)}
+                          className={`px-2 py-1 text-xs border rounded-none transition-colors ${
+                            ruleEdit.minFollowers === v
+                              ? "border-[#fe2c55] bg-[#fe2c55]/10 text-[#fe2c55]"
+                              : "border-border text-muted-foreground hover:border-foreground"
+                          }`}
+                        >
+                          {v === 0 ? "制限なし" : v >= 10000 ? `${v / 10000}万+` : `${v.toLocaleString()}+`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-border p-5 space-y-4">
                   <div className="text-xs font-mono uppercase tracking-wider text-muted-foreground">実行設定</div>
                   <div className="space-y-1">
                     <label className="text-xs text-muted-foreground">1日の送信上限</label>
@@ -382,12 +440,17 @@ function AccountPanel({ account, onDeleted }: { account: TikTokAccount; onDelete
                   <div key={log.id} className="px-4 py-3 flex items-start gap-3 text-xs">
                     {log.status === "success"
                       ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
-                      : <XCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+                      : log.status === "skipped"
+                        ? <span className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-400 text-[10px] font-bold leading-3.5">SKIP</span>
+                        : <XCircle className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
                     }
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-foreground">{log.targetUsername ? `@${log.targetUsername}` : log.targetUserId}</div>
+                      <div className="font-medium text-foreground flex items-center gap-2">
+                        {log.targetUsername ? `@${log.targetUsername}` : log.targetUserId}
+                        {log.status === "skipped" && <span className="text-amber-400/70 font-normal">スキップ</span>}
+                      </div>
                       {log.message && <div className="text-muted-foreground truncate mt-0.5">{log.message}</div>}
-                      {log.errorMessage && <div className="text-red-400 mt-0.5">{log.errorMessage}</div>}
+                      {log.errorMessage && <div className={`mt-0.5 ${log.status === "skipped" ? "text-amber-400/80" : "text-red-400"}`}>{log.errorMessage}</div>}
                     </div>
                     <div className="text-muted-foreground shrink-0">{new Date(log.createdAt).toLocaleString("ja-JP")}</div>
                   </div>

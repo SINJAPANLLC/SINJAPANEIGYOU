@@ -75,19 +75,24 @@ router.get("/tiktok/accounts/:id/rule", requireAuth, async (req, res): Promise<v
 
 router.put("/tiktok/accounts/:id/rule", requireAuth, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
-  const { enabled, targetHashtag, targetKeyword, messageTemplate, dailyLimit, scheduleTimes } = req.body;
+  const { enabled, targetHashtag, targetKeyword, messageTemplate, dailyLimit, scheduleTimes, minFollowers, genderFilter } = req.body;
 
   const [existing] = await db.select().from(tiktokDmRulesTable).where(eq(tiktokDmRulesTable.accountId, id));
+  const setVals = {
+    enabled: !!enabled,
+    targetHashtag: targetHashtag ?? "",
+    targetKeyword: targetKeyword ?? "",
+    messageTemplate: messageTemplate ?? "",
+    dailyLimit: Number(dailyLimit) || 20,
+    scheduleTimes: scheduleTimes ?? "",
+    minFollowers: Number(minFollowers) || 0,
+    genderFilter: genderFilter ?? "any",
+  };
   if (existing) {
-    const [updated] = await db.update(tiktokDmRulesTable)
-      .set({ enabled: !!enabled, targetHashtag: targetHashtag ?? "", targetKeyword: targetKeyword ?? "", messageTemplate: messageTemplate ?? "", dailyLimit: Number(dailyLimit) || 20, scheduleTimes: scheduleTimes ?? "" })
-      .where(eq(tiktokDmRulesTable.accountId, id))
-      .returning();
+    const [updated] = await db.update(tiktokDmRulesTable).set(setVals).where(eq(tiktokDmRulesTable.accountId, id)).returning();
     res.json(updated);
   } else {
-    const [created] = await db.insert(tiktokDmRulesTable)
-      .values({ accountId: id, enabled: !!enabled, targetHashtag: targetHashtag ?? "", targetKeyword: targetKeyword ?? "", messageTemplate: messageTemplate ?? "", dailyLimit: Number(dailyLimit) || 20, scheduleTimes: scheduleTimes ?? "" })
-      .returning();
+    const [created] = await db.insert(tiktokDmRulesTable).values({ accountId: id, ...setVals }).returning();
     res.json(created);
   }
 });
@@ -126,15 +131,19 @@ router.post("/tiktok/accounts/:id/run", requireAuth, async (req, res): Promise<v
       keyword,
       rule.messageTemplate,
       maxCount,
-      async (username, ok, error) => {
+      async (username, ok, skipped, error) => {
         await db.insert(tiktokDmLogsTable).values({
           accountId: id,
           targetUsername: username,
           targetUserId: "",
-          message: rule.messageTemplate.replace(/\{\{username\}\}/g, `@${username}`),
-          status: ok ? "success" : "failed",
+          message: skipped ? null : rule.messageTemplate.replace(/\{\{username\}\}/g, `@${username}`),
+          status: skipped ? "skipped" : (ok ? "success" : "failed"),
           errorMessage: error ?? null,
         });
+      },
+      {
+        minFollowers: rule.minFollowers ?? 0,
+        genderFilter: (rule.genderFilter as "any" | "female" | "male") ?? "any",
       },
     );
     await db.update(tiktokDmRulesTable)

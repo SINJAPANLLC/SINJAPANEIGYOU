@@ -22,6 +22,8 @@ export const tiktokDmRulesTable = pgTable("tiktok_dm_rules", {
   executedToday: integer("executed_today").notNull().default(0),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   scheduleTimes: text("schedule_times").notNull().default(""),
+  minFollowers: integer("min_followers").notNull().default(0),
+  genderFilter: text("gender_filter").notNull().default("any"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
