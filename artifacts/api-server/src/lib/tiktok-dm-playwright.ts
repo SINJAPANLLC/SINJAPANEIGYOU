@@ -1,9 +1,47 @@
-import { chromium, type Browser, type BrowserContext } from "playwright";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 import { logger } from "./logger";
 
 function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
 function randomSleep(minMs: number, maxMs: number) {
   return sleep(minMs + Math.random() * (maxMs - minMs));
+}
+
+// CAPTCHAダイアログを閉じる（Escapeキー + Xボタン試行）
+async function dismissCaptcha(page: Page): Promise<void> {
+  const captchaSelectors = [
+    '[class*="captcha"]',
+    '[class*="Captcha"]',
+    '[id*="captcha"]',
+    'div:has-text("スライダーをドラッグ")',
+    'div:has-text("パズルを完成")',
+  ];
+  let hasCaptcha = false;
+  for (const sel of captchaSelectors) {
+    try {
+      const el = await page.$(sel);
+      if (el) { hasCaptcha = true; break; }
+    } catch { /* ignore */ }
+  }
+  if (!hasCaptcha) return;
+
+  logger.warn("tiktok: CAPTCHA detected, trying to dismiss");
+  // Escapeキーで閉じる
+  try { await page.keyboard.press("Escape"); await sleep(1000); } catch { /* ignore */ }
+  // Xボタンで閉じる
+  const closeSelectors = [
+    'button[aria-label="Close"]',
+    'button[aria-label="閉じる"]',
+    '[class*="CloseButton"]',
+    '[class*="close-btn"]',
+    'svg[class*="close"]',
+  ];
+  for (const sel of closeSelectors) {
+    try {
+      const el = await page.$(sel);
+      if (el) { await el.click(); await sleep(1000); break; }
+    } catch { /* ignore */ }
+  }
+  logger.info("tiktok: CAPTCHA dismiss attempted");
 }
 
 export interface DmCampaignOptions {
@@ -218,6 +256,7 @@ export async function searchTikTokUsersPlaywright(
       logger.warn({ keyword }, "tiktok: warmup timeout");
     }
     await randomSleep(3000, 5000);
+    await dismissCaptcha(page);
     await extractUsersFromPage("user search (warmup)");
 
     // ② ページが読み込めたら、JSナビゲーションで動画タブへ移動
@@ -229,6 +268,10 @@ export async function searchTikTokUsersPlaywright(
         await page.waitForURL(/tiktok\.com\/search/, { timeout: 30000 });
       } catch { /* ignore */ }
       await randomSleep(4000, 6000);
+
+      // CAPTCHAが出たら閉じる
+      await dismissCaptcha(page);
+
       await extractUsersFromPage("top search (JS nav)");
     }
 
