@@ -1,3 +1,4 @@
+import http from "http";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startCronRunner } from "./lib/cron-runner";
@@ -5,6 +6,7 @@ import { startXScheduler } from "./lib/x-scheduler";
 import { startPrFreeScheduler } from "./lib/pr-free-scheduler";
 import { startJimotyScheduler } from "./lib/jimoty-scheduler";
 import { startTikTokDmScheduler } from "./lib/tiktok-dm-scheduler";
+import { setupTeleapoWebSocket } from "./lib/teleapo-bridge";
 
 const rawPort = process.env["PORT"];
 
@@ -20,7 +22,12 @@ if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-app.listen(port, (err) => {
+const server = http.createServer(app);
+
+// Attach WebSocket server for Twilio <-> OpenAI Realtime bridge
+setupTeleapoWebSocket(server);
+
+server.listen(port, (err?: Error) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
     process.exit(1);

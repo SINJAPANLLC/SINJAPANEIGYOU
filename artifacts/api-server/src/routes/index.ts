@@ -14,6 +14,7 @@ import xAutomationRouter from "./x-automation";
 import prArticlesRouter from "./pr-articles";
 import jimotyRouter from "./jimoty";
 import tiktokDmRouter from "./tiktok-dm";
+import teleapoRouter from "./teleapo";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(xAutomationRouter);
 router.use(prArticlesRouter);
 router.use(jimotyRouter);
 router.use(tiktokDmRouter);
+router.use(teleapoRouter);
 
 export default router;

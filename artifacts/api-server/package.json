@@ -27,8 +27,10 @@
     "pino": "^9",
     "pino-http": "^10",
     "playwright": "^1.59.1",
+    "twilio": "^6.0.2",
     "twitter-api-v2": "^1.29.0",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
@@ -37,7 +39,9 @@
     "@types/node": "catalog:",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^8.0.0",
+    "@types/twilio": "^3.19.3",
     "@types/uuid": "^11.0.0",
+    "@types/ws": "^8.18.1",
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",
