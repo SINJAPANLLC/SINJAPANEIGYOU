@@ -17,7 +17,7 @@ import { logger } from "./logger";
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const REALTIME_URL =
-  "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17";
+  "wss://api.openai.com/v1/realtime?model=gpt-realtime";
 
 /** Active call sessions keyed by Twilio CallSid */
 const sessions = new Map<
@@ -50,7 +50,6 @@ export function setupTeleapoWebSocket(server: http.Server) {
     const openaiWs = new WebSocket(REALTIME_URL, {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1",
       },
     });
 
@@ -72,14 +71,8 @@ export function setupTeleapoWebSocket(server: http.Server) {
         JSON.stringify({
           type: "session.update",
           session: {
-            turn_detection: { type: "server_vad", silence_duration_ms: 700 },
-            input_audio_format: "g711_ulaw",
-            output_audio_format: "g711_ulaw",
-            voice: "shimmer",
+            type: "realtime",
             instructions: systemPrompt,
-            modalities: ["text", "audio"],
-            temperature: 0.8,
-            input_audio_transcription: { model: "whisper-1" },
           },
         }),
       );
@@ -90,8 +83,8 @@ export function setupTeleapoWebSocket(server: http.Server) {
         const event = JSON.parse(data.toString()) as Record<string, unknown>;
         const type = event.type as string;
 
-        // Forward audio delta back to Twilio
-        if (type === "response.audio.delta" && session.streamSid) {
+        // Forward audio delta back to Twilio (GA API: response.output_audio.delta)
+        if (type === "response.output_audio.delta" && session.streamSid) {
           // Measure latency from speech_stopped to first audio chunk
           if (session.speechStoppedAt !== null) {
             const latency = Date.now() - session.speechStoppedAt;
@@ -112,8 +105,8 @@ export function setupTeleapoWebSocket(server: http.Server) {
           }
         }
 
-        // Track when AI finishes speaking (for barge-in clear)
-        if (type === "response.audio.done" && session.streamSid) {
+        // Track when AI finishes speaking (for barge-in clear) (GA API: response.output_audio.done)
+        if (type === "response.output_audio.done" && session.streamSid) {
           if (twilioWs.readyState === WebSocket.OPEN) {
             twilioWs.send(
               JSON.stringify({ event: "clear", streamSid: session.streamSid }),
@@ -121,14 +114,14 @@ export function setupTeleapoWebSocket(server: http.Server) {
           }
         }
 
-        // Capture transcripts
+        // Capture transcripts (GA API event names)
         if (type === "conversation.item.input_audio_transcription.completed") {
           const text = (event.transcript as string) ?? "";
           if (text.trim()) {
             session.transcriptItems.push({ role: "user", text: text.trim(), ts: Date.now() });
           }
         }
-        if (type === "response.audio_transcript.done") {
+        if (type === "response.output_audio_transcript.done") {
           const text = (event.transcript as string) ?? "";
           if (text.trim()) {
             session.transcriptItems.push({ role: "assistant", text: text.trim(), ts: Date.now() });
