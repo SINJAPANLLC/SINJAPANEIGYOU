@@ -1,0 +1,9 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "mZdyeDCGk64ssF-AxCzGg"
+uri = "file://scripts/audio-out/ai-response.wav"
+type = "audio"
+title = "AIテレアポ 音声サンプル"
+description = "「弊社は営業効率化のSaaSを提供しております」への返答（ラグ196ms）"
