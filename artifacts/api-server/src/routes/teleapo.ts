@@ -126,11 +126,17 @@ router.post("/teleapo/calls/:id/dial", requireAuth, async (req, res): Promise<vo
   if (!call) { res.status(404).json({ error: "Not found" }); return; }
 
   // Check Twilio config
+  // API Key 形式（SK... + Secret + AccountSid）または従来の AccountSid + AuthToken の両方対応
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const apiKeySid = process.env.TWILIO_API_KEY_SID;
+  const apiKeySecret = process.env.TWILIO_API_KEY_SECRET;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   const fromNumber = process.env.TWILIO_PHONE_NUMBER;
-  if (!accountSid || !authToken || !fromNumber) {
-    res.status(503).json({ error: "Twilio未設定。TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER を設定してください。" });
+
+  const hasApiKey = apiKeySid && apiKeySecret && accountSid;
+  const hasAuthToken = accountSid && authToken;
+  if (!fromNumber || (!hasApiKey && !hasAuthToken)) {
+    res.status(503).json({ error: "Twilio未設定。TWILIO_ACCOUNT_SID / TWILIO_API_KEY_SID / TWILIO_API_KEY_SECRET / TWILIO_PHONE_NUMBER を設定してください。" });
     return;
   }
 
@@ -146,7 +152,10 @@ router.post("/teleapo/calls/:id/dial", requireAuth, async (req, res): Promise<vo
 
   try {
     const { default: twilio } = await import("twilio");
-    const client = twilio(accountSid, authToken);
+    // API Key 認証を優先、なければ AuthToken 認証
+    const client = hasApiKey
+      ? twilio(apiKeySid!, apiKeySecret!, { accountSid: accountSid! })
+      : twilio(accountSid!, authToken!);
 
     const host = process.env.REPLIT_DEV_DOMAIN ?? process.env.REPLIT_DOMAINS?.split(",")[0] ?? "";
     const webhookUrl = `https://${host}/api/teleapo/webhook/voice?callId=${callId}&prompt=${encodeURIComponent(systemPrompt)}`;
