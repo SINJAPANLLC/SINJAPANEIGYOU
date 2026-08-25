@@ -56,6 +56,18 @@ export const assistantMemoriesTable = pgTable("assistant_memories", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+export const assistantNotesTable = pgTable("assistant_notes", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  category: text("category").notNull().default("temporary"),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  source: text("source").notNull().default("line"),
+  isArchived: boolean("is_archived").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 export const assistantTodosTable = pgTable("assistant_todos", {
   id: serial("id").primaryKey(),
   userId: text("user_id").notNull(),
@@ -107,6 +119,7 @@ export const insertAssistantTodoSchema = createInsertSchema(assistantTodosTable)
 export type AssistantProfile = typeof assistantProfilesTable.$inferSelect;
 export type AssistantMessage = typeof assistantMessagesTable.$inferSelect;
 export type AssistantMemory = typeof assistantMemoriesTable.$inferSelect;
+export type AssistantNote = typeof assistantNotesTable.$inferSelect;
 export type AssistantTodo = typeof assistantTodosTable.$inferSelect;
 export type AssistantReport = typeof assistantReportsTable.$inferSelect;
 export type AssistantResearchItem = typeof assistantResearchItemsTable.$inferSelect;

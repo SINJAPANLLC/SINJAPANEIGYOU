@@ -4,6 +4,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   assistantMemoriesTable,
   assistantMessagesTable,
+  assistantNotesTable,
   assistantProfilesTable,
   assistantReportsTable,
   assistantResearchItemsTable,
@@ -11,7 +12,7 @@ import {
   db,
 } from "@workspace/db";
 import { getUserId, requireAuth } from "../lib/auth";
-import { getAssistantDate, generateDailyReport, getOrCreateAssistantProfile, processAssistantMessage } from "../lib/assistant-service";
+import { getAssistantDate, generateDailyReport, getOrCreateAssistantProfile, processAssistantMessage, searchAssistantKnowledge } from "../lib/assistant-service";
 import { isLineConfigured, replyLineText, safePushLineText, verifyLineSignature } from "../lib/line-client";
 
 const router: IRouter = Router();
@@ -84,15 +85,17 @@ function nextLinkCode() {
 router.get("/assistant/state", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
   const profile = await getOrCreateAssistantProfile(userId);
-  const [memories, todos, reports] = await Promise.all([
+  const [memories, todos, notes, reports] = await Promise.all([
     db.select().from(assistantMemoriesTable).where(and(eq(assistantMemoriesTable.userId, userId), eq(assistantMemoriesTable.isActive, true))).orderBy(desc(assistantMemoriesTable.updatedAt)),
     db.select().from(assistantTodosTable).where(eq(assistantTodosTable.userId, userId)).orderBy(desc(assistantTodosTable.createdAt)),
+    db.select().from(assistantNotesTable).where(and(eq(assistantNotesTable.userId, userId), eq(assistantNotesTable.isArchived, false))).orderBy(desc(assistantNotesTable.updatedAt)),
     db.select().from(assistantReportsTable).where(eq(assistantReportsTable.userId, userId)).orderBy(desc(assistantReportsTable.createdAt)).limit(12),
   ]);
   res.json({
     profile: presentProfile(profile),
     memories,
     todos,
+    notes,
     reports,
   });
 });
@@ -129,6 +132,37 @@ router.post("/assistant/memories", requireAuth, async (req, res): Promise<void> 
 router.delete("/assistant/memories/:id", requireAuth, async (req, res): Promise<void> => {
   await db.update(assistantMemoriesTable).set({ isActive: false }).where(and(eq(assistantMemoriesTable.id, Number(req.params.id)), eq(assistantMemoriesTable.userId, getUserId(req))));
   res.status(204).send();
+});
+
+router.post("/assistant/notes", requireAuth, async (req, res): Promise<void> => {
+  const content = typeof req.body.content === "string" ? req.body.content.trim() : "";
+  if (!content) { res.status(400).json({ error: "content is required" }); return; }
+  const title = typeof req.body.title === "string" && req.body.title.trim() ? req.body.title.trim() : "整理メモ";
+  const categories = ["todo", "idea", "decision", "person_company", "sales", "reference", "temporary"];
+  const category = categories.includes(req.body.category) ? req.body.category : "temporary";
+  const [note] = await db.insert(assistantNotesTable).values({ userId: getUserId(req), title, content, category, source: "dashboard" }).returning();
+  res.status(201).json(note);
+});
+
+router.patch("/assistant/notes/:id", requireAuth, async (req, res): Promise<void> => {
+  const updates: Partial<typeof assistantNotesTable.$inferInsert> = {};
+  if (typeof req.body.title === "string" && req.body.title.trim()) updates.title = req.body.title.trim();
+  if (typeof req.body.content === "string" && req.body.content.trim()) updates.content = req.body.content.trim();
+  if (["todo", "idea", "decision", "person_company", "sales", "reference", "temporary"].includes(req.body.category)) updates.category = req.body.category;
+  const [note] = await db.update(assistantNotesTable).set(updates).where(and(eq(assistantNotesTable.id, Number(req.params.id)), eq(assistantNotesTable.userId, getUserId(req)))).returning();
+  if (!note) { res.status(404).json({ error: "Note not found" }); return; }
+  res.json(note);
+});
+
+router.delete("/assistant/notes/:id", requireAuth, async (req, res): Promise<void> => {
+  await db.update(assistantNotesTable).set({ isArchived: true }).where(and(eq(assistantNotesTable.id, Number(req.params.id)), eq(assistantNotesTable.userId, getUserId(req))));
+  res.status(204).send();
+});
+
+router.get("/assistant/search", requireAuth, async (req, res): Promise<void> => {
+  const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (!query) { res.status(400).json({ error: "q is required" }); return; }
+  res.json({ query, results: await searchAssistantKnowledge(getUserId(req), query) });
 });
 
 router.post("/assistant/todos", requireAuth, async (req, res): Promise<void> => {

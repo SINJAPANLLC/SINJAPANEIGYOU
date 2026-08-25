@@ -1,9 +1,10 @@
 import OpenAI from "openai";
 import crypto from "crypto";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   assistantMemoriesTable,
   assistantMessagesTable,
+  assistantNotesTable,
   assistantProfilesTable,
   assistantReportsTable,
   assistantResearchItemsTable,
@@ -79,10 +80,11 @@ function cryptoRandomCode() {
 
 export async function buildAssistantContext(userId: string) {
   const profile = await getOrCreateAssistantProfile(userId);
-  const [memories, todos, messages, businesses] = await Promise.all([
+  const [memories, todos, messages, notes, businesses] = await Promise.all([
     db.select().from(assistantMemoriesTable).where(and(eq(assistantMemoriesTable.userId, userId), eq(assistantMemoriesTable.isActive, true))).orderBy(desc(assistantMemoriesTable.updatedAt)).limit(MAX_CONTEXT_ITEMS),
     db.select().from(assistantTodosTable).where(and(eq(assistantTodosTable.userId, userId), eq(assistantTodosTable.status, "open"))).orderBy(desc(assistantTodosTable.createdAt)).limit(MAX_CONTEXT_ITEMS),
     db.select().from(assistantMessagesTable).where(eq(assistantMessagesTable.userId, userId)).orderBy(desc(assistantMessagesTable.createdAt)).limit(12),
+    db.select().from(assistantNotesTable).where(and(eq(assistantNotesTable.userId, userId), eq(assistantNotesTable.isArchived, false))).orderBy(desc(assistantNotesTable.updatedAt)).limit(MAX_CONTEXT_ITEMS),
     db.select().from(businessesTable).where(eq(businessesTable.userId, userId)),
   ]);
   const businessIds = businesses.map((b) => b.id);
@@ -95,37 +97,93 @@ export async function buildAssistantContext(userId: string) {
     ]);
     sales = { leads: Number(leadCount[0]?.count || 0), sentEmails: Number(emailCount[0]?.count || 0), activeSchedules: Number(scheduleCount[0]?.count || 0) };
   }
-  return { profile, memories, todos, messages: messages.reverse(), sales };
+  return { profile, memories, todos, notes, messages: messages.reverse(), sales };
 }
 
 type AssistantAction =
   | { type: "create_todo"; title: string; details?: string; priority?: string }
+  | { type: "create_note"; title: string; content: string; category?: string }
   | { type: "complete_todo"; id?: number; title?: string }
   | { type: "save_memory"; content: string; category?: string }
   | { type: "forget_memory"; id?: number; content?: string };
 
 function fallbackResponse(text: string, context: Awaited<ReturnType<typeof buildAssistantContext>>) {
   const actions: AssistantAction[] = [];
+  const isWallBatting = /壁打ち|整理して|整理したい|アイデア|悩み|考えをまとめ/.test(text);
   const todo = text.match(/(?:TODO|todo|タスク|やること)(?:に|を)?\s*(.+?)(?:追加|登録|。|$)/i);
   if (todo?.[1]) actions.push({ type: "create_todo", title: todo[1].trim() });
   if (/覚えて|記憶して|記録して/.test(text)) {
     const memory = text.replace(/.*?(覚えて|記憶して|記録して)[：:\s]*/u, "").trim();
     if (memory) actions.push({ type: "save_memory", content: memory });
   }
+  if (isWallBatting) {
+    actions.push({
+      type: "create_note",
+      category: /アイデア/.test(text) ? "idea" : "temporary",
+      title: "壁打ちメモ",
+      content: text.replace(/^壁打ち[：:\s]*/u, "").trim(),
+    });
+  }
   const reply = actions.length
     ? actions.map((a) => {
       if (a.type === "create_todo") return `TODOに追加しました：「${a.title}」`;
       if (a.type === "save_memory") return `長期記憶に保存しました：「${a.content}」`;
+      if (a.type === "create_note") return "壁打ち内容を一時メモに整理しました。";
       return "ご依頼を反映しました。";
     }).join("\n")
     : `承知しました。現在、未完了TODOは${context.todos.length}件、登録済みの営業リードは${context.sales.leads}件です。OpenAIを接続すると、より詳しい整理と提案ができます。`;
   return { reply, actions };
 }
 
+export async function searchAssistantKnowledge(userId: string, query: string) {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const pattern = `%${trimmed}%`;
+  const [notes, memories, messages, todos, reports] = await Promise.all([
+    db.select({ title: assistantNotesTable.title, content: assistantNotesTable.content, category: assistantNotesTable.category, createdAt: assistantNotesTable.createdAt })
+      .from(assistantNotesTable)
+      .where(and(eq(assistantNotesTable.userId, userId), eq(assistantNotesTable.isArchived, false), or(ilike(assistantNotesTable.title, pattern), ilike(assistantNotesTable.content, pattern))))
+      .limit(10),
+    db.select({ title: sql<string>`'長期記憶'`, content: assistantMemoriesTable.content, category: assistantMemoriesTable.category, createdAt: assistantMemoriesTable.createdAt })
+      .from(assistantMemoriesTable)
+      .where(and(eq(assistantMemoriesTable.userId, userId), eq(assistantMemoriesTable.isActive, true), ilike(assistantMemoriesTable.content, pattern)))
+      .limit(10),
+    db.select({ title: sql<string>`case when ${assistantMessagesTable.role} = 'user' then '会話' else 'AI秘書の返信' end`, content: assistantMessagesTable.content, category: sql<string>`'conversation'`, createdAt: assistantMessagesTable.createdAt })
+      .from(assistantMessagesTable)
+      .where(and(eq(assistantMessagesTable.userId, userId), ilike(assistantMessagesTable.content, pattern)))
+      .orderBy(desc(assistantMessagesTable.createdAt))
+      .limit(10),
+    db.select({ title: assistantTodosTable.title, content: sql<string>`coalesce(${assistantTodosTable.details}, '')`, category: sql<string>`'todo'`, createdAt: assistantTodosTable.createdAt })
+      .from(assistantTodosTable)
+      .where(and(eq(assistantTodosTable.userId, userId), or(ilike(assistantTodosTable.title, pattern), ilike(assistantTodosTable.details, pattern))))
+      .limit(10),
+    db.select({ id: assistantReportsTable.id, content: assistantReportsTable.content, createdAt: assistantReportsTable.createdAt })
+      .from(assistantReportsTable)
+      .where(eq(assistantReportsTable.userId, userId))
+      .orderBy(desc(assistantReportsTable.createdAt))
+      .limit(20),
+  ]);
+  const reportIds = reports.map((report) => report.id);
+  const research = reportIds.length
+    ? await db.select({ title: assistantResearchItemsTable.title, content: assistantResearchItemsTable.snippet, category: assistantResearchItemsTable.topic, createdAt: assistantResearchItemsTable.createdAt })
+      .from(assistantResearchItemsTable)
+      .where(and(inArray(assistantResearchItemsTable.reportId, reportIds), or(ilike(assistantResearchItemsTable.title, pattern), ilike(assistantResearchItemsTable.snippet, pattern))))
+      .limit(10)
+    : [];
+  return [
+    ...notes.map((item) => ({ ...item, source: "note" })),
+    ...memories.map((item) => ({ ...item, source: "memory" })),
+    ...messages.map((item) => ({ ...item, source: "conversation" })),
+    ...todos.map((item) => ({ ...item, source: "todo" })),
+    ...research.map((item) => ({ ...item, source: "research" })),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 20);
+}
+
 export async function processAssistantMessage(userId: string, text: string, source = "line", lineMessageId?: string) {
   const inserted = await db.insert(assistantMessagesTable).values({ userId, source, role: "user", content: text, lineMessageId: lineMessageId || null }).onConflictDoNothing().returning();
   if (!inserted.length) return { reply: "", actions: [] as AssistantAction[], duplicate: true };
   const context = await buildAssistantContext(userId);
+  const searchResults = await searchAssistantKnowledge(userId, text);
   const client = getOpenAIClient();
   let reply: string;
   let actions: AssistantAction[] = [];
@@ -136,7 +194,8 @@ export async function processAssistantMessage(userId: string, text: string, sour
 外部に影響する操作（メール送信、電話、SNS投稿、予約、購入）は絶対に実行せず、必要なら確認を取って下書き・提案だけします。
 「覚えて」「記憶して」と明示された内容だけ長期記憶に保存し、「忘れて」と明示された場合だけ削除候補にします。
 次のJSONだけを返してください。replyはユーザーにそのまま見せる自然な日本語、actionsは必要な時だけ使用します。
-{"reply":"...", "actions":[{"type":"create_todo","title":"...", "details":"...", "priority":"high|normal|low"},{"type":"complete_todo","id":1},{"type":"save_memory","content":"...", "category":"preference|goal|business|general"},{"type":"forget_memory","id":1}]}
+{"reply":"...", "actions":[{"type":"create_todo","title":"...", "details":"...", "priority":"high|normal|low"},{"type":"create_note","title":"...", "content":"...", "category":"todo|idea|decision|person_company|sales|reference|temporary"},{"type":"complete_todo","id":1},{"type":"save_memory","content":"...", "category":"preference|goal|business|general"},{"type":"forget_memory","id":1}]}
+壁打ち、アイデア、悩み、情報整理の依頼では、replyに【要点】【論点】【決まっていること】【未決定のこと】【次に考えること】【TODO候補】【確認すること】を必要な範囲で含め、actionsにcreate_noteを追加してください。create_noteは長期記憶ではなく、分類付きの整理メモです。通常の雑談や明確な依頼には不要です。
 LINEで読むことを前提に、返信は短く読みやすく整えてください。1文を短くし、段落の間に空行を入れてください。重要な項目は【見出し】、複数項目は「・」の箇条書きを使ってください。Markdownの表、長い一段落、過剰な前置きは避け、原則300文字以内にまとめてください。
 利用可能なコンテキスト:
 記憶: ${JSON.stringify(context.memories.map((m) => ({ id: m.id, category: m.category, content: m.content })))}
@@ -167,6 +226,14 @@ async function applyAssistantActions(userId: string, actions: AssistantAction[])
   for (const action of actions) {
     if (action.type === "create_todo" && action.title?.trim()) {
       await db.insert(assistantTodosTable).values({ userId, title: action.title.trim(), details: action.details || null, priority: action.priority || "normal", source: "assistant" });
+    } else if (action.type === "create_note" && action.content?.trim()) {
+      await db.insert(assistantNotesTable).values({
+        userId,
+        title: action.title?.trim() || "整理メモ",
+        content: action.content.trim(),
+        category: action.category || "temporary",
+        source: "assistant",
+      });
     } else if (action.type === "complete_todo") {
       const where = action.id
         ? and(eq(assistantTodosTable.id, action.id), eq(assistantTodosTable.userId, userId))
@@ -231,17 +298,20 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
   try {
     const sourceSummary = research.map((item) => `${item.topic}: ${item.title} (${item.url})`).join("\n");
     const client = getOpenAIClient();
-    let content = `おはようございます。${reportDate}の秘書レポートです。\n\n【TODO】\n${context.todos.length ? context.todos.map((t) => `・${t.title}${t.priority === "high" ? " [重要]" : ""}`).join("\n") : "・未完了のTODOはありません"}\n\n【営業状況】\n・営業リード ${context.sales.leads}件 / 送信済みメール ${context.sales.sentEmails}件 / 有効スケジュール ${context.sales.activeSchedules}件`;
-    if (research.length) content += `\n\n【今日の情報】\n${research.slice(0, 10).map((r) => `・${r.title}\n  ${r.url}`).join("\n")}`;
+    const priorityTodos = context.todos.filter((todo) => todo.priority === "high").concat(context.todos.filter((todo) => todo.priority !== "high")).slice(0, 3);
+    const olderTodos = context.todos.filter((todo) => todo.createdAt.getTime() < Date.now() - 24 * 60 * 60 * 1000).slice(0, 5);
+    const decisionNotes = context.notes.filter((note) => note.category === "decision").slice(0, 3);
+    let content = `おはようございます。${reportDate}の秘書レポートです。\n\n【今日やること3つ】\n${priorityTodos.length ? priorityTodos.map((todo) => `・${todo.title}${todo.priority === "high" ? " [重要]" : ""}`).join("\n") : "・未完了TODOはありません"}\n\n【期限が近いこと】\n${context.todos.filter((todo) => todo.dueAt).slice(0, 5).map((todo) => `・${todo.title}（${todo.dueAt?.toLocaleDateString("ja-JP")}）`).join("\n") || "・期限が設定されたTODOはありません"}\n\n【昨日からの未処理事項】\n${olderTodos.length ? olderTodos.map((todo) => `・${todo.title}`).join("\n") : "・未処理事項はありません"}\n\n【予定・メール】\n・個人メール・カレンダーは未接続です\n・営業メール送信済み ${context.sales.sentEmails}件 / 有効スケジュール ${context.sales.activeSchedules}件\n\n【営業上のチャンス】\n・営業リード ${context.sales.leads}件\n\n【今日の意思決定候補】\n${decisionNotes.length ? decisionNotes.map((note) => `・${note.title}: ${note.content}`).join("\n") : "・整理メモに判断候補はありません"}`;
+    if (research.length) content += `\n\n【経済・SNSトレンド】\n${research.slice(0, 10).map((r) => `・${r.title}\n  ${r.url}`).join("\n")}`;
     if (client) {
       const result = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{
           role: "system",
-          content: "あなたは本人専用の日本語AI秘書です。簡潔で実行しやすい朝の報告に整えてください。見出しは【今日の要点】【TODO】【営業・業務状況】【情報収集】【今日の一歩】を使い、情報源URLは改変せず残してください。外部操作は提案に留めます。",
+          content: "あなたは本人専用の日本語AI秘書です。簡潔で実行しやすい朝の報告に整えてください。見出しは【今日やること3つ】【期限が近いこと】【昨日からの未処理事項】【予定・メール】【経済・SNSトレンド】【営業上のチャンス】【注意すべきリスク】【今日の意思決定候補】を使い、情報源URLは改変せず残してください。未接続のメール・カレンダーは未接続と明記し、外部操作は提案に留めます。",
         }, {
           role: "user",
-          content: `日付: ${reportDate}\n未完了TODO: ${JSON.stringify(context.todos)}\n営業状況: ${JSON.stringify(context.sales)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary}`,
+          content: `日付: ${reportDate}\n未完了TODO: ${JSON.stringify(context.todos)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary}`,
         }],
       });
       content = result.choices[0]?.message?.content?.trim() || content;

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BellRing, BookOpen, CheckCircle2, Circle, Clock3, ExternalLink, Link2,
-  Loader2, MessageCircle, Plus, RefreshCw, Send, Sparkles, Trash2,
+  FileText, Loader2, MessageCircle, Plus, RefreshCw, Search, Send, Sparkles, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,21 +22,28 @@ type Profile = {
 };
 type Todo = { id: number; title: string; priority: string; status: string; createdAt: string };
 type Memory = { id: number; content: string; category: string; createdAt: string };
+type Note = { id: number; title: string; content: string; category: string; createdAt: string };
 type Report = { id: number; reportDate: string; status: string; content: string | null; deliveredAt: string | null; error: string | null; createdAt: string };
 
 const formatTime = (value: string | null) => value ? new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
 const DEFAULT_REPORT_TOPICS = ["日本と世界の経済ニュース", "SNSで話題のニュースとトレンド", "物流・人材業界の最新ニュース", "中小企業と営業活動に影響するニュース"];
+const NOTE_CATEGORIES: Record<string, string> = { todo: "TODO候補", idea: "アイデア", decision: "判断", person_company: "人・会社", sales: "営業メモ", reference: "参考情報", temporary: "一時メモ" };
 
 export default function OfficialLinePage() {
   const { toast } = useToast();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [todoTitle, setTodoTitle] = useState("");
   const [memoryText, setMemoryText] = useState("");
+  const [noteText, setNoteText] = useState("");
+  const [noteCategory, setNoteCategory] = useState("temporary");
+  const [searchText, setSearchText] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ source: string; category: string; title: string; content: string; createdAt: string }>>([]);
   const [topicText, setTopicText] = useState("");
   const [chatText, setChatText] = useState("");
   const [chatHistory, setChatHistory] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
@@ -53,6 +60,7 @@ export default function OfficialLinePage() {
       setProfile(data.profile);
       setTodos(data.todos);
       setMemories(data.memories);
+      setNotes(data.notes ?? []);
       setReports(data.reports);
       setActiveReport(data.reports[0] ?? null);
     } catch (error) {
@@ -105,6 +113,38 @@ export default function OfficialLinePage() {
     const memory = await res.json();
     setMemories((items) => [memory, ...items]);
     setMemoryText("");
+  };
+
+  const addNote = async () => {
+    if (!noteText.trim()) return;
+    const res = await fetch("/api/assistant/notes", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: noteText, category: noteCategory }),
+    });
+    if (!res.ok) { toast({ title: "整理メモを保存できませんでした", variant: "destructive" }); return; }
+    const note = await res.json();
+    setNotes((items) => [note, ...items]);
+    setNoteText("");
+  };
+
+  const removeNote = async (note: Note) => {
+    const res = await fetch(`/api/assistant/notes/${note.id}`, { method: "DELETE", credentials: "include" });
+    if (res.ok) setNotes((items) => items.filter((item) => item.id !== note.id));
+  };
+
+  const searchKnowledge = async () => {
+    if (!searchText.trim()) return;
+    setBusy("search");
+    try {
+      const res = await fetch(`/api/assistant/search?q=${encodeURIComponent(searchText.trim())}`, { credentials: "include" });
+      if (!res.ok) throw new Error("情報を検索できませんでした");
+      const data = await res.json();
+      setSearchResults(data.results ?? []);
+    } catch (error) {
+      toast({ title: "検索に失敗しました", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally { setBusy(null); }
   };
 
   const sendChat = async () => {
@@ -213,7 +253,17 @@ export default function OfficialLinePage() {
             </div>
 
             <div className="border border-border bg-card">
-              <div className="p-5 border-b border-border flex items-center gap-2"><Sparkles className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">秘書に相談する</h2></div>
+              <div className="p-5 border-b border-border flex items-center gap-2"><FileText className="w-4 h-4 text-emerald-400" /><div><h2 className="font-semibold">情報整理・横断検索</h2><p className="text-xs text-muted-foreground mt-1">思いつき、会社情報、判断メモを残し、会話・TODO・記憶・ニュースから探せます。</p></div></div>
+              <div className="p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row gap-2"><Input value={searchText} onChange={(e) => setSearchText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void searchKnowledge()} placeholder="例: 先週の採用の話、あの会社の情報" className="rounded-none" /><Button variant="outline" onClick={() => void searchKnowledge()} disabled={busy === "search"} className="rounded-none">{busy === "search" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}</Button></div>
+                {searchResults.length > 0 && <div className="space-y-2 max-h-48 overflow-y-auto">{searchResults.map((item, index) => <div key={`${item.source}-${index}`} className="border border-border p-3 text-sm"><div className="flex gap-2 items-center mb-1"><span className="text-[10px] uppercase tracking-wider text-emerald-400">{NOTE_CATEGORIES[item.category] || item.category}</span><span className="text-xs text-muted-foreground">{formatTime(item.createdAt)}</span></div><p className="font-medium">{item.title}</p><p className="text-muted-foreground whitespace-pre-wrap mt-1">{item.content}</p></div>)}</div>}
+                <div className="flex flex-col sm:flex-row gap-2"><Input value={noteText} onChange={(e) => setNoteText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void addNote()} placeholder="情報を整理メモとして保存…" className="rounded-none" /><select value={noteCategory} onChange={(e) => setNoteCategory(e.target.value)} className="h-10 border border-input bg-background px-3 text-sm">{Object.entries(NOTE_CATEGORIES).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><Button onClick={() => void addNote()} className="rounded-none"><Plus className="w-4 h-4" /></Button></div>
+                {notes.length > 0 && <div className="grid md:grid-cols-2 gap-2">{notes.slice(0, 8).map((note) => <div key={note.id} className="border border-border p-3 text-sm group"><div className="flex items-center justify-between gap-2"><span className="text-[10px] uppercase tracking-wider text-emerald-400">{NOTE_CATEGORIES[note.category] || note.category}</span><button onClick={() => void removeNote(note)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3.5 h-3.5" /></button></div><p className="font-medium mt-1">{note.title}</p><p className="text-muted-foreground mt-1 line-clamp-3">{note.content}</p></div>)}</div>}
+              </div>
+            </div>
+
+            <div className="border border-border bg-card">
+              <div className="p-5 border-b border-border flex items-center justify-between gap-3"><div className="flex items-center gap-2"><Sparkles className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">秘書に相談する</h2></div><span className="text-xs text-muted-foreground">「壁打ち: 」から送ると整理モードになります</span></div>
              <div className="p-5 space-y-3 max-h-80 overflow-y-auto">{chatHistory.length === 0 ? <p className="text-sm text-muted-foreground">「明日のTODOに見積もり作成を追加」「今月の目標を覚えて」など、自然な文章で話しかけられます。</p> : chatHistory.map((message, index) => <div key={index} className={`whitespace-pre-wrap break-words text-[15px] leading-7 p-4 border ${message.role === "user" ? "ml-8 border-border bg-muted/30" : "mr-8 border-emerald-500/20 bg-emerald-500/5"}`}>{message.content}</div>)}</div>
               <div className="p-5 pt-0 flex gap-2"><Input value={chatText} onChange={(e) => setChatText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void sendChat()} placeholder="AI秘書への依頼を入力…" className="rounded-none" /><Button onClick={() => void sendChat()} disabled={busy === "chat"} className="rounded-none bg-emerald-600 hover:bg-emerald-500">{busy === "chat" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</Button></div>
             </div>
