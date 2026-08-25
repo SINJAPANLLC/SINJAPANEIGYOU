@@ -19,6 +19,7 @@ import PrFreePage from "@/pages/pr-free";
 import JimotyPage from "@/pages/jimoty";
 import TikTokDmPage from "@/pages/tiktok-dm";
 import AiTeleapoPage from "@/pages/ai-teleapo";
+import OfficialLinePage from "@/pages/official-line";
 import NotFound from "@/pages/not-found";
 
 function HomeRedirect() {
@@ -54,6 +55,7 @@ function AppRoutes() {
       <Route path="/jimoty"><ProtectedRoute component={JimotyPage} /></Route>
       <Route path="/tiktok-dm"><ProtectedRoute component={TikTokDmPage} /></Route>
       <Route path="/ai-teleapo"><ProtectedRoute component={AiTeleapoPage} /></Route>
+      <Route path="/official-line"><ProtectedRoute component={OfficialLinePage} /></Route>
 
       <Route component={NotFound} />
     </Switch>

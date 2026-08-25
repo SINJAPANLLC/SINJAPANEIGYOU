@@ -15,6 +15,7 @@ import {
   MapPin,
   Music2,
   Phone,
+  MessageCircle,
 } from "lucide-react";
 import {
   Sidebar,
@@ -46,6 +47,7 @@ const navigationExtra = [
   { name: "SNS", href: "/sns", icon: MessageSquare },
   { name: "TikTok DM", href: "/tiktok-dm", icon: Music2 },
   { name: "ジモティー", href: "/jimoty", icon: MapPin },
+  { name: "公式LINE", href: "/official-line", icon: MessageCircle },
 ];
 
 export function SidebarLayout({ children }: { children: ReactNode }) {
