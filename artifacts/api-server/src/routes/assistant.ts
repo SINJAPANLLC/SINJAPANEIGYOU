@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import crypto from "crypto";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   assistantMemoriesTable,
   assistantMessagesTable,
@@ -31,15 +32,22 @@ router.post("/assistant/line/webhook", async (req, res): Promise<void> => {
       const profiles = await db.select().from(assistantProfilesTable);
       const linked = profiles.find((profile) => profile.lineUserId === lineUserId);
       if (linked) {
-        const result = await processAssistantMessage(linked.userId, text, "line");
-        if (event.replyToken) await replyLineText(event.replyToken, result.reply);
+        const result = await processAssistantMessage(linked.userId, text, "line", event.message?.id);
+        if (!result.duplicate && event.replyToken) await replyLineText(event.replyToken, result.reply);
         continue;
       }
       const codeMatch = text.match(/(?:連携コード|リンクコード|link code)\s*[:：]?\s*([A-Z0-9]{8})/i);
       const candidate = codeMatch ? profiles.find((profile) => !profile.lineUserId && profile.linkCode === codeMatch[1].toUpperCase()) : null;
       if (candidate) {
-        await db.update(assistantProfilesTable).set({ lineUserId, lineDisplayName: event.source?.displayName || null }).where(eq(assistantProfilesTable.id, candidate.id));
-        if (event.replyToken) await replyLineText(event.replyToken, "連携が完了しました。これからあなた専用のAI秘書として利用できます。まずは「今日のTODOを教えて」と話しかけてください。");
+        const [claimed] = await db.update(assistantProfilesTable)
+          .set({ lineUserId, lineDisplayName: event.source?.displayName || null, linkCode: `USED${candidate.id}X` })
+          .where(and(eq(assistantProfilesTable.id, candidate.id), isNull(assistantProfilesTable.lineUserId)))
+          .returning();
+        if (claimed) {
+          if (event.replyToken) await replyLineText(event.replyToken, "連携が完了しました。これからあなた専用のAI秘書として利用できます。まずは「今日のTODOを教えて」と話しかけてください。");
+        } else if (event.replyToken) {
+          await replyLineText(event.replyToken, "連携コードはすでに使用されています。ダッシュボードで新しい連携コードを確認してください。");
+        }
       } else if (event.replyToken) {
         await replyLineText(event.replyToken, "このAI秘書は本人専用です。ダッシュボードの「公式LINE」画面で表示される連携コードを送信してください。");
       }
@@ -58,6 +66,21 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
   }
 }
 
+function presentProfile(profile: typeof assistantProfilesTable.$inferSelect) {
+  return {
+    ...profile,
+    reportTopics: parseJson<string[]>(profile.reportTopics, []),
+    lineConfigured: isLineConfigured(),
+    linked: Boolean(profile.lineUserId),
+    webhookUrl: `${process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || "your-domain"}`}/api/assistant/line/webhook`,
+  };
+}
+
+function nextLinkCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  return Array.from(crypto.randomBytes(8), (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
 router.get("/assistant/state", requireAuth, async (req, res): Promise<void> => {
   const userId = getUserId(req);
   const profile = await getOrCreateAssistantProfile(userId);
@@ -67,12 +90,7 @@ router.get("/assistant/state", requireAuth, async (req, res): Promise<void> => {
     db.select().from(assistantReportsTable).where(eq(assistantReportsTable.userId, userId)).orderBy(desc(assistantReportsTable.createdAt)).limit(12),
   ]);
   res.json({
-    profile: {
-      ...profile,
-      reportTopics: parseJson<string[]>(profile.reportTopics, []),
-      lineConfigured: isLineConfigured(),
-      linked: Boolean(profile.lineUserId),
-    },
+    profile: presentProfile(profile),
     memories,
     todos,
     reports,
@@ -89,7 +107,7 @@ router.patch("/assistant/profile", requireAuth, async (req, res): Promise<void> 
   if (Array.isArray(req.body.reportTopics)) updates.reportTopics = JSON.stringify(req.body.reportTopics.filter((topic: unknown) => typeof topic === "string" && topic.trim()).slice(0, 10));
   if (req.body.timezone === "Asia/Tokyo") updates.timezone = req.body.timezone;
   const [profile] = await db.update(assistantProfilesTable).set(updates).where(eq(assistantProfilesTable.userId, userId)).returning();
-  res.json({ ...profile, reportTopics: parseJson<string[]>(profile.reportTopics, []), lineConfigured: isLineConfigured(), linked: Boolean(profile.lineUserId) });
+  res.json(presentProfile(profile));
 });
 
 router.post("/assistant/chat", requireAuth, async (req, res): Promise<void> => {
@@ -154,7 +172,7 @@ router.post("/assistant/line/test", requireAuth, async (req, res): Promise<void>
 });
 
 router.post("/assistant/line/unlink", requireAuth, async (req, res): Promise<void> => {
-  await db.update(assistantProfilesTable).set({ lineUserId: null, lineDisplayName: null }).where(eq(assistantProfilesTable.userId, getUserId(req)));
+  await db.update(assistantProfilesTable).set({ lineUserId: null, lineDisplayName: null, linkCode: nextLinkCode() }).where(eq(assistantProfilesTable.userId, getUserId(req)));
   res.json({ ok: true });
 });
 
@@ -171,12 +189,12 @@ router.get("/assistant/reports/:id", requireAuth, async (req, res): Promise<void
 });
 
 router.post("/assistant/reports/preview", requireAuth, async (req, res): Promise<void> => {
-  const result = await generateDailyReport(getUserId(req), { deliver: false, force: true });
+  const result = await generateDailyReport(getUserId(req), { deliver: false, force: false });
   res.json({ report: result.report, delivered: false });
 });
 
 router.post("/assistant/reports/run", requireAuth, async (req, res): Promise<void> => {
-  const result = await generateDailyReport(getUserId(req), { deliver: req.body.deliver !== false, force: true });
+  const result = await generateDailyReport(getUserId(req), { deliver: req.body.deliver !== false, force: false });
   if (result.report.status === "failed") { res.status(502).json(result); return; }
   res.json(result);
 });

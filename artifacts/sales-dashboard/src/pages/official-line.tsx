@@ -18,6 +18,7 @@ type Profile = {
   reportMinute: number;
   timezone: string;
   reportTopics: string[];
+  webhookUrl: string;
 };
 type Todo = { id: number; title: string; priority: string; status: string; createdAt: string };
 type Memory = { id: number; content: string; category: string; createdAt: string };
@@ -199,7 +200,7 @@ export default function OfficialLinePage() {
               <div className="p-5 border-b border-border flex items-center justify-between"><div className="flex gap-2 items-center"><Link2 className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">本人専用LINEを連携</h2></div><span className={`text-xs px-2 py-1 border ${profile.lineConfigured ? "border-emerald-500/40 text-emerald-400" : "border-amber-500/40 text-amber-400"}`}>{profile.lineConfigured ? "API設定済み" : "API設定待ち"}</span></div>
               <div className="p-5 grid md:grid-cols-3 gap-4 text-sm">
                 <div><p className="text-muted-foreground text-xs mb-1">1. シークレット</p><p>Replit Secretsに <code>LINE_CHANNEL_SECRET</code> と <code>LINE_CHANNEL_ACCESS_TOKEN</code> を安全に登録します。</p></div>
-                <div><p className="text-muted-foreground text-xs mb-1">2. Webhook URL</p><p>LINE DevelopersのWebhook URLを <code>/api/assistant/line/webhook</code> に設定します。</p></div>
+                <div><p className="text-muted-foreground text-xs mb-1">2. Webhook URL</p><p className="break-all">LINE DevelopersのWebhook URLを以下に設定します。</p><code className="block mt-2 text-[11px] text-emerald-300 break-all">{profile.webhookUrl}</code></div>
                 <div><p className="text-muted-foreground text-xs mb-1">3. 本人確認コード</p><div className="font-mono text-lg tracking-[0.2em] text-emerald-400 py-1">{profile.linkCode}</div><p>公式LINEへ「連携コード {profile.linkCode}」と送信します。</p></div>
               </div>
               {profile.linked && <div className="px-5 pb-5"><Button variant="outline" className="rounded-none" size="sm" disabled={busy === "line-test"} onClick={() => void testLine()}>{busy === "line-test" ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" /> : <MessageCircle className="w-3.5 h-3.5 mr-2" />}接続テストを送る</Button></div>}

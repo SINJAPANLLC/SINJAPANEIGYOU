@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import crypto from "crypto";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   assistantMemoriesTable,
@@ -59,9 +60,8 @@ export async function getOrCreateAssistantProfile(userId: string) {
 
 function cryptoRandomCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 8; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return code;
+  const bytes = crypto.randomBytes(8);
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
 export async function buildAssistantContext(userId: string) {
@@ -109,8 +109,9 @@ function fallbackResponse(text: string, context: Awaited<ReturnType<typeof build
   return { reply, actions };
 }
 
-export async function processAssistantMessage(userId: string, text: string, source = "line") {
-  await db.insert(assistantMessagesTable).values({ userId, source, role: "user", content: text });
+export async function processAssistantMessage(userId: string, text: string, source = "line", lineMessageId?: string) {
+  const inserted = await db.insert(assistantMessagesTable).values({ userId, source, role: "user", content: text, lineMessageId: lineMessageId || null }).onConflictDoNothing().returning();
+  if (!inserted.length) return { reply: "", actions: [] as AssistantAction[], duplicate: true };
   const context = await buildAssistantContext(userId);
   const client = getOpenAIClient();
   let reply: string;
@@ -188,9 +189,27 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
   const research = await gatherResearch(topics.length ? topics : DEFAULT_TOPICS);
   const reportDate = localDate(context.profile.timezone);
   let [report] = await db.select().from(assistantReportsTable).where(and(eq(assistantReportsTable.userId, userId), eq(assistantReportsTable.reportDate, reportDate)));
-  if (report && !options.force && (report.status === "delivered" || report.status === "completed")) return { report, delivered: Boolean(report.deliveredAt) };
+  if (report?.status === "running") return { report, delivered: false };
+  if (report?.status === "delivered" && !options.force) return { report, delivered: true };
+  if (report?.status === "completed" && report.content && !options.force) {
+    if (options.deliver && context.profile.lineUserId) {
+      const sent = await safePushLineText(context.profile.lineUserId, report.content);
+      if (!sent.ok) {
+        const [failed] = await db.update(assistantReportsTable).set({ status: "failed", error: sent.error }).where(eq(assistantReportsTable.id, report.id)).returning();
+        return { report: failed, delivered: false };
+      }
+      const [delivered] = await db.update(assistantReportsTable).set({ status: "delivered", deliveredAt: new Date(), error: null }).where(eq(assistantReportsTable.id, report.id)).returning();
+      return { report: delivered, delivered: true };
+    }
+    return { report, delivered: false };
+  }
   if (!report) {
-    [report] = await db.insert(assistantReportsTable).values({ userId, reportDate, status: "running", attemptCount: 1, startedAt: new Date() }).returning();
+    const created = await db.insert(assistantReportsTable).values({ userId, reportDate, status: "running", attemptCount: 1, startedAt: new Date() }).onConflictDoNothing().returning();
+    if (!created.length) {
+      const [existing] = await db.select().from(assistantReportsTable).where(and(eq(assistantReportsTable.userId, userId), eq(assistantReportsTable.reportDate, reportDate)));
+      return { report: existing!, delivered: Boolean(existing?.deliveredAt) };
+    }
+    report = created[0]!;
   } else {
     [report] = await db.update(assistantReportsTable).set({ status: "running", attemptCount: report.attemptCount + 1, startedAt: new Date(), error: null }).where(eq(assistantReportsTable.id, report.id)).returning();
   }
@@ -214,11 +233,13 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
     }
     await db.delete(assistantResearchItemsTable).where(eq(assistantResearchItemsTable.reportId, report.id));
     if (research.length) await db.insert(assistantResearchItemsTable).values(research.map((item) => ({ reportId: report.id, ...item })));
-    const [completed] = await db.update(assistantReportsTable).set({ status: options.deliver && context.profile.lineUserId ? "delivered" : "completed", content, sourceSummary, completedAt: new Date(), deliveredAt: options.deliver && context.profile.lineUserId ? new Date() : null, error: null }).where(eq(assistantReportsTable.id, report.id)).returning();
+    const [completed] = await db.update(assistantReportsTable).set({ status: "completed", content, sourceSummary, completedAt: new Date(), deliveredAt: null, error: null }).where(eq(assistantReportsTable.id, report.id)).returning();
     if (options.deliver && context.profile.lineUserId) {
       if (!isLineConfigured()) throw new Error("LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN が未設定です");
       const result = await safePushLineText(context.profile.lineUserId, content);
       if (!result.ok) throw new Error(result.error);
+      const [delivered] = await db.update(assistantReportsTable).set({ status: "delivered", deliveredAt: new Date() }).where(eq(assistantReportsTable.id, report.id)).returning();
+      return { report: delivered, delivered: true };
     }
     return { report: completed, delivered: Boolean(completed.deliveredAt) };
   } catch (error) {

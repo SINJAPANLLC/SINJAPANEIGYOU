@@ -41,7 +41,9 @@ export const assistantMessagesTable = pgTable("assistant_messages", {
   content: text("content").notNull(),
   lineMessageId: text("line_message_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  lineMessageIdUnique: uniqueIndex("assistant_messages_line_message_id_idx").on(table.lineMessageId),
+}));
 
 export const assistantMemoriesTable = pgTable("assistant_memories", {
   id: serial("id").primaryKey(),

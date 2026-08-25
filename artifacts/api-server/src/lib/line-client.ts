@@ -57,12 +57,10 @@ export async function pushLineText(userId: string, text: string) {
 }
 
 export async function replyLineText(replyToken: string, text: string) {
-  for (const part of splitMessage(text)) {
-    await lineRequest("/message/reply", {
-      replyToken,
-      messages: [{ type: "text", text: part }],
-    });
-  }
+  await lineRequest("/message/reply", {
+    replyToken,
+    messages: splitMessage(text).slice(0, 5).map((part) => ({ type: "text", text: part })),
+  });
 }
 
 export async function safePushLineText(userId: string, text: string) {

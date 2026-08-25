@@ -63,6 +63,8 @@ OPENAI_API_KEY=sk-xxx
 SMTP_USER=info@sinjapan-sales.site
 SMTP_PASS=YOUR_SMTP_PASSWORD
 SESSION_SECRET=$(openssl rand -hex 32)
+LINE_CHANNEL_SECRET=YOUR_LINE_CHANNEL_SECRET
+LINE_CHANNEL_ACCESS_TOKEN=YOUR_LINE_CHANNEL_ACCESS_TOKEN
 ENVEOF
   echo ""
   echo "📝 作成: $APP_DIR/.env"
@@ -77,11 +79,23 @@ fi
 sed -i "s/^PORT=.*/PORT=${API_PORT}/" "$APP_DIR/.env"
 echo "✓  .env の PORT = ${API_PORT} を確認"
 
+# ビルドとスキーマ同期で同じ接続情報を使う
+set -a
+source "$APP_DIR/.env"
+set +a
+
 echo ""
 echo "============================================"
 echo "  依存関係インストール"
 echo "============================================"
 pnpm install --frozen-lockfile
+
+echo ""
+echo "============================================"
+echo "  データベーススキーマ同期"
+echo "============================================"
+(cd "$APP_DIR/lib/db" && pnpm run push)
+echo "✓  最新スキーマを適用しました"
 
 echo ""
 echo "============================================"
