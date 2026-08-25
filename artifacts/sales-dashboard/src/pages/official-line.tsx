@@ -220,7 +220,7 @@ export default function OfficialLinePage() {
         <section className="grid lg:grid-cols-3 gap-4">
           <div className="border border-border bg-card p-5 lg:col-span-2">
             <div className="flex items-start justify-between gap-4 mb-4">
-              <div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Daily briefing</p><h2 className="font-semibold mt-1">毎朝の秘書レポート</h2><p className="text-sm text-muted-foreground mt-1">TODO、営業状況、調査トピック、今日の一歩を日本時間で通知します。</p></div>
+              <div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Daily briefing</p><h2 className="font-semibold mt-1">毎朝の秘書レポート</h2><p className="text-sm text-muted-foreground mt-1">今日の目的、TODO、売上・組織タスク、確認事項、ニュースを日本時間で通知します。</p></div>
               <Switch checked={profile.reportsEnabled} onCheckedChange={(checked) => void saveProfile({ reportsEnabled: checked })} />
             </div>
             <div className="flex flex-wrap items-end gap-3">

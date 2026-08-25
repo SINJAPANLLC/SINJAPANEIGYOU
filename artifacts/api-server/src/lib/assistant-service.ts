@@ -60,6 +60,14 @@ function localClock(timezone: string, date = new Date()) {
   return { hour: Number(parts.find((p) => p.type === "hour")?.value || 0), minute: Number(parts.find((p) => p.type === "minute")?.value || 0) };
 }
 
+function reportDateLabel(timezone: string, date = new Date()) {
+  const parts = new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", weekday: "short", timeZone: timezone }).formatToParts(date);
+  const month = parts.find((part) => part.type === "month")?.value || "";
+  const day = parts.find((part) => part.type === "day")?.value || "";
+  const weekday = parts.find((part) => part.type === "weekday")?.value || "";
+  return `${month}/${day} ${weekday}`;
+}
+
 export function getAssistantDate(timezone = "Asia/Tokyo") {
   return localDate(timezone);
 }
@@ -282,6 +290,16 @@ async function gatherResearch(topics: string[]) {
   return items;
 }
 
+function buildDailyReportDraft(timezone: string, context: Awaited<ReturnType<typeof buildAssistantContext>>, research: Array<{ topic: string; title: string; url: string; snippet: string }>) {
+  const topTodos = context.todos.slice(0, 3);
+  const oldTodos = context.todos.filter((todo) => todo.createdAt.getTime() < Date.now() - 24 * 60 * 60 * 1000).slice(0, 4);
+  const goals = context.memories.filter((memory) => memory.category === "goal").slice(0, 2);
+  const organizationNotes = context.notes.filter((note) => ["idea", "decision", "person_company", "reference"].includes(note.category)).slice(0, 4);
+  const date = reportDateLabel(timezone);
+  const bullets = (items: string[], empty: string) => items.length ? items.map((item) => `・${item}`).join("\n") : `・${empty}`;
+  return `🌅 おはようございます（${date}）\n\n🎯 今日の目的\n${bullets(goals.map((goal) => goal.content), "今日の最優先タスクを1つ決めて、着手する")}\n\n🧠 TODO（受け取った内容を要約）\n${bullets(topTodos.map((todo) => `${todo.title}${todo.priority === "high" ? "（重要）" : ""}`), "未完了のTODOはありません")}\n\n💰 売上タスク\n${bullets([`営業リード ${context.sales.leads}件`, `送信済みメール ${context.sales.sentEmails}件`, `有効な営業スケジュール ${context.sales.activeSchedules}件`], "営業タスクはありません")}\n\n🏢 組織タスク\n${bullets(organizationNotes.map((note) => `${note.title}: ${note.content}`), "整理中の組織タスクはありません")}\n\n📞 電話確認\n・電話連携は未接続です\n\n✉️ メール確認\n・個人メールは未接続です\n・営業メールの送信状況を確認してください（送信済み ${context.sales.sentEmails}件）\n\n💬 LINE確認\n・AI秘書のLINE連携：${context.profile.lineUserId ? "連携済み" : "未連携"}\n\n📝 メモ・注意事項\n${bullets(oldTodos.map((todo) => `未処理の可能性：${todo.title}`), "特にありません")}\n\n⚠️ 注意すべきリスク\n・期限が近いTODOと返信待ちの案件を確認してください\n\n⏰ 次のチェック\n・11:00に進捗確認\n\n📰 今日の情報\n${bullets(research.slice(0, 5).map((item) => `${item.title}\\n  ${item.url}`), "新しい情報はありません")}`;
+}
+
 export async function generateDailyReport(userId: string, options: { deliver?: boolean; force?: boolean } = {}) {
   const context = await buildAssistantContext(userId);
   const topics = parseTopics(context.profile.reportTopics);
@@ -315,17 +333,13 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
   try {
     const sourceSummary = research.map((item) => `${item.topic}: ${item.title} (${item.url})`).join("\n");
     const client = getOpenAIClient();
-    const priorityTodos = context.todos.filter((todo) => todo.priority === "high").concat(context.todos.filter((todo) => todo.priority !== "high")).slice(0, 3);
-    const olderTodos = context.todos.filter((todo) => todo.createdAt.getTime() < Date.now() - 24 * 60 * 60 * 1000).slice(0, 5);
-    const decisionNotes = context.notes.filter((note) => note.category === "decision").slice(0, 3);
-    let content = `おはようございます。${reportDate}の秘書レポートです。\n\n【今日やること3つ】\n${priorityTodos.length ? priorityTodos.map((todo) => `・${todo.title}${todo.priority === "high" ? " [重要]" : ""}`).join("\n") : "・未完了TODOはありません"}\n\n【期限が近いこと】\n${context.todos.filter((todo) => todo.dueAt).slice(0, 5).map((todo) => `・${todo.title}（${todo.dueAt?.toLocaleDateString("ja-JP")}）`).join("\n") || "・期限が設定されたTODOはありません"}\n\n【昨日からの未処理事項】\n${olderTodos.length ? olderTodos.map((todo) => `・${todo.title}`).join("\n") : "・未処理事項はありません"}\n\n【予定・メール】\n・個人メール・カレンダーは未接続です\n・営業メール送信済み ${context.sales.sentEmails}件 / 有効スケジュール ${context.sales.activeSchedules}件\n\n【営業上のチャンス】\n・営業リード ${context.sales.leads}件\n\n【今日の意思決定候補】\n${decisionNotes.length ? decisionNotes.map((note) => `・${note.title}: ${note.content}`).join("\n") : "・整理メモに判断候補はありません"}`;
-    if (research.length) content += `\n\n【経済・SNSトレンド】\n${research.slice(0, 10).map((r) => `・${r.title}\n  ${r.url}`).join("\n")}`;
+    let content = buildDailyReportDraft(context.profile.timezone, context, research);
     if (client) {
       const result = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{
           role: "system",
-          content: "あなたは本人専用の日本語AI秘書です。簡潔で実行しやすい朝の報告に整えてください。見出しは【今日やること3つ】【期限が近いこと】【昨日からの未処理事項】【予定・メール】【経済・SNSトレンド】【営業上のチャンス】【注意すべきリスク】【今日の意思決定候補】を使い、情報源URLは改変せず残してください。未接続のメール・カレンダーは未接続と明記し、外部操作は提案に留めます。",
+          content: "あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字はそのまま使い、可愛く親しみやすいが、仕事で読みやすい文章にしてください。情報がない項目も削除せず「ありません」「未接続」と明記してください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。情報源URLは改変しないでください。\n🌅 おはようございます（M/D 曜日）\n🎯 今日の目的\n🧠 TODO（受け取った内容を要約）\n💰 売上タスク\n🏢 組織タスク\n📞 電話確認\n✉️ メール確認\n💬 LINE確認\n📝 メモ・注意事項\n⚠️ 注意すべきリスク\n⏰ 次のチェック\n📰 今日の情報",
         }, {
           role: "user",
           content: `日付: ${reportDate}\n未完了TODO: ${JSON.stringify(context.todos)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary}`,
