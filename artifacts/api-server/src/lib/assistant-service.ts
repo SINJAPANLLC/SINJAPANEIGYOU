@@ -26,6 +26,14 @@ const DEFAULT_TOPICS = [
 ];
 const MAX_CONTEXT_ITEMS = 20;
 
+function formatAssistantReply(reply: string) {
+  return reply
+    .replace(/\r\n/g, "\n")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .trim();
+}
+
 function getOpenAIClient() {
   const apiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -129,6 +137,7 @@ export async function processAssistantMessage(userId: string, text: string, sour
 「覚えて」「記憶して」と明示された内容だけ長期記憶に保存し、「忘れて」と明示された場合だけ削除候補にします。
 次のJSONだけを返してください。replyはユーザーにそのまま見せる自然な日本語、actionsは必要な時だけ使用します。
 {"reply":"...", "actions":[{"type":"create_todo","title":"...", "details":"...", "priority":"high|normal|low"},{"type":"complete_todo","id":1},{"type":"save_memory","content":"...", "category":"preference|goal|business|general"},{"type":"forget_memory","id":1}]}
+LINEで読むことを前提に、返信は短く読みやすく整えてください。1文を短くし、段落の間に空行を入れてください。重要な項目は【見出し】、複数項目は「・」の箇条書きを使ってください。Markdownの表、長い一段落、過剰な前置きは避け、原則300文字以内にまとめてください。
 利用可能なコンテキスト:
 記憶: ${JSON.stringify(context.memories.map((m) => ({ id: m.id, category: m.category, content: m.content })))}
 未完了TODO: ${JSON.stringify(context.todos.map((t) => ({ id: t.id, title: t.title, priority: t.priority })))}
@@ -148,6 +157,7 @@ export async function processAssistantMessage(userId: string, text: string, sour
       ({ reply, actions } = fallbackResponse(text, context));
     }
   }
+  reply = formatAssistantReply(reply);
   await applyAssistantActions(userId, actions);
   await db.insert(assistantMessagesTable).values({ userId, source, role: "assistant", content: reply });
   return { reply, actions };

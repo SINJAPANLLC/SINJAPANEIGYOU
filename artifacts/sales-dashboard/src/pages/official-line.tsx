@@ -214,7 +214,7 @@ export default function OfficialLinePage() {
 
             <div className="border border-border bg-card">
               <div className="p-5 border-b border-border flex items-center gap-2"><Sparkles className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">秘書に相談する</h2></div>
-              <div className="p-5 space-y-3 max-h-80 overflow-y-auto">{chatHistory.length === 0 ? <p className="text-sm text-muted-foreground">「明日のTODOに見積もり作成を追加」「今月の目標を覚えて」など、自然な文章で話しかけられます。</p> : chatHistory.map((message, index) => <div key={index} className={`text-sm p-3 border ${message.role === "user" ? "ml-8 border-border bg-muted/30" : "mr-8 border-emerald-500/20 bg-emerald-500/5"}`}>{message.content}</div>)}</div>
+             <div className="p-5 space-y-3 max-h-80 overflow-y-auto">{chatHistory.length === 0 ? <p className="text-sm text-muted-foreground">「明日のTODOに見積もり作成を追加」「今月の目標を覚えて」など、自然な文章で話しかけられます。</p> : chatHistory.map((message, index) => <div key={index} className={`whitespace-pre-wrap break-words text-[15px] leading-7 p-4 border ${message.role === "user" ? "ml-8 border-border bg-muted/30" : "mr-8 border-emerald-500/20 bg-emerald-500/5"}`}>{message.content}</div>)}</div>
               <div className="p-5 pt-0 flex gap-2"><Input value={chatText} onChange={(e) => setChatText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && void sendChat()} placeholder="AI秘書への依頼を入力…" className="rounded-none" /><Button onClick={() => void sendChat()} disabled={busy === "chat"} className="rounded-none bg-emerald-600 hover:bg-emerald-500">{busy === "chat" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</Button></div>
             </div>
           </div>
