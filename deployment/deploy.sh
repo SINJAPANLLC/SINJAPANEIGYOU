@@ -101,8 +101,8 @@ echo ""
 echo "============================================"
 echo "  ライブラリ型定義ビルド"
 echo "============================================"
-(cd "$APP_DIR/lib/db"      && npx tsc -p tsconfig.json && echo "  ✓ @workspace/db")
-(cd "$APP_DIR/lib/api-zod" && npx tsc -p tsconfig.json && echo "  ✓ @workspace/api-zod")
+(cd "$APP_DIR/lib/db"      && pnpm exec tsc -p tsconfig.json && echo "  ✓ @workspace/db")
+(cd "$APP_DIR/lib/api-zod" && pnpm exec tsc -p tsconfig.json && echo "  ✓ @workspace/api-zod")
 
 echo ""
 echo "============================================"
