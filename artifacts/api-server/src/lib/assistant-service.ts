@@ -184,11 +184,26 @@ export async function processAssistantMessage(userId: string, text: string, sour
   if (!inserted.length) return { reply: "", actions: [] as AssistantAction[], duplicate: true };
   const context = await buildAssistantContext(userId);
   const searchResults = await searchAssistantKnowledge(userId, text);
+  const notesForAssistant = context.notes.map((note) => ({
+    id: note.id,
+    category: note.category,
+    title: note.title,
+    content: note.content,
+  }));
+  const searchForAssistant = searchResults.map((result) => ({
+    source: result.source,
+    category: result.category,
+    title: result.title,
+    content: result.content,
+  }));
   const client = getOpenAIClient();
   let reply: string;
   let actions: AssistantAction[] = [];
   if (!client) {
     ({ reply, actions } = fallbackResponse(text, context));
+    if (searchResults.length) {
+      reply = `【見つかった情報】\n${searchResults.slice(0, 3).map((result) => `・${result.title}: ${result.content}`).join("\n")}\n\n${reply}`;
+    }
   } else {
     const system = `あなたは日本語で応答する、本人専用のAI秘書です。
 外部に影響する操作（メール送信、電話、SNS投稿、予約、購入）は絶対に実行せず、必要なら確認を取って下書き・提案だけします。
@@ -201,6 +216,8 @@ LINEで読むことを前提に、返信は短く読みやすく整えてくだ�
 記憶: ${JSON.stringify(context.memories.map((m) => ({ id: m.id, category: m.category, content: m.content })))}
 未完了TODO: ${JSON.stringify(context.todos.map((t) => ({ id: t.id, title: t.title, priority: t.priority })))}
 営業概要: ${JSON.stringify(context.sales)}
+整理メモ: ${JSON.stringify(notesForAssistant)}
+検索一致: ${JSON.stringify(searchForAssistant)}
 直近会話: ${JSON.stringify(context.messages.map((m) => ({ role: m.role, content: m.content })))}`;
     try {
       const result = await client.chat.completions.create({
