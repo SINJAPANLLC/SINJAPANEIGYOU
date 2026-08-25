@@ -18,7 +18,12 @@ import { logger } from "./logger";
 import { searchYahooJapan } from "./search";
 import { isLineConfigured, safePushLineText } from "./line-client";
 
-const DEFAULT_TOPICS = ["物流・人材業界の最新ニュース", "営業活動に役立つニュース"];
+const DEFAULT_TOPICS = [
+  "日本と世界の経済ニュース 今日",
+  "SNSで話題のニュースとトレンド 今日",
+  "物流・人材業界の最新ニュース",
+  "中小企業と営業活動に影響するニュース",
+];
 const MAX_CONTEXT_ITEMS = 20;
 
 function getOpenAIClient() {

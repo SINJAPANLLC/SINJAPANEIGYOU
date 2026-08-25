@@ -25,6 +25,7 @@ type Memory = { id: number; content: string; category: string; createdAt: string
 type Report = { id: number; reportDate: string; status: string; content: string | null; deliveredAt: string | null; error: string | null; createdAt: string };
 
 const formatTime = (value: string | null) => value ? new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
+const DEFAULT_REPORT_TOPICS = ["日本と世界の経済ニュース", "SNSで話題のニュースとトレンド", "物流・人材業界の最新ニュース", "中小企業と営業活動に影響するニュース"];
 
 export default function OfficialLinePage() {
   const { toast } = useToast();
@@ -208,7 +209,7 @@ export default function OfficialLinePage() {
 
             <div className="border border-border bg-card">
               <div className="p-5 border-b border-border flex items-center gap-2"><BellRing className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">調査テーマ</h2></div>
-              <div className="p-5"><div className="flex gap-2"><Input value={topicText} onChange={(e) => setTopicText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTopic()} placeholder="例: 物流2026年問題のニュース" className="rounded-none" /><Button onClick={addTopic} className="rounded-none"><Plus className="w-4 h-4" /></Button></div><div className="flex flex-wrap gap-2 mt-3">{profile.reportTopics.length ? profile.reportTopics.map((topic) => <button key={topic} onClick={() => void saveProfile({ reportTopics: profile.reportTopics.filter((item) => item !== topic) })} className="border border-border px-2 py-1 text-xs hover:border-destructive hover:text-destructive">{topic} ×</button>) : <p className="text-sm text-muted-foreground">未設定の場合は、営業に役立つニュースを自動で収集します。</p>}</div></div>
+              <div className="p-5"><div className="flex gap-2"><Input value={topicText} onChange={(e) => setTopicText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTopic()} placeholder="例: 物流2026年問題のニュース" className="rounded-none" /><Button onClick={addTopic} className="rounded-none"><Plus className="w-4 h-4" /></Button></div><div className="flex flex-wrap gap-2 mt-3">{profile.reportTopics.length ? profile.reportTopics.map((topic) => <button key={topic} onClick={() => void saveProfile({ reportTopics: profile.reportTopics.filter((item) => item !== topic) })} className="border border-border px-2 py-1 text-xs hover:border-destructive hover:text-destructive">{topic} ×</button>) : <>{DEFAULT_REPORT_TOPICS.map((topic) => <span key={topic} className="border border-emerald-500/30 bg-emerald-500/5 text-emerald-300 px-2 py-1 text-xs">{topic}</span>)}<p className="basis-full text-xs text-muted-foreground mt-1">未設定の場合は、この4テーマを毎朝自動で収集します。</p></>}</div></div>
             </div>
 
             <div className="border border-border bg-card">
