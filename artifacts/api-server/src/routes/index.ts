@@ -15,6 +15,7 @@ import prArticlesRouter from "./pr-articles";
 import jimotyRouter from "./jimoty";
 import tiktokDmRouter from "./tiktok-dm";
 import teleapoRouter from "./teleapo";
+import assistantRouter from "./assistant";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(prArticlesRouter);
 router.use(jimotyRouter);
 router.use(tiktokDmRouter);
 router.use(teleapoRouter);
+router.use(assistantRouter);
 
 export default router;

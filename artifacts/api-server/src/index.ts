@@ -7,6 +7,7 @@ import { startPrFreeScheduler } from "./lib/pr-free-scheduler";
 import { startJimotyScheduler } from "./lib/jimoty-scheduler";
 import { startTikTokDmScheduler } from "./lib/tiktok-dm-scheduler";
 import { setupTeleapoWebSocket } from "./lib/teleapo-bridge";
+import { startAssistantScheduler } from "./lib/assistant-scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -39,4 +40,5 @@ server.listen(port, (err?: Error) => {
   startPrFreeScheduler();
   startJimotyScheduler().catch((err) => console.error("jimoty scheduler start failed", err));
   startTikTokDmScheduler();
+   startAssistantScheduler();
 });

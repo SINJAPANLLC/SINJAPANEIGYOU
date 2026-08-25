@@ -32,7 +32,12 @@ app.use(
 );
 
 app.use(cors({ credentials: true, origin: true }));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({
+  limit: "10mb",
+  verify: (req, _res, buffer) => {
+    (req as any).rawBody = buffer.toString("utf8");
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
