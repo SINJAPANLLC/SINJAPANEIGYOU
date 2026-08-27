@@ -366,7 +366,13 @@ export async function linkSinJapanDriverGroup(groupId: string, code: string) {
     .where(and(eq(sinJapanDriverLinkCodesTable.id, link.id), isNull(sinJapanDriverLinkCodesTable.usedAt)))
     .returning();
   if (!claimed) throw new Error("認証コードはすでに使用されています");
-  const [group] = await db.insert(sinJapanDriverGroupsTable).values({ ownerUserId: link.ownerUserId, driverId: link.driverId, groupId, groupType: link.groupType }).returning();
+  const [group] = await db.insert(sinJapanDriverGroupsTable).values({
+    ownerUserId: link.ownerUserId,
+    driverId: link.driverId,
+    groupId,
+    groupType: link.groupType,
+    onboardingGuideSentAt: link.groupType === "onboarding" ? new Date() : null,
+  }).returning();
   return group;
 }
 

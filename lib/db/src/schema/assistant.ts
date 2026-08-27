@@ -67,6 +67,7 @@ export const sinJapanDriverGroupsTable = pgTable(
     groupId: text("group_id").notNull(),
     groupType: text("group_type").notNull().default("onboarding"),
     status: text("status").notNull().default("active"),
+    onboardingGuideSentAt: timestamp("onboarding_guide_sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   },

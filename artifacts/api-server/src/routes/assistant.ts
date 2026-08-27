@@ -107,6 +107,16 @@ router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void>
         if (event.replyToken) await replySinJapanLineText(event.replyToken, driverCredentialSafetyReply());
         continue;
       }
+      if (relation.group.groupType === "onboarding" && !relation.group.onboardingGuideSentAt) {
+        const [marked] = await db.update(sinJapanDriverGroupsTable)
+          .set({ onboardingGuideSentAt: new Date() })
+          .where(and(eq(sinJapanDriverGroupsTable.id, relation.group.id), isNull(sinJapanDriverGroupsTable.onboardingGuideSentAt)))
+          .returning();
+        if (marked && event.replyToken) {
+          await replySinJapanLineText(event.replyToken, await buildSinJapanOnboardingGuide(relation.driver.ownerUserId, relation.driver.id));
+        }
+        continue;
+      }
       const received = await recordSinJapanDriverReport({
         ownerUserId: relation.driver.ownerUserId,
         driverId: relation.driver.id,
