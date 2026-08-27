@@ -324,6 +324,7 @@ export async function processSinJapanDriverMessage(ownerUserId: string, driverId
     or(eq(sinJapanResourcesTable.phase, "all"), eq(sinJapanResourcesTable.phase, driver.workflowStatus)),
   ));
   const driverSafeFields = (process.env.AIRTABLE_DRIVER_SAFE_FIELDS || "").split(/[\n,]/).map((field) => field.trim()).filter(Boolean);
+  const driverLookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
   const driverTenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
   const driverTenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
   return processAssistantMessage(ownerUserId, text, "sin-japan-driver", lineMessageId, {
@@ -333,7 +334,7 @@ export async function processSinJapanDriverMessage(ownerUserId: string, driverId
     appsStatus: driver.appsStatus,
     groupType,
     resources,
-    airtable: { driverRecordId: driver.airtableRecordId, driverSafeFields, driverTenantField, driverTenantValue, commonTables },
+    airtable: { driverLookupKey: driver.airtableLookupKey, driverLookupField, driverSafeFields, driverTenantField, driverTenantValue, commonTables },
   });
 }
 

@@ -42,7 +42,6 @@ type Driver = {
   id: number;
   name: string;
   airtableLookupKey: string;
-  airtableRecordId: string | null;
   lineUserId: string | null;
   status: string;
   workflowStatus: "hired" | "onboarding" | "ready" | "operating" | "inactive";
@@ -101,7 +100,6 @@ export default function SinJapanLinePage() {
   const [loading, setLoading] = useState(true);
   const [newDriverName, setNewDriverName] = useState("");
   const [newDriverKey, setNewDriverKey] = useState("");
-  const [newDriverRecordId, setNewDriverRecordId] = useState("");
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
   const [codes, setCodes] = useState<Partial<Record<"onboarding" | "operation", LinkCode>>>({});
   const [driverQuestion, setDriverQuestion] = useState("");
@@ -158,13 +156,12 @@ export default function SinJapanLinePage() {
       const driver = await requestJson<Driver>("/api/assistant/sin-japan-line/drivers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, airtableLookupKey: newDriverKey.trim() || name, airtableRecordId: newDriverRecordId.trim() || null }),
+        body: JSON.stringify({ name, airtableLookupKey: newDriverKey.trim() || name }),
       });
       setDrivers((current) => [{ ...driver, groups: [] }, ...current]);
       setSelectedDriverId(driver.id);
       setNewDriverName("");
       setNewDriverKey("");
-      setNewDriverRecordId("");
       setCodes({});
       toast({ title: "ドライバーを登録しました" });
     } catch (error) {
@@ -338,7 +335,7 @@ export default function SinJapanLinePage() {
           </div>
           <div className="grid md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-emerald-500/20">
             {[
-              ["01", "ドライバー登録", "AirtableレコードIDがあれば入力"],
+              ["01", "ドライバー登録", "Airtable検索キーを登録"],
               ["02", "案内リンク登録", "資料・フォーム・研修案内を登録"],
               ["03", "採用グループ紐付け", "SIN JAPAN LINEを招待して認証"],
               ["04", "稼働後は別グループ", "稼働報告グループは紐付け不要"],
@@ -387,8 +384,8 @@ export default function SinJapanLinePage() {
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-widest text-muted-foreground">ドライバー登録</p>
               <input value={newDriverName} onChange={(event) => setNewDriverName(event.target.value)} placeholder="ドライバー名" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
-              <input value={newDriverKey} onChange={(event) => setNewDriverKey(event.target.value)} placeholder="Airtable検索キー（任意）" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
-              <input value={newDriverRecordId} onChange={(event) => setNewDriverRecordId(event.target.value)} placeholder="AirtableレコードID（個別案内用）" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
+              <input value={newDriverKey} onChange={(event) => setNewDriverKey(event.target.value)} placeholder="Airtable検索キー（氏名など）" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">Airtableの指定項目と完全一致で検索します。氏名の部分一致やレコードID入力は使用しません。</p>
               <Button onClick={() => void addDriver()} disabled={!newDriverName.trim()} className="rounded-none w-full"><Plus className="w-4 h-4 mr-2" />ドライバーを登録</Button>
               <div className="pt-3 border-t border-border space-y-2 max-h-[480px] overflow-y-auto">
                 {drivers.length === 0 ? <p className="text-xs text-muted-foreground">管理者がAirtableへ入力後、ここへドライバーを登録してください。</p> : drivers.map((driver) => (
@@ -409,7 +406,7 @@ export default function SinJapanLinePage() {
               <div className="space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div><p className="text-xs uppercase tracking-widest text-emerald-400">Selected driver</p><h3 className="text-xl font-semibold mt-1">{selectedDriver.name}</h3></div>
-                  <span className="text-xs border border-border px-3 py-1.5 w-fit">個別参照：{selectedDriver.airtableRecordId ? "レコードID設定済み" : "未設定（会社共通案内のみ）"}</span>
+                  <span className="text-xs border border-border px-3 py-1.5 w-fit">個別検索キー：{selectedDriver.airtableLookupKey ? "設定済み" : "未設定"}</span>
                 </div>
 
                 <div className="grid md:grid-cols-2 gap-4">

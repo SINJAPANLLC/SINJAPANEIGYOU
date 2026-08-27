@@ -25,7 +25,8 @@ export type AirtableSearchResult = {
 export type AirtableSearchOptions = {
   scopeKey?: string;
   commonTables?: string[];
-  driverRecordId?: string | null;
+  driverLookupKey?: string | null;
+  driverLookupField?: string | null;
   driverSafeFields?: string[];
   driverTenantField?: string;
   driverTenantValue?: string;
@@ -99,6 +100,10 @@ function escapeFormulaValue(value: string) {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function formulaFieldName(value: string) {
+  return `{${value.replace(/\\/g, "\\\\").replace(/}/g, "\\}")}}`;
+}
+
 function searchTerms(input: string) {
   const normalized = input.trim().replace(/\s+/g, " ");
   const chunks = normalized.split(/[\s、。,.，、:：/／!?！？]+/).filter((term) => term.length >= 2);
@@ -116,16 +121,19 @@ function buildFilterFormula(table: AirtableTable, terms: string[], options: Airt
   const fields = textFields(table, allowedFields);
   const queryExpressions = terms.flatMap((term) => fields.map((field) => `SEARCH("${escapeFormulaValue(term)}", CONCATENATE({${field.name}})) > 0`));
   const queryFormula = queryExpressions.length ? `OR(${queryExpressions.join(",")})` : "";
-  const recordIdFormula = options.driverRecordId ? `RECORD_ID() = "${escapeFormulaValue(options.driverRecordId)}"` : "";
-  const tenantFormula = options.driverTenantField && options.driverTenantValue
-    ? `{${options.driverTenantField.replace(/}/g, "\\}")}} = "${escapeFormulaValue(options.driverTenantValue)}"`
+  const driverLookupFormula = options.driverLookupField && options.driverLookupKey
+    ? `${formulaFieldName(options.driverLookupField)} = "${escapeFormulaValue(options.driverLookupKey)}"`
     : "";
-  const exactDriverFormula = recordIdFormula && tenantFormula ? `AND(${recordIdFormula}, ${tenantFormula})` : "";
+  const tenantFormula = options.driverTenantField && options.driverTenantValue
+    ? `${formulaFieldName(options.driverTenantField)} = "${escapeFormulaValue(options.driverTenantValue)}"`
+    : "";
+  const exactDriverFormula = driverLookupFormula && tenantFormula ? `AND(${driverLookupFormula}, ${tenantFormula})` : "";
   const legacyScopeExpressions = options.scopeKey
     ? fields.map((field) => `SEARCH("${escapeFormulaValue(options.scopeKey!)}", CONCATENATE({${field.name}})) > 0`)
     : [];
   const legacyScopeFormula = legacyScopeExpressions.length ? `OR(${legacyScopeExpressions.join(",")})` : "";
-  const scopeFormula = exactDriverFormula || legacyScopeFormula;
+  const hasDriverScope = options.driverLookupKey !== undefined || options.driverLookupField !== undefined || options.driverSafeFields !== undefined;
+  const scopeFormula = exactDriverFormula || (hasDriverScope ? "" : legacyScopeFormula);
   if (queryFormula && scopeFormula) return `AND(${queryFormula}, ${scopeFormula})`;
   return scopeFormula || queryFormula;
 }
@@ -165,6 +173,11 @@ async function getMatchingRecords(table: AirtableTable, terms: string[], options
     `${AIRTABLE_API_ROOT}/${encodeURIComponent(baseId)}/${encodeURIComponent(table.id)}?${params.toString()}`,
   );
   return (data.records || [])
+    .filter((record) => {
+      if (options.driverLookupField && options.driverLookupKey && fieldText(record.fields[options.driverLookupField]) !== options.driverLookupKey) return false;
+      if (options.driverTenantField && options.driverTenantValue && fieldText(record.fields[options.driverTenantField]) !== options.driverTenantValue) return false;
+      return true;
+    })
     .map((record) => recordToSearchResult(table, record, safeFields))
     .filter((record) => {
       const text = `${record.title}\n${record.content}`.toLocaleLowerCase("ja-JP");
@@ -179,8 +192,8 @@ export async function searchAirtable(query: string, options: AirtableSearchOptio
   try {
     const tables = await getTables();
     const records: AirtableSearchRecord[] = [];
-    const driverMode = options.driverRecordId !== undefined || options.driverSafeFields !== undefined;
-    const privateDriverSearchAllowed = Boolean(options.driverRecordId && options.driverSafeFields?.length && options.driverTenantField && options.driverTenantValue);
+    const driverMode = options.driverLookupKey !== undefined || options.driverLookupField !== undefined || options.driverSafeFields !== undefined;
+    const privateDriverSearchAllowed = Boolean(options.driverLookupKey && options.driverLookupField && options.driverSafeFields?.length && options.driverTenantField && options.driverTenantValue);
     for (const table of tables.slice(0, MAX_TABLES)) {
       try {
         const isCommonTable = (options.commonTables || []).some((name) => name.trim() === table.name);

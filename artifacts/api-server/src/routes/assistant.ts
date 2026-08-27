@@ -234,7 +234,6 @@ router.post("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): 
     ownerUserId: getUserId(req),
     name,
     airtableLookupKey,
-    airtableRecordId: typeof req.body.airtableRecordId === "string" && req.body.airtableRecordId.trim() ? req.body.airtableRecordId.trim() : null,
     lineUserId: typeof req.body.lineUserId === "string" && req.body.lineUserId.trim() ? req.body.lineUserId.trim() : null,
   }).returning();
   res.status(201).json(driver);
@@ -246,7 +245,6 @@ router.patch("/assistant/sin-japan-line/drivers/:id", requireAuth, async (req, r
   const updates: Partial<typeof sinJapanDriversTable.$inferInsert> = {};
   if (typeof req.body.name === "string" && req.body.name.trim()) updates.name = req.body.name.trim();
   if (typeof req.body.airtableLookupKey === "string" && req.body.airtableLookupKey.trim()) updates.airtableLookupKey = req.body.airtableLookupKey.trim();
-  if (typeof req.body.airtableRecordId === "string") updates.airtableRecordId = req.body.airtableRecordId.trim() || null;
   if (typeof req.body.lineUserId === "string") updates.lineUserId = req.body.lineUserId.trim() || null;
   if (req.body.status === "active" || req.body.status === "inactive") updates.status = req.body.status;
   if (["hired", "onboarding", "ready", "operating", "inactive"].includes(req.body.workflowStatus)) updates.workflowStatus = req.body.workflowStatus;
