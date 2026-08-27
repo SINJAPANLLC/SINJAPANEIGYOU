@@ -357,11 +357,7 @@ export async function getAirtableDriverDetails(
     : tables.find((candidate) => driverLookupFields(candidate, process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "").length > 0);
   if (!table) throw new Error("ドライバー情報のAirtableテーブルが見つかりません");
 
-  const configuredLookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
-  if (!configuredLookupField) {
-    throw new Error("個別フォームの取得には、Airtableの検索項目の設定が必要です");
-  }
-  const lookupFields = driverLookupFields(table, configuredLookupField);
+  const lookupFields = driverLookupFields(table, process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "");
   const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
   const tenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
   const detailFields = configuredDriverDetailFields();
