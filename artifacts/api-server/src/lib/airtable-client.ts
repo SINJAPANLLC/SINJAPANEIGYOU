@@ -234,7 +234,7 @@ export async function searchAirtable(query: string, options: AirtableSearchOptio
 
 export async function searchAirtableLookupCandidates(query: string): Promise<{ candidates: AirtableLookupCandidate[]; error: string | null }> {
   const normalizedQuery = query.trim().replace(/\s+/g, " ");
-  if (normalizedQuery.length < 2) return { candidates: [], error: null };
+  if (!normalizedQuery) return { candidates: [], error: null };
 
   const configuredLookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
   const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";

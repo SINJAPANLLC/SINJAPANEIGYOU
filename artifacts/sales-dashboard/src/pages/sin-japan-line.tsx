@@ -103,6 +103,7 @@ export default function SinJapanLinePage() {
   const [newDriverKey, setNewDriverKey] = useState("");
   const [driverCandidates, setDriverCandidates] = useState<DriverCandidate[]>([]);
   const [isSearchingDriverCandidates, setIsSearchingDriverCandidates] = useState(false);
+  const [driverCandidateMessage, setDriverCandidateMessage] = useState("");
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
   const [codes, setCodes] = useState<Partial<Record<"onboarding" | "operation", LinkCode>>>({});
   const [driverQuestion, setDriverQuestion] = useState("");
@@ -137,20 +138,26 @@ export default function SinJapanLinePage() {
 
   useEffect(() => {
     const query = newDriverName.trim();
-    if (query.length < 2) {
+    if (!query) {
       setDriverCandidates([]);
       setIsSearchingDriverCandidates(false);
+      setDriverCandidateMessage("");
       return;
     }
     let active = true;
     const timer = window.setTimeout(() => {
       setIsSearchingDriverCandidates(true);
+      setDriverCandidateMessage("");
       void requestJson<{ candidates: DriverCandidate[]; error: string | null }>(`/api/assistant/sin-japan-line/driver-candidates?query=${encodeURIComponent(query)}`)
         .then((data) => {
-          if (active) setDriverCandidates(data.candidates);
+          if (!active) return;
+          setDriverCandidates(data.candidates);
+          setDriverCandidateMessage(data.error || (data.candidates.length ? "" : "Airtableに一致するドライバー候補がありません。"));
         })
         .catch(() => {
-          if (active) setDriverCandidates([]);
+          if (!active) return;
+          setDriverCandidates([]);
+          setDriverCandidateMessage("Airtableの候補を取得できませんでした。接続設定をご確認ください。");
         })
         .finally(() => {
           if (active) setIsSearchingDriverCandidates(false);
@@ -415,16 +422,16 @@ export default function SinJapanLinePage() {
               <p className="text-xs uppercase tracking-widest text-muted-foreground">ドライバー登録</p>
               <div className="relative">
                 <input value={newDriverName} onChange={(event) => setNewDriverName(event.target.value)} placeholder="ドライバー名を入力して検索" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
-                {(isSearchingDriverCandidates || driverCandidates.length > 0) && (
+                {(isSearchingDriverCandidates || driverCandidates.length > 0 || driverCandidateMessage) && (
                   <div className="absolute z-20 top-11 left-0 right-0 border border-border bg-card shadow-xl">
                     {isSearchingDriverCandidates ? (
                       <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" />Airtableから候補を検索しています</div>
-                    ) : driverCandidates.map((candidate) => (
+                    ) : driverCandidates.length ? driverCandidates.map((candidate) => (
                       <button key={`${candidate.table}-${candidate.value}`} type="button" onClick={() => { setNewDriverName(candidate.value); setNewDriverKey(candidate.value); setDriverCandidates([]); }} className="w-full text-left px-3 py-2.5 border-b border-border last:border-b-0 hover:bg-emerald-500/10">
                         <span className="block text-sm">{candidate.value}</span>
                         <span className="block text-[10px] text-muted-foreground mt-0.5">Airtable候補 · {candidate.table}</span>
                       </button>
-                    ))}
+                    )) : <div className="px-3 py-2.5 text-xs text-muted-foreground">{driverCandidateMessage}</div>}
                   </div>
                 )}
               </div>

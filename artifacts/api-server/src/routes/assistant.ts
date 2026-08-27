@@ -226,7 +226,7 @@ router.get("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): P
 
 router.get("/assistant/sin-japan-line/driver-candidates", requireAuth, async (req, res): Promise<void> => {
   const query = typeof req.query.query === "string" ? req.query.query.trim() : "";
-  if (query.length < 2) { res.json({ candidates: [], error: null }); return; }
+  if (!query) { res.json({ candidates: [], error: null }); return; }
   res.json(await searchAirtableLookupCandidates(query));
 });
 
