@@ -19,7 +19,7 @@ import {
 import { getUserId, requireAuth } from "../lib/auth";
 import { buildSinJapanDailyReport, buildSinJapanOnboardingGuide, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
 import { isLineConfigured, isSinJapanLineConfigured, replyLineText, replySinJapanLineText, safePushLineText, verifyLineSignature, verifySinJapanLineSignature } from "../lib/line-client";
-import { getAirtableStatus } from "../lib/airtable-client";
+import { getAirtableStatus, searchAirtableLookupCandidates } from "../lib/airtable-client";
 
 const router: IRouter = Router();
 
@@ -222,6 +222,12 @@ router.get("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): P
   const drivers = await db.select().from(sinJapanDriversTable).where(eq(sinJapanDriversTable.ownerUserId, getUserId(req))).orderBy(desc(sinJapanDriversTable.createdAt));
   const groups = await db.select().from(sinJapanDriverGroupsTable).where(eq(sinJapanDriverGroupsTable.ownerUserId, getUserId(req)));
   res.json(drivers.map((driver) => ({ ...driver, groups: groups.filter((group) => group.driverId === driver.id) })));
+});
+
+router.get("/assistant/sin-japan-line/driver-candidates", requireAuth, async (req, res): Promise<void> => {
+  const query = typeof req.query.query === "string" ? req.query.query.trim() : "";
+  if (query.length < 2) { res.json({ candidates: [], error: null }); return; }
+  res.json(await searchAirtableLookupCandidates(query));
 });
 
 router.post("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): Promise<void> => {

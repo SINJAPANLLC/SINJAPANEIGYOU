@@ -3,6 +3,7 @@ const AIRTABLE_META_ROOT = "https://api.airtable.com/v0/meta";
 const TABLE_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_TABLES = 20;
 const MAX_RECORDS_PER_TABLE = 30;
+const MAX_LOOKUP_CANDIDATES = 20;
 
 type AirtableField = { id: string; name: string; type?: string };
 type AirtableTable = { id: string; name: string; fields: AirtableField[] };
@@ -20,6 +21,11 @@ export type AirtableSearchResult = {
   records: AirtableSearchRecord[];
   searchedTables: string[];
   error: string | null;
+};
+
+export type AirtableLookupCandidate = {
+  value: string;
+  table: string;
 };
 
 export type AirtableSearchOptions = {
@@ -214,6 +220,52 @@ export async function searchAirtable(query: string, options: AirtableSearchOptio
       records: [],
       searchedTables: [],
       error: error instanceof Error ? error.message : "Airtableの検索に失敗しました",
+    };
+  }
+}
+
+export async function searchAirtableLookupCandidates(query: string): Promise<{ candidates: AirtableLookupCandidate[]; error: string | null }> {
+  const normalizedQuery = query.trim().replace(/\s+/g, " ");
+  if (normalizedQuery.length < 2) return { candidates: [], error: null };
+
+  const lookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
+  const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
+  const tenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
+  if (!lookupField || !tenantField || !tenantValue) {
+    return { candidates: [], error: "ドライバー候補検索にはAirtableの検索項目とテナント条件の設定が必要です" };
+  }
+
+  try {
+    const tables = await getTables();
+    const candidates: AirtableLookupCandidate[] = [];
+    const seen = new Set<string>();
+    const searchFormula = `SEARCH("${escapeFormulaValue(normalizedQuery)}", CONCATENATE(${formulaFieldName(lookupField)})) > 0`;
+    const tenantFormula = `${formulaFieldName(tenantField)} = "${escapeFormulaValue(tenantValue)}"`;
+    for (const table of tables.slice(0, MAX_TABLES)) {
+      try {
+        const params = new URLSearchParams({ pageSize: String(MAX_LOOKUP_CANDIDATES), filterByFormula: `AND(${searchFormula}, ${tenantFormula})` });
+        params.append("fields[]", lookupField);
+        if (tenantField !== lookupField) params.append("fields[]", tenantField);
+        const data = await airtableJson<{ records?: AirtableRecord[] }>(
+          `${AIRTABLE_API_ROOT}/${encodeURIComponent(getConfig().baseId)}/${encodeURIComponent(table.id)}?${params.toString()}`,
+        );
+        for (const record of data.records || []) {
+          const value = fieldText(record.fields[lookupField]).trim();
+          const key = value.toLocaleLowerCase("ja-JP");
+          if (!value || seen.has(key) || !key.includes(normalizedQuery.toLocaleLowerCase("ja-JP"))) continue;
+          seen.add(key);
+          candidates.push({ value, table: table.name });
+          if (candidates.length >= MAX_LOOKUP_CANDIDATES) return { candidates, error: null };
+        }
+      } catch {
+        // A table without the configured lookup field should not hide candidates from other tables.
+      }
+    }
+    return { candidates, error: null };
+  } catch (error) {
+    return {
+      candidates: [],
+      error: error instanceof Error ? error.message : "Airtableから候補を検索できませんでした",
     };
   }
 }
