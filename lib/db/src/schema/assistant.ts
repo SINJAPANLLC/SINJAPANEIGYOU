@@ -23,6 +23,9 @@ export const assistantProfilesTable = pgTable(
     reportMinute: integer("report_minute").notNull().default(0),
     reportsEnabled: boolean("reports_enabled").notNull().default(true),
     reportTopics: text("report_topics").notNull().default("[]"),
+    airtableBaseId: text("airtable_base_id"),
+    airtableTables: text("airtable_tables").notNull().default("[]"),
+    airtableEnabled: boolean("airtable_enabled").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   },
@@ -30,6 +33,23 @@ export const assistantProfilesTable = pgTable(
     userIdUnique: uniqueIndex("assistant_profiles_user_id_idx").on(table.userId),
     lineUserIdUnique: uniqueIndex("assistant_profiles_line_user_id_idx").on(table.lineUserId),
     linkCodeUnique: uniqueIndex("assistant_profiles_link_code_idx").on(table.linkCode),
+  }),
+);
+
+export const sinJapanDriversTable = pgTable(
+  "sin_japan_drivers",
+  {
+    id: serial("id").primaryKey(),
+    ownerUserId: text("owner_user_id").notNull(),
+    name: text("name").notNull(),
+    airtableLookupKey: text("airtable_lookup_key").notNull(),
+    lineUserId: text("line_user_id"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    ownerLineUnique: uniqueIndex("sin_japan_drivers_owner_line_idx").on(table.ownerUserId, table.lineUserId),
   }),
 );
 
@@ -116,7 +136,9 @@ export const assistantResearchItemsTable = pgTable("assistant_research_items", {
 
 export const insertAssistantMemorySchema = createInsertSchema(assistantMemoriesTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertAssistantTodoSchema = createInsertSchema(assistantTodosTable).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true });
+export const insertSinJapanDriverSchema = createInsertSchema(sinJapanDriversTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type AssistantProfile = typeof assistantProfilesTable.$inferSelect;
+export type SinJapanDriver = typeof sinJapanDriversTable.$inferSelect;
 export type AssistantMessage = typeof assistantMessagesTable.$inferSelect;
 export type AssistantMemory = typeof assistantMemoriesTable.$inferSelect;
 export type AssistantNote = typeof assistantNotesTable.$inferSelect;
@@ -125,3 +147,4 @@ export type AssistantReport = typeof assistantReportsTable.$inferSelect;
 export type AssistantResearchItem = typeof assistantResearchItemsTable.$inferSelect;
 export type InsertAssistantMemory = z.infer<typeof insertAssistantMemorySchema>;
 export type InsertAssistantTodo = z.infer<typeof insertAssistantTodoSchema>;
+export type InsertSinJapanDriver = z.infer<typeof insertSinJapanDriverSchema>;

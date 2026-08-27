@@ -10,9 +10,10 @@ import {
   assistantResearchItemsTable,
   assistantTodosTable,
   db,
+  sinJapanDriversTable,
 } from "@workspace/db";
 import { getUserId, requireAuth } from "../lib/auth";
-import { getAssistantDate, generateDailyReport, getOrCreateAssistantProfile, processAssistantMessage, searchAssistantKnowledge } from "../lib/assistant-service";
+import { getAssistantDate, generateDailyReport, getOrCreateAssistantProfile, processAssistantMessage, processSinJapanDriverMessage, searchAssistantKnowledge } from "../lib/assistant-service";
 import { isLineConfigured, replyLineText, safePushLineText, verifyLineSignature } from "../lib/line-client";
 import { getAirtableStatus } from "../lib/airtable-client";
 
@@ -130,6 +131,54 @@ router.post("/assistant/sin-japan-line/chat", requireAuth, async (req, res): Pro
   if (!text) { res.status(400).json({ error: "text is required" }); return; }
   const result = await processAssistantMessage(getUserId(req), text, "sin-japan-line");
   res.json(result);
+});
+
+router.get("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): Promise<void> => {
+  const drivers = await db.select().from(sinJapanDriversTable).where(eq(sinJapanDriversTable.ownerUserId, getUserId(req))).orderBy(desc(sinJapanDriversTable.createdAt));
+  res.json(drivers);
+});
+
+router.post("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): Promise<void> => {
+  const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+  const airtableLookupKey = typeof req.body.airtableLookupKey === "string" && req.body.airtableLookupKey.trim()
+    ? req.body.airtableLookupKey.trim()
+    : name;
+  if (!name) { res.status(400).json({ error: "name is required" }); return; }
+  const [driver] = await db.insert(sinJapanDriversTable).values({
+    ownerUserId: getUserId(req),
+    name,
+    airtableLookupKey,
+    lineUserId: typeof req.body.lineUserId === "string" && req.body.lineUserId.trim() ? req.body.lineUserId.trim() : null,
+  }).returning();
+  res.status(201).json(driver);
+});
+
+router.patch("/assistant/sin-japan-line/drivers/:id", requireAuth, async (req, res): Promise<void> => {
+  const updates: Partial<typeof sinJapanDriversTable.$inferInsert> = {};
+  if (typeof req.body.name === "string" && req.body.name.trim()) updates.name = req.body.name.trim();
+  if (typeof req.body.airtableLookupKey === "string" && req.body.airtableLookupKey.trim()) updates.airtableLookupKey = req.body.airtableLookupKey.trim();
+  if (typeof req.body.lineUserId === "string") updates.lineUserId = req.body.lineUserId.trim() || null;
+  if (req.body.status === "active" || req.body.status === "inactive") updates.status = req.body.status;
+  const [driver] = await db.update(sinJapanDriversTable).set(updates).where(and(eq(sinJapanDriversTable.id, Number(req.params.id)), eq(sinJapanDriversTable.ownerUserId, getUserId(req)))).returning();
+  if (!driver) { res.status(404).json({ error: "Driver not found" }); return; }
+  res.json(driver);
+});
+
+router.delete("/assistant/sin-japan-line/drivers/:id", requireAuth, async (req, res): Promise<void> => {
+  await db.update(sinJapanDriversTable).set({ status: "inactive", lineUserId: null }).where(and(eq(sinJapanDriversTable.id, Number(req.params.id)), eq(sinJapanDriversTable.ownerUserId, getUserId(req))));
+  res.status(204).send();
+});
+
+router.post("/assistant/sin-japan-line/driver-chat", requireAuth, async (req, res): Promise<void> => {
+  const text = typeof req.body.text === "string" ? req.body.text.trim() : "";
+  const driverId = Number(req.body.driverId);
+  if (!text) { res.status(400).json({ error: "text is required" }); return; }
+  if (!Number.isInteger(driverId) || driverId <= 0) { res.status(400).json({ error: "driverId is required" }); return; }
+  try {
+    res.json(await processSinJapanDriverMessage(getUserId(req), driverId, text));
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : "ドライバー対応を開始できません" });
+  }
 });
 
 router.post("/assistant/memories", requireAuth, async (req, res): Promise<void> => {

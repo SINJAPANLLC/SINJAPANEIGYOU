@@ -14,11 +14,12 @@ import {
   db,
   emailLogsTable,
   leadsTable,
+  sinJapanDriversTable,
 } from "@workspace/db";
 import { logger } from "./logger";
 import { searchYahooJapan } from "./search";
 import { isLineConfigured, safePushLineText } from "./line-client";
-import { searchAirtable } from "./airtable-client";
+import { searchAirtable, type AirtableSearchOptions } from "./airtable-client";
 
 const DEFAULT_TOPICS = [
   "日本と世界の経済ニュース 今日",
@@ -116,7 +117,8 @@ type AssistantAction =
   | { type: "save_memory"; content: string; category?: string }
   | { type: "forget_memory"; id?: number; content?: string };
 
-function fallbackResponse(text: string, context: Awaited<ReturnType<typeof buildAssistantContext>>) {
+function fallbackResponse(text: string, context: Awaited<ReturnType<typeof buildAssistantContext>>, driverMode = false) {
+  if (driverMode) return { reply: "確認します。Airtableの担当情報を検索しました。", actions: [] as AssistantAction[] };
   const actions: AssistantAction[] = [];
   const isWallBatting = /壁打ち|整理して|整理したい|アイデア|悩み|考えをまとめ/.test(text);
   const todo = text.match(/(?:TODO|todo|タスク|やること)(?:に|を)?\s*(.+?)(?:追加|登録|。|$)/i);
@@ -188,12 +190,18 @@ export async function searchAssistantKnowledge(userId: string, query: string) {
   ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()).slice(0, 20);
 }
 
-export async function processAssistantMessage(userId: string, text: string, source = "line", lineMessageId?: string) {
+type AssistantProcessOptions = {
+  airtable?: AirtableSearchOptions;
+  driverName?: string;
+};
+
+export async function processAssistantMessage(userId: string, text: string, source = "line", lineMessageId?: string, options: AssistantProcessOptions = {}) {
   const inserted = await db.insert(assistantMessagesTable).values({ userId, source, role: "user", content: text, lineMessageId: lineMessageId || null }).onConflictDoNothing().returning();
   if (!inserted.length) return { reply: "", actions: [] as AssistantAction[], duplicate: true };
+  const driverMode = source === "sin-japan-driver";
   const context = await buildAssistantContext(userId);
-  const searchResults = await searchAssistantKnowledge(userId, text);
-  const airtableResult = source === "sin-japan-line" ? await searchAirtable(text) : null;
+  const searchResults = driverMode ? [] : await searchAssistantKnowledge(userId, text);
+  const airtableResult = source === "sin-japan-line" || driverMode ? await searchAirtable(text, options.airtable) : null;
   const notesForAssistant = context.notes.map((note) => ({
     id: note.id,
     category: note.category,
@@ -210,7 +218,7 @@ export async function processAssistantMessage(userId: string, text: string, sour
   let reply: string;
   let actions: AssistantAction[] = [];
   if (!client) {
-    ({ reply, actions } = fallbackResponse(text, context));
+    ({ reply, actions } = fallbackResponse(text, context, driverMode));
     if (airtableResult?.error) {
       reply = `Airtable検索に失敗しました（${airtableResult.error}）。\n\n${reply}`;
     } else if (airtableResult?.records.length) {
@@ -220,7 +228,12 @@ export async function processAssistantMessage(userId: string, text: string, sour
       reply = `【見つかった情報】\n${searchResults.slice(0, 3).map((result) => `・${result.title}: ${result.content}`).join("\n")}\n\n${reply}`;
     }
   } else {
-    const system = `あなたは日本語で応答する、本人専用のAI秘書です。
+    const system = `${driverMode
+      ? `あなたは日本語で応答する、SIN JAPAN物流事業のドライバー向け業務秘書です。
+ドライバーには担当する配車・案件と会社共通の運用案内だけを案内してください。他のドライバーの案件、報酬、個人情報、全社の不要な情報は絶対に開示しないでください。
+個人用AI秘書の記憶、TODO、過去会話、営業情報は使用しないでください。Airtable検索結果にない事実は推測せず、管理者確認が必要と伝えてください。
+この会話ではactionsは必ず空配列にしてください。`
+      : `あなたは日本語で応答する、本人専用のAI秘書です。`}
 外部に影響する操作（メール送信、電話、SNS投稿、予約、購入）は絶対に実行せず、必要なら確認を取って下書き・提案だけします。
 「覚えて」「記憶して」と明示された内容だけ長期記憶に保存し、「忘れて」と明示された場合だけ削除候補にします。
 次のJSONだけを返してください。replyはユーザーにそのまま見せる自然な日本語、actionsは必要な時だけ使用します。
@@ -228,14 +241,14 @@ export async function processAssistantMessage(userId: string, text: string, sour
 壁打ち、アイデア、悩み、情報整理の依頼では、replyに【要点】【論点】【決まっていること】【未決定のこと】【次に考えること】【TODO候補】【確認すること】を必要な範囲で含め、actionsにcreate_noteを追加してください。create_noteは長期記憶ではなく、分類付きの整理メモです。通常の雑談や明確な依頼には不要です。
 LINEで読むことを前提に、返信は短く読みやすく整えてください。1文を短くし、段落の間に空行を入れてください。重要な項目は【見出し】、複数項目は「・」の箇条書きを使ってください。Markdownの表、長い一段落、過剰な前置きは避け、原則300文字以内にまとめてください。
 利用可能なコンテキスト:
-記憶: ${JSON.stringify(context.memories.map((m) => ({ id: m.id, category: m.category, content: m.content })))}
+${driverMode ? `ドライバー名: ${options.driverName || "登録済みドライバー"}` : `記憶: ${JSON.stringify(context.memories.map((m) => ({ id: m.id, category: m.category, content: m.content })))}
 未完了TODO: ${JSON.stringify(context.todos.map((t) => ({ id: t.id, title: t.title, priority: t.priority })))}
 営業概要: ${JSON.stringify(context.sales)}
 整理メモ: ${JSON.stringify(notesForAssistant)}
-検索一致: ${JSON.stringify(searchForAssistant)}
+検索一致: ${JSON.stringify(searchForAssistant)}`}
 ${airtableResult ? `SIN JAPAN物流Airtable検索結果: ${JSON.stringify(airtableResult)}
 この検索結果にない事実は推測せず「Airtableでは確認できません」と伝えてください。返答では、参照した情報がAirtable由来と分かるようにしてください。` : ""}
-直近会話: ${JSON.stringify(context.messages.map((m) => ({ role: m.role, content: m.content })))}`;
+直近会話: ${driverMode ? "[]" : JSON.stringify(context.messages.map((m) => ({ role: m.role, content: m.content })))}`;
     try {
       const result = await client.chat.completions.create({
         model: "gpt-4o-mini",
@@ -247,7 +260,7 @@ ${airtableResult ? `SIN JAPAN物流Airtable検索結果: ${JSON.stringify(airtab
       actions = Array.isArray(parsed.actions) ? parsed.actions : [];
     } catch (error) {
       logger.error({ err: error }, "assistant response generation failed");
-      ({ reply, actions } = fallbackResponse(text, context));
+      ({ reply, actions } = fallbackResponse(text, context, driverMode));
       if (airtableResult?.error) {
         reply = `Airtable検索に失敗しました（${airtableResult.error}）。\n\n${reply}`;
       } else if (airtableResult?.records.length) {
@@ -255,10 +268,22 @@ ${airtableResult ? `SIN JAPAN物流Airtable検索結果: ${JSON.stringify(airtab
       }
     }
   }
+  if (driverMode) actions = [];
   reply = formatAssistantReply(reply);
   await applyAssistantActions(userId, actions);
   await db.insert(assistantMessagesTable).values({ userId, source, role: "assistant", content: reply });
   return { reply, actions, airtable: airtableResult };
+}
+
+export async function processSinJapanDriverMessage(ownerUserId: string, driverId: number, text: string) {
+  const [driver] = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.id, driverId), eq(sinJapanDriversTable.ownerUserId, ownerUserId), eq(sinJapanDriversTable.status, "active")));
+  if (!driver) throw new Error("有効なドライバーが見つかりません");
+  const commonTables = (process.env.AIRTABLE_COMMON_TABLES || "会社案内,運用案内,マニュアル,お知らせ")
+    .split(/[\n,]/).map((name) => name.trim()).filter(Boolean);
+  return processAssistantMessage(ownerUserId, text, "sin-japan-driver", undefined, {
+    driverName: driver.name,
+    airtable: { scopeKey: driver.airtableLookupKey, commonTables },
+  });
 }
 
 async function applyAssistantActions(userId: string, actions: AssistantAction[]) {

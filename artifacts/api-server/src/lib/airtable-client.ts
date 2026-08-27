@@ -16,10 +16,15 @@ export type AirtableSearchRecord = {
   createdAt: string | null;
 };
 
-type AirtableSearchResult = {
+export type AirtableSearchResult = {
   records: AirtableSearchRecord[];
   searchedTables: string[];
   error: string | null;
+};
+
+export type AirtableSearchOptions = {
+  scopeKey?: string;
+  commonTables?: string[];
 };
 
 let tableCache: { baseId: string; tables: AirtableTable[]; expiresAt: number } | null = null;
@@ -102,14 +107,19 @@ function textFields(table: AirtableTable) {
   return table.fields.filter((field) => !field.type || supported.has(field.type)).slice(0, 30);
 }
 
-function buildFilterFormula(table: AirtableTable, terms: string[]) {
+function buildFilterFormula(table: AirtableTable, terms: string[], scopeKey?: string) {
   const fields = textFields(table);
   if (!fields.length || !terms.length) return "";
-  const expressions = terms.flatMap((term) => fields.map((field) => `SEARCH("${escapeFormulaValue(term)}", CONCATENATE({${field.name}})) > 0`));
-  return expressions.length ? `OR(${expressions.join(",")})` : "";
+  const queryExpressions = terms.flatMap((term) => fields.map((field) => `SEARCH("${escapeFormulaValue(term)}", CONCATENATE({${field.name}})) > 0`));
+  const scopeExpressions = scopeKey
+    ? fields.map((field) => `SEARCH("${escapeFormulaValue(scopeKey)}", CONCATENATE({${field.name}})) > 0`)
+    : [];
+  if (!queryExpressions.length) return "";
+  const queryFormula = `OR(${queryExpressions.join(",")})`;
+  return scopeExpressions.length ? `AND(${queryFormula}, OR(${scopeExpressions.join(",")}))` : queryFormula;
 }
 
-function fieldText(value: unknown) {
+function fieldText(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
   if (Array.isArray(value)) return value.map(fieldText).filter(Boolean).join(", ");
@@ -132,20 +142,24 @@ function recordToSearchResult(table: AirtableTable, record: AirtableRecord): Air
   };
 }
 
-async function getMatchingRecords(table: AirtableTable, terms: string[]) {
+async function getMatchingRecords(table: AirtableTable, terms: string[], scopeKey?: string) {
   const { baseId } = getConfig();
   const params = new URLSearchParams({ pageSize: String(MAX_RECORDS_PER_TABLE) });
-  const formula = buildFilterFormula(table, terms);
+  const formula = buildFilterFormula(table, terms, scopeKey);
   if (formula) params.set("filterByFormula", formula);
   const data = await airtableJson<{ records?: AirtableRecord[] }>(
     `${AIRTABLE_API_ROOT}/${encodeURIComponent(baseId)}/${encodeURIComponent(table.id)}?${params.toString()}`,
   );
   return (data.records || [])
     .map((record) => recordToSearchResult(table, record))
-    .filter((record) => terms.some((term) => `${record.title}\n${record.content}`.toLocaleLowerCase("ja-JP").includes(term.toLocaleLowerCase("ja-JP"))));
+    .filter((record) => {
+      const text = `${record.title}\n${record.content}`.toLocaleLowerCase("ja-JP");
+      return terms.some((term) => text.includes(term.toLocaleLowerCase("ja-JP")))
+        && (!scopeKey || text.includes(scopeKey.toLocaleLowerCase("ja-JP")));
+    });
 }
 
-export async function searchAirtable(query: string): Promise<AirtableSearchResult> {
+export async function searchAirtable(query: string, options: AirtableSearchOptions = {}): Promise<AirtableSearchResult> {
   const terms = searchTerms(query);
   if (!terms.length) return { records: [], searchedTables: [], error: null };
   try {
@@ -153,7 +167,8 @@ export async function searchAirtable(query: string): Promise<AirtableSearchResul
     const records: AirtableSearchRecord[] = [];
     for (const table of tables.slice(0, MAX_TABLES)) {
       try {
-        records.push(...await getMatchingRecords(table, terms));
+        const isCommonTable = (options.commonTables || []).some((name) => name.trim() === table.name);
+        records.push(...await getMatchingRecords(table, terms, isCommonTable ? undefined : options.scopeKey));
       } catch {
         // One table with restricted fields should not hide results from other tables.
       }
