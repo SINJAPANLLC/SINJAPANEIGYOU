@@ -195,24 +195,18 @@ function configuredDriverDetailFields() {
     .split(",")
     .map((field) => field.trim())
     .filter(Boolean);
+  const allowedFields = configured.length
+    ? configured
+    : [...REGISTRATION_FORM_FIELDS, ...CONTRACT_FIELDS];
   return {
-    registration: REGISTRATION_FORM_FIELDS.filter((field) => configured.includes(field)),
-    contract: CONTRACT_FIELDS.filter((field) => configured.includes(field)),
+    registration: REGISTRATION_FORM_FIELDS.filter((field) => allowedFields.includes(field)),
+    contract: CONTRACT_FIELDS.filter((field) => allowedFields.includes(field)),
   };
 }
 
 function driverCandidateSearchConfigurationError() {
-  const lookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
-  const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
-  const tenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
-  const detailFields = configuredDriverDetailFields();
-
-  if (!lookupField) return "候補検索には、AIRTABLE_DRIVER_LOOKUP_FIELD の設定が必要です。";
-  if (!tenantField || !tenantValue) return "候補検索には、AIRTABLE_DRIVER_TENANT_FIELD と AIRTABLE_DRIVER_TENANT_VALUE の設定が必要です。";
-  if (!detailFields.registration.length && !detailFields.contract.length) {
-    return "候補検索には、AIRTABLE_DRIVER_SAFE_FIELDS に許可する「登録フォーム」または「契約書」項目名の設定が必要です。";
-  }
-  return null;
+  const { apiKey, baseId } = getConfig();
+  return apiKey && baseId ? null : "AirtableのAPIキーまたはBase IDが未設定です。";
 }
 
 function requestedDriverDetailFields(table: AirtableTable, lookupFields: string[], tenantField: string) {
@@ -371,9 +365,6 @@ export async function getAirtableDriverDetails(
   const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
   const tenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
   const detailFields = configuredDriverDetailFields();
-  if (!tenantField || !tenantValue || (!detailFields.registration.length && !detailFields.contract.length)) {
-    throw new Error("個別フォームの取得には、Airtableの会社条件と許可項目の設定が必要です");
-  }
   let record: AirtableRecord | undefined;
   if (recordId) {
     const { baseId } = getConfig();
