@@ -35,6 +35,60 @@ const DEFAULT_TOPICS = [
 ];
 const MAX_CONTEXT_ITEMS = 20;
 
+function sinJapanPublicBaseUrl() {
+  const configured = process.env.APP_URL?.trim() || process.env.REPLIT_DEV_DOMAIN?.trim();
+  if (!configured) return "";
+  return (configured.startsWith("http://") || configured.startsWith("https://") ? configured : `https://${configured}`).replace(/\/+$/u, "");
+}
+
+function sinJapanDefaultResources() {
+  const baseUrl = sinJapanPublicBaseUrl();
+  const guideUrl = (slug: string) => `${baseUrl}/api/assistant/sin-japan-line/guides/${slug}.pdf`;
+  return [
+    {
+      title: "面談資料｜報酬・契約・車両レンタル",
+      url: guideUrl("driver-start"),
+      phase: "hired",
+      description: "報酬・契約条件と車両レンタルについてご確認いただく資料です。",
+    },
+    {
+      title: "Amazon業務資料｜配送と研修",
+      url: guideUrl("amazon-delivery"),
+      phase: "hired",
+      description: "配送の流れ、安全運転、研修、稼働開始までの準備をご確認いただく資料です。",
+    },
+    {
+      title: "Amazon Flex",
+      url: "https://apps.apple.com/app/id1454725763",
+      phase: "onboarding",
+      description: "iPhone: https://apps.apple.com/app/id1454725763\nAndroid: https://play.google.com/store/apps/details?id=com.amazon.flex.rabbit",
+    },
+    {
+      title: "Disprz",
+      url: "https://apps.apple.com/app/id1458716803",
+      phase: "onboarding",
+      description: "iPhone: https://apps.apple.com/app/id1458716803\nAndroid: https://play.google.com/store/apps/details?id=com.disprz",
+    },
+    {
+      title: "Mentor DDP",
+      url: "https://apps.apple.com/app/id1535552014",
+      phase: "onboarding",
+      description: "iPhone: https://apps.apple.com/app/id1535552014\nAndroid: https://play.google.com/store/apps/details?id=com.edriving.mentor.ddpeu",
+    },
+  ];
+}
+
+export async function ensureSinJapanDefaultResources(ownerUserId: string) {
+  const current = await db.select({ title: sinJapanResourcesTable.title })
+    .from(sinJapanResourcesTable)
+    .where(eq(sinJapanResourcesTable.ownerUserId, ownerUserId));
+  const existingTitles = new Set(current.map((resource) => resource.title));
+  const missing = sinJapanDefaultResources()
+    .filter((resource) => resource.url && !existingTitles.has(resource.title))
+    .map((resource) => ({ ownerUserId, ...resource }));
+  if (missing.length) await db.insert(sinJapanResourcesTable).values(missing);
+}
+
 function formatAssistantReply(reply: string) {
   return reply
     .replace(/\r\n/g, "\n")
@@ -307,6 +361,9 @@ ${driverMode ? `現在の進捗に対応する案内リンク: ${JSON.stringify(
 }
 
 export async function processSinJapanDriverMessage(ownerUserId: string, driverId: number, text: string, lineMessageId?: string, groupType?: "onboarding" | "operation") {
+  if (groupType === "operation") {
+    return { reply: "", actions: [] as AssistantAction[], airtable: null, duplicate: false, readOnly: true };
+  }
   if (containsDriverCredential(text)) {
     return { reply: driverCredentialSafetyReply(), actions: [] as AssistantAction[], airtable: null, duplicate: false, blocked: true };
   }
@@ -378,8 +435,13 @@ export async function linkSinJapanDriverGroup(groupId: string, code: string) {
 }
 
 export async function buildSinJapanOnboardingGuide(ownerUserId: string, driverId: number) {
+  await ensureSinJapanDefaultResources(ownerUserId);
   const [driver] = await db.select({
     name: sinJapanDriversTable.name,
+    registrationFormUrl: sinJapanDriversTable.registrationFormUrl,
+    contractStatus: sinJapanDriversTable.contractStatus,
+    trainingGuidance: sinJapanDriversTable.trainingGuidance,
+    vehiclePreparationGuidance: sinJapanDriversTable.vehiclePreparationGuidance,
   }).from(sinJapanDriversTable).where(and(
     eq(sinJapanDriversTable.id, driverId),
     eq(sinJapanDriversTable.ownerUserId, ownerUserId),
@@ -388,23 +450,39 @@ export async function buildSinJapanOnboardingGuide(ownerUserId: string, driverId
   const resources = await db.select({
     title: sinJapanResourcesTable.title,
     url: sinJapanResourcesTable.url,
+    description: sinJapanResourcesTable.description,
   }).from(sinJapanResourcesTable).where(and(
     eq(sinJapanResourcesTable.ownerUserId, ownerUserId),
     eq(sinJapanResourcesTable.isActive, true),
     or(eq(sinJapanResourcesTable.phase, "all"), eq(sinJapanResourcesTable.phase, "hired")),
   ));
-  const resourceLines = resources.slice(0, 8).map((resource) => `・${resource.title}\n  ${resource.url}`);
+  const resourceLines = resources.slice(0, 8).map((resource) => [
+    `・${resource.title}`,
+    resource.description || "",
+    `  ${resource.url}`,
+  ].filter(Boolean).join("\n"));
+  const contractNotice = driver?.contractStatus === "sent"
+    ? "・契約書は管理者様から送付済みです。内容をご確認ください"
+    : driver?.contractStatus === "confirmed"
+      ? "・契約書のご確認を承っております"
+      : "・契約書は管理者様から個別にご案内いたします";
   return [
     `🌷 ${driver?.name || "ドライバー"}様、ご登録ありがとうございます。`,
     "SIN JAPANの面談・採用後サポートを担当いたします。",
     "",
     "【まずお願いしたいこと】",
     "・面談資料をご確認ください",
-    "・登録フォームをご入力ください",
+    driver?.registrationFormUrl
+      ? `・登録フォームをご入力ください\n  ${driver.registrationFormUrl}`
+      : "・登録フォームは管理者様からのご案内をお待ちください",
     "・研修、契約、車両準備をご確認ください",
+    contractNotice,
     "・Amazonアカウントと3つのアプリの状態をご確認ください",
+    "・AmazonのIDは、ご自身の業務用メールアドレスをご利用ください",
     "",
     resourceLines.length ? `【ご案内資料】\n${resourceLines.join("\n")}\n` : "",
+    driver?.trainingGuidance ? `【研修の段取り】\n${driver.trainingGuidance}` : "",
+    driver?.vehiclePreparationGuidance ? `【車両準備のご案内】\n${driver.vehiclePreparationGuidance}` : "",
     "ご不明点は「登録フォームを教えてください」「研修について教えてください」のようにお送りくださいませ。",
     "なお、パスワード・認証コード・ログイン情報はLINEへ送らないようお願いいたします。",
   ].filter(Boolean).join("\n");

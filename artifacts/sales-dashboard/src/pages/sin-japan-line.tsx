@@ -36,18 +36,27 @@ type AirtableStatus = {
 };
 
 type AirtableRecord = { table: string; recordId: string; title: string; content: string; createdAt: string | null };
-type DriverCandidate = { value: string; table: string };
+type DriverCandidate = { value: string; table: string; recordId: string; registrationFormUrl: string | null; contractUrl: string | null };
 type ChatMessage = { role: "user" | "assistant"; content: string; records?: AirtableRecord[] };
 type DriverGroup = { id: number; groupId: string; groupType: "onboarding" | "operation"; status: string; createdAt: string };
 type Driver = {
   id: number;
   name: string;
   airtableLookupKey: string;
+  airtableRecordId: string | null;
+  airtableTableName: string | null;
+  registrationFormUrl: string | null;
   lineUserId: string | null;
   status: string;
   workflowStatus: "hired" | "onboarding" | "ready" | "operating" | "inactive";
   amazonAccountStatus: "not_required" | "pending" | "verified" | "needs_help";
   appsStatus: "pending" | "verified" | "needs_help";
+  contractUrl: string | null;
+  contractStatus: "not_sent" | "sent" | "confirmed" | "needs_follow_up";
+  contractSentAt: string | null;
+  contractConfirmedAt: string | null;
+  trainingGuidance: string | null;
+  vehiclePreparationGuidance: string | null;
   firstOperationDate: string | null;
   groups: DriverGroup[];
 };
@@ -68,7 +77,7 @@ const workflowStages = [
   { value: "hired", label: "採用確定", detail: "採用後グループを作成・紐付け" },
   { value: "onboarding", label: "準備・研修", detail: "登録・シフト・研修・契約・車両" },
   { value: "ready", label: "稼働準備完了", detail: "Amazon・アプリ・初回稼働日の確認" },
-  { value: "operating", label: "稼働中", detail: "稼働用グループで日々の報告を受付" },
+  { value: "operating", label: "稼働中", detail: "稼働用グループで読み取り・記録のみ実施" },
 ] as const;
 
 const phaseLabels: Record<string, string> = {
@@ -102,6 +111,7 @@ export default function SinJapanLinePage() {
   const [newDriverName, setNewDriverName] = useState("");
   const [newDriverKey, setNewDriverKey] = useState("");
   const [driverCandidates, setDriverCandidates] = useState<DriverCandidate[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<DriverCandidate | null>(null);
   const [isSearchingDriverCandidates, setIsSearchingDriverCandidates] = useState(false);
   const [driverCandidateMessage, setDriverCandidateMessage] = useState("");
   const [selectedDriverId, setSelectedDriverId] = useState<number | null>(null);
@@ -110,6 +120,9 @@ export default function SinJapanLinePage() {
   const [driverMessages, setDriverMessages] = useState<ChatMessage[]>([]);
   const [isDriverSending, setIsDriverSending] = useState(false);
   const [newResource, setNewResource] = useState({ title: "", url: "", phase: "onboarding", description: "" });
+  const [contractUrlDraft, setContractUrlDraft] = useState("");
+  const [trainingGuidanceDraft, setTrainingGuidanceDraft] = useState("");
+  const [vehicleGuidanceDraft, setVehicleGuidanceDraft] = useState("");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isSending, setIsSending] = useState(false);
@@ -138,6 +151,7 @@ export default function SinJapanLinePage() {
 
   useEffect(() => {
     const query = newDriverName.trim();
+    if (selectedCandidate?.value === query) return;
     if (!query) {
       setDriverCandidates([]);
       setIsSearchingDriverCandidates(false);
@@ -167,9 +181,15 @@ export default function SinJapanLinePage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [newDriverName]);
+  }, [newDriverName, selectedCandidate]);
 
   const selectedDriver = useMemo(() => drivers.find((driver) => driver.id === selectedDriverId) || null, [drivers, selectedDriverId]);
+
+  useEffect(() => {
+    setContractUrlDraft(selectedDriver?.contractUrl || "");
+    setTrainingGuidanceDraft(selectedDriver?.trainingGuidance || "");
+    setVehicleGuidanceDraft(selectedDriver?.vehiclePreparationGuidance || "");
+  }, [selectedDriver?.id, selectedDriver?.contractUrl, selectedDriver?.trainingGuidance, selectedDriver?.vehiclePreparationGuidance]);
 
   const updateDriver = async (updates: Partial<Driver>) => {
     if (!selectedDriver) return;
@@ -188,17 +208,26 @@ export default function SinJapanLinePage() {
 
   const addDriver = async () => {
     const name = newDriverName.trim();
-    if (!name) return;
+    if (!name || !selectedCandidate) {
+      toast({ title: "Airtable候補を選択してください", description: "候補リストから選択すると、同じ行の登録フォームを安全に紐付けます。", variant: "destructive" });
+      return;
+    }
     try {
       const driver = await requestJson<Driver>("/api/assistant/sin-japan-line/drivers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, airtableLookupKey: newDriverKey.trim() || name }),
+        body: JSON.stringify({
+          name,
+          airtableLookupKey: newDriverKey.trim() || name,
+          airtableTableName: selectedCandidate.table,
+          airtableRecordId: selectedCandidate.recordId,
+        }),
       });
       setDrivers((current) => [{ ...driver, groups: [] }, ...current]);
       setSelectedDriverId(driver.id);
       setNewDriverName("");
       setNewDriverKey("");
+      setSelectedCandidate(null);
       setCodes({});
       toast({ title: "ドライバーを登録しました" });
     } catch (error) {
@@ -230,6 +259,35 @@ export default function SinJapanLinePage() {
       toast({ title: `${groupType === "operation" ? "稼働用" : "採用・面談用"}の認証コードを発行しました`, description: "15分以内にグループLINEで入力してください。" });
     } catch (error) {
       toast({ title: "認証コードを発行できませんでした", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    }
+  };
+
+  const refreshRegistrationForm = async () => {
+    if (!selectedDriver) return;
+    try {
+      const driver = await requestJson<Driver>(`/api/assistant/sin-japan-line/drivers/${selectedDriver.id}/airtable/refresh`, { method: "POST" });
+      setDrivers((current) => current.map((item) => item.id === driver.id ? { ...item, ...driver } : item));
+      toast({ title: "登録フォームをAirtableから更新しました" });
+    } catch (error) {
+      toast({ title: "登録フォームを更新できませんでした", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    }
+  };
+
+  const saveOnboardingDetails = async () => {
+    await updateDriver({
+      contractUrl: contractUrlDraft || null,
+      trainingGuidance: trainingGuidanceDraft || null,
+      vehiclePreparationGuidance: vehicleGuidanceDraft || null,
+    });
+  };
+
+  const sendOnboardingGuide = async () => {
+    if (!selectedDriver) return;
+    try {
+      await requestJson(`/api/assistant/sin-japan-line/drivers/${selectedDriver.id}/onboarding-guide/send`, { method: "POST" });
+      toast({ title: "採用・面談用グループへ案内を送信しました", description: "登録フォーム、資料、アプリリンクを含む安全な閲覧URLをご案内しています。" });
+    } catch (error) {
+      toast({ title: "案内を送信できませんでした", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
     }
   };
 
@@ -346,7 +404,7 @@ export default function SinJapanLinePage() {
             <div>
               <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">SIN JAPAN LINE</h1>
               <p className="text-muted-foreground mt-3 max-w-2xl leading-relaxed">
-                採用・面談用グループはドライバー様ごとに紐付け、稼働報告は別グループで運用します。管理者様への重要通知と日次報告は、管理者様の公式LINEへお届けします。
+                採用・面談用グループはドライバー様ごとに案内を送信します。稼働報告用グループは招待・紐付け後も読み取りと記録だけを行い、グループ内へは返信いたしません。重要通知と日次報告は管理者様の公式LINEへお届けします。
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -373,9 +431,9 @@ export default function SinJapanLinePage() {
           <div className="grid md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-emerald-500/20">
             {[
               ["01", "ドライバー登録", "Airtable検索キーを登録"],
-              ["02", "案内リンク登録", "資料・フォーム・研修案内を登録"],
+              ["02", "個別案内を設定", "フォーム・契約・研修・車両準備を確認"],
               ["03", "採用グループ紐付け", "SIN JAPAN LINEを招待して認証"],
-              ["04", "稼働後は別グループ", "稼働報告グループは紐付け不要"],
+              ["04", "稼働グループを記録", "招待・認証後もグループへ返信しない"],
             ].map(([number, title, detail]) => (
               <div key={number} className="p-4">
                 <span className="text-[10px] tracking-widest text-emerald-400 font-mono">{number}</span>
@@ -386,7 +444,7 @@ export default function SinJapanLinePage() {
           </div>
           <div className="px-5 py-3 border-t border-emerald-500/20 flex items-start gap-2 text-xs text-emerald-100/80">
             <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-            <span>採用グループの紐付け完了時に、SIN JAPAN LINEから最初の案内が自動送信されます。以降は、ドライバー様が質問や報告を送ったときに返答します。</span>
+            <span>採用グループの紐付け完了時に、登録フォーム・PDF資料・アプリリンクを含む最初の案内が自動送信されます。稼働グループでは記録と緊急時の管理者通知だけを行います。</span>
           </div>
         </section>
 
@@ -414,30 +472,31 @@ export default function SinJapanLinePage() {
             <div className="w-10 h-10 border border-sky-500/30 bg-sky-500/10 flex items-center justify-center shrink-0"><UserRound className="w-5 h-5 text-sky-300" /></div>
             <div>
               <h2 className="font-semibold">ドライバー別の進捗・グループ管理</h2>
-              <p className="text-sm text-muted-foreground mt-1">ドライバー1名ごとに採用・面談用グループだけを認証コードで紐付けます。稼働報告用の別グループは紐付け不要です。</p>
+              <p className="text-sm text-muted-foreground mt-1">ドライバー1名ごとに採用・面談用と稼働報告用を別々に認証します。稼働報告用では、SIN JAPAN LINEは一切返信せず、受信内容の記録と緊急通知だけを行います。</p>
             </div>
           </div>
           <div className="p-5 grid lg:grid-cols-[260px_1fr] gap-6">
             <div className="space-y-3">
               <p className="text-xs uppercase tracking-widest text-muted-foreground">ドライバー登録</p>
               <div className="relative">
-                <input value={newDriverName} onChange={(event) => setNewDriverName(event.target.value)} placeholder="ドライバー名を入力して検索" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
+                <input value={newDriverName} onChange={(event) => { setNewDriverName(event.target.value); setSelectedCandidate(null); }} placeholder="ドライバー名を入力して検索" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
                 {(isSearchingDriverCandidates || driverCandidates.length > 0 || driverCandidateMessage) && (
                   <div className="absolute z-20 top-11 left-0 right-0 border border-border bg-card shadow-xl">
                     {isSearchingDriverCandidates ? (
                       <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" />Airtableから候補を検索しています</div>
                     ) : driverCandidates.length ? driverCandidates.map((candidate) => (
-                      <button key={`${candidate.table}-${candidate.value}`} type="button" onClick={() => { setNewDriverName(candidate.value); setNewDriverKey(candidate.value); setDriverCandidates([]); }} className="w-full text-left px-3 py-2.5 border-b border-border last:border-b-0 hover:bg-emerald-500/10">
+                      <button key={`${candidate.table}-${candidate.recordId}`} type="button" onClick={() => { setNewDriverName(candidate.value); setNewDriverKey(candidate.value); setSelectedCandidate(candidate); setDriverCandidates([]); setDriverCandidateMessage(""); }} className="w-full text-left px-3 py-2.5 border-b border-border last:border-b-0 hover:bg-emerald-500/10">
                         <span className="block text-sm">{candidate.value}</span>
-                        <span className="block text-[10px] text-muted-foreground mt-0.5">Airtable候補 · {candidate.table}</span>
+                        <span className="block text-[10px] text-muted-foreground mt-0.5">Airtable候補 · {candidate.table} · 登録フォーム {candidate.registrationFormUrl ? "取得可" : "未設定"}</span>
                       </button>
                     )) : <div className="px-3 py-2.5 text-xs text-muted-foreground">{driverCandidateMessage}</div>}
                   </div>
                 )}
               </div>
-              <input value={newDriverKey} onChange={(event) => setNewDriverKey(event.target.value)} placeholder="Airtable検索キー（氏名など）" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">Airtableの指定項目と完全一致で検索します。氏名の部分一致やレコードID入力は使用しません。</p>
-              <Button onClick={() => void addDriver()} disabled={!newDriverName.trim()} className="rounded-none w-full"><Plus className="w-4 h-4 mr-2" />ドライバーを登録</Button>
+              <input value={newDriverKey} onChange={(event) => { setNewDriverKey(event.target.value); setSelectedCandidate(null); }} placeholder="Airtable検索キー（氏名など）" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
+              <p className="text-[11px] text-muted-foreground leading-relaxed">候補リストから選んだ同一行だけを完全一致で確認し、「登録フォーム」を紐付けます。氏名の手入力やレコードIDの直接入力では登録できません。</p>
+              {selectedCandidate ? <p className="text-[11px] text-emerald-300">選択中：{selectedCandidate.table} の「{selectedCandidate.value}」</p> : null}
+              <Button onClick={() => void addDriver()} disabled={!newDriverName.trim() || !selectedCandidate} className="rounded-none w-full"><Plus className="w-4 h-4 mr-2" />ドライバーを登録</Button>
               <div className="pt-3 border-t border-border space-y-2 max-h-[480px] overflow-y-auto">
                 {drivers.length === 0 ? <p className="text-xs text-muted-foreground">管理者がAirtableへ入力後、ここへドライバーを登録してください。</p> : drivers.map((driver) => (
                   <div key={driver.id} className={`flex items-center gap-2 border p-2 ${selectedDriverId === driver.id ? "border-emerald-500/60 bg-emerald-500/5" : "border-border"}`}>
@@ -482,6 +541,36 @@ export default function SinJapanLinePage() {
                 </div>
                 <p className="text-xs text-muted-foreground border-l-2 border-amber-400 pl-3">Amazonのパスワード・認証コード・ログイン情報は保存しません。「確認済み」などの状態のみ管理します。</p>
 
+                <div className="grid xl:grid-cols-2 gap-4">
+                  <div className="border border-sky-500/25 bg-sky-500/5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div><p className="text-xs uppercase tracking-widest text-sky-300">Airtable registration form</p><h4 className="font-medium mt-1">個別の登録フォーム</h4></div>
+                      <Button variant="outline" size="sm" onClick={() => void refreshRegistrationForm()} className="rounded-none shrink-0">Airtableから更新</Button>
+                    </div>
+                    {selectedDriver.registrationFormUrl ? <a href={selectedDriver.registrationFormUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm text-sky-300 hover:underline break-all">{selectedDriver.registrationFormUrl}<ExternalLink className="w-3.5 h-3.5 shrink-0" /></a> : <p className="text-sm text-amber-300 mt-3">このAirtable行に「登録フォーム」が未設定です。AirtableへURLを入力してから更新してください。</p>}
+                    <p className="text-[11px] text-muted-foreground mt-3">面談グループの初回案内と再送案内に、このURLだけを掲載します。</p>
+                  </div>
+                  <div className="border border-violet-500/25 bg-violet-500/5 p-4">
+                    <p className="text-xs uppercase tracking-widest text-violet-300">Contract tracking</p><h4 className="font-medium mt-1">契約書の送付・確認</h4>
+                    <select value={selectedDriver.contractStatus} onChange={(event) => void updateDriver({ contractStatus: event.target.value as Driver["contractStatus"] })} className="mt-3 w-full h-10 border border-border bg-background px-3 text-sm">
+                      <option value="not_sent">未送付</option><option value="sent">管理者が送付済み</option><option value="confirmed">ドライバー確認済み</option><option value="needs_follow_up">要フォロー</option>
+                    </select>
+                    <input value={contractUrlDraft} onChange={(event) => setContractUrlDraft(event.target.value)} placeholder="管理用の契約書参照URL（任意・自動送信なし）" className="mt-2 w-full h-10 border border-border bg-background px-3 text-sm" />
+                    <div className="flex items-center justify-between gap-3 mt-2"><p className="text-[11px] text-muted-foreground">送付 {formatDateTime(selectedDriver.contractSentAt)} · 確認 {formatDateTime(selectedDriver.contractConfirmedAt)}</p><Button variant="outline" size="sm" onClick={() => void saveOnboardingDetails()} className="rounded-none">保存</Button></div>
+                  </div>
+                </div>
+
+                <div className="border border-border p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div><p className="text-xs uppercase tracking-widest text-emerald-400">Driver-specific guidance</p><h4 className="font-medium mt-1">研修・車両準備の案内文</h4><p className="text-xs text-muted-foreground mt-1">ドライバー様ごとの段取りを入力し、面談グループへ送る案内に掲載します。</p></div>
+                    <Button variant="outline" onClick={() => void saveOnboardingDetails()} className="rounded-none">案内文を保存</Button>
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-3 mt-4">
+                    <label className="text-sm">研修の段取り<Textarea value={trainingGuidanceDraft} onChange={(event) => setTrainingGuidanceDraft(event.target.value)} placeholder={"例：◯月◯日 10:00から横乗り研修です。\n集合場所・持ち物・連絡先を入力してください。"} rows={5} className="rounded-none resize-none mt-2" /></label>
+                    <label className="text-sm">車両準備のご案内<Textarea value={vehicleGuidanceDraft} onChange={(event) => setVehicleGuidanceDraft(event.target.value)} placeholder={"例：車両の受取日時、任意保険、写真・動画での状態確認について入力してください。"} rows={5} className="rounded-none resize-none mt-2" /></label>
+                  </div>
+                </div>
+
                 <div className="grid md:grid-cols-2 gap-4">
                   {(["onboarding", "operation"] as const).map((groupType) => {
                     const group = selectedDriver.groups.find((item) => item.groupType === groupType);
@@ -493,10 +582,11 @@ export default function SinJapanLinePage() {
                         <div className="flex items-center justify-between gap-3"><h4 className="font-medium">{label}</h4>{group ? <span className="text-xs text-emerald-300 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />紐付け済み</span> : <span className="text-xs text-amber-300">未紐付け</span>}</div>
                         <p className="text-xs text-muted-foreground mt-2">{isOnboarding
                           ? group ? "SIN JAPAN LINEから初回案内が届きます。以降の質問にも返答します。" : "SIN JAPAN LINEを招待し、認証コードでこのドライバー様と紐付けます。"
-                          : "稼働報告は別グループで行います。SIN JAPAN LINEの招待・認証コードによる紐付けは不要です。"}
+                          : group ? "受信内容を記録し、事故・欠勤など緊急時だけ管理者LINEへ通知します。グループには一切返信しません。" : "SIN JAPAN LINEを招待し、認証コードで紐付けます。紐付け後もグループ内で発言しません。"}
                         </p>
-                        {isOnboarding && !group && <Button variant="outline" onClick={() => void issueCode(groupType)} className="rounded-none mt-4 w-full"><Link2 className="w-4 h-4 mr-2" />採用グループの認証コードを発行</Button>}
-                        {isOnboarding && code && !group ? <div className="mt-4 border border-emerald-500/30 bg-emerald-500/5 p-3"><p className="text-xs text-muted-foreground">採用グループで送信</p><p className="text-lg font-mono tracking-[0.22em] text-emerald-300 mt-1">登録 {code.code}</p><p className="text-[10px] text-muted-foreground mt-2">{formatDateTime(code.expiresAt)}まで・一回限り</p></div> : null}
+                        {!group && <Button variant="outline" onClick={() => void issueCode(groupType)} className="rounded-none mt-4 w-full"><Link2 className="w-4 h-4 mr-2" />{isOnboarding ? "採用グループ" : "稼働グループ"}の認証コードを発行</Button>}
+                        {code && !group ? <div className={`mt-4 border p-3 ${isOnboarding ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}><p className="text-xs text-muted-foreground">{isOnboarding ? "採用グループ" : "稼働グループ"}で送信</p><p className={`text-lg font-mono tracking-[0.22em] mt-1 ${isOnboarding ? "text-emerald-300" : "text-amber-300"}`}>登録 {code.code}</p><p className="text-[10px] text-muted-foreground mt-2">{formatDateTime(code.expiresAt)}まで・一回限り</p></div> : null}
+                        {isOnboarding && group && <Button onClick={() => void sendOnboardingGuide()} className="rounded-none mt-4 w-full"><Send className="w-4 h-4 mr-2" />案内を再送する</Button>}
                       </div>
                     );
                   })}
@@ -524,7 +614,7 @@ export default function SinJapanLinePage() {
         </section>
 
         <section className="border border-border bg-card mb-6">
-          <div className="p-5 border-b border-border flex items-start gap-3"><div className="w-10 h-10 border border-violet-500/30 bg-violet-500/10 flex items-center justify-center shrink-0"><FileText className="w-5 h-5 text-violet-300" /></div><div><h2 className="font-semibold">段階別の案内リンク</h2><p className="text-sm text-muted-foreground mt-1">面談資料、登録フォーム、業務マニュアル、契約書などを登録すると、該当する進捗のドライバーへLINEで案内できます。</p></div></div>
+          <div className="p-5 border-b border-border flex items-start gap-3"><div className="w-10 h-10 border border-violet-500/30 bg-violet-500/10 flex items-center justify-center shrink-0"><FileText className="w-5 h-5 text-violet-300" /></div><div><h2 className="font-semibold">共通資料・アプリリンク</h2><p className="text-sm text-muted-foreground mt-1">面談資料・Amazon業務資料・Amazon Flex・Disprz・Mentor DDPは自動登録されます。追加の業務資料や案内URLもここから登録できます。契約書は管理者様から個別に送付し、上の送付・確認状況で管理します。</p></div></div>
           <div className="p-5 grid lg:grid-cols-[300px_1fr] gap-6">
             <div className="space-y-3"><input value={newResource.title} onChange={(event) => setNewResource((current) => ({ ...current, title: event.target.value }))} placeholder="資料・フォーム名" className="w-full h-10 border border-border bg-background px-3 text-sm" /><input value={newResource.url} onChange={(event) => setNewResource((current) => ({ ...current, url: event.target.value }))} placeholder="https://..." className="w-full h-10 border border-border bg-background px-3 text-sm" /><select value={newResource.phase} onChange={(event) => setNewResource((current) => ({ ...current, phase: event.target.value }))} className="w-full h-10 border border-border bg-background px-3 text-sm">{Object.entries(phaseLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><Textarea value={newResource.description} onChange={(event) => setNewResource((current) => ({ ...current, description: event.target.value }))} placeholder="案内時の補足（任意）" rows={3} className="rounded-none resize-none" /><Button onClick={() => void addResource()} disabled={!newResource.title.trim() || !newResource.url.trim()} className="rounded-none w-full"><Plus className="w-4 h-4 mr-2" />案内リンクを登録</Button></div>
             <div className="space-y-2 max-h-[320px] overflow-y-auto">{resources.length === 0 ? <p className="text-sm text-muted-foreground py-8 text-center">登録された案内リンクはありません。</p> : resources.map((resource) => <div key={resource.id} className="border border-border p-3 flex gap-3"><div className="flex-1 min-w-0"><p className="text-sm font-medium">{resource.title}<span className="ml-2 text-[10px] text-emerald-300">{phaseLabels[resource.phase] || resource.phase}</span></p>{resource.description ? <p className="text-xs text-muted-foreground mt-1">{resource.description}</p> : null}<a href={resource.url} target="_blank" rel="noreferrer" className="text-xs text-sky-300 hover:underline mt-2 inline-flex items-center gap-1 truncate max-w-full">{resource.url}<ExternalLink className="w-3 h-3 shrink-0" /></a></div><button onClick={() => void removeResource(resource)} className="p-1 text-muted-foreground hover:text-red-300 self-start" aria-label={`${resource.title}を非公開にする`}><Trash2 className="w-4 h-4" /></button></div>)}</div>
@@ -534,7 +624,7 @@ export default function SinJapanLinePage() {
         <section className="grid xl:grid-cols-2 gap-6 mb-6">
           <div className="border border-border bg-card">
             <div className="p-5 border-b border-border flex items-start gap-3"><div className="w-10 h-10 border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center shrink-0"><MessageCircle className="w-5 h-5 text-emerald-400" /></div><div><h2 className="font-semibold">ドライバー視点の動作確認</h2><p className="text-sm text-muted-foreground mt-1">個人用AI秘書の記憶・TODO・営業情報を使わず、担当範囲と会社共通案内だけで応答します。</p></div></div>
-            <div className="p-5 min-h-[360px] flex flex-col"><p className="text-xs uppercase tracking-widest text-emerald-400 mb-3">{selectedDriver ? `${selectedDriver.name}としてテスト` : "ドライバーを選択してください"}</p><div className="flex-1 space-y-2 overflow-y-auto max-h-[280px]">{!selectedDriver ? <p className="text-sm text-muted-foreground text-center py-8">上のドライバーを選択してください。</p> : driverMessages.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">「登録フォームを教えて」「今日の配車は？」「遅れそうです」などを試してください。</p> : driverMessages.map((message, index) => <div key={`${message.role}-${index}`} className={message.role === "user" ? "ml-8 bg-emerald-500/5 border border-emerald-500/30 p-3" : "mr-8 bg-muted/20 border border-border p-3"}><p className="text-[10px] text-emerald-400 mb-1">{message.role === "user" ? "ドライバー" : "SIN JAPAN LINE"}</p><p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>{message.records?.length ? <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">{message.records.slice(0, 3).map((record) => <p key={record.recordId}>[{record.table}] {record.title}</p>)}</div> : null}</div>)}</div><div className="flex gap-2 mt-4"><Textarea value={driverQuestion} onChange={(event) => setDriverQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askAsDriver(); } }} placeholder="ドライバーからのメッセージ…" rows={2} disabled={!selectedDriver} className="rounded-none resize-none" /><Button onClick={() => void askAsDriver()} disabled={!selectedDriver || !driverQuestion.trim() || isDriverSending} className="rounded-none self-end">{isDriverSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</Button></div></div>
+            <div className="p-5 min-h-[360px] flex flex-col"><p className="text-xs uppercase tracking-widest text-emerald-400 mb-3">{selectedDriver ? `${selectedDriver.name}としてテスト` : "ドライバーを選択してください"}</p><div className="flex-1 space-y-2 overflow-y-auto max-h-[280px]">{!selectedDriver ? <p className="text-sm text-muted-foreground text-center py-8">上のドライバーを選択してください。</p> : driverMessages.length === 0 ? <p className="text-sm text-muted-foreground text-center py-8">採用・面談グループの応答確認です。「登録フォームを教えて」「遅れそうです」などを試してください。稼働グループでは返信しません。</p> : driverMessages.map((message, index) => <div key={`${message.role}-${index}`} className={message.role === "user" ? "ml-8 bg-emerald-500/5 border border-emerald-500/30 p-3" : "mr-8 bg-muted/20 border border-border p-3"}><p className="text-[10px] text-emerald-400 mb-1">{message.role === "user" ? "ドライバー" : "SIN JAPAN LINE"}</p><p className="text-sm whitespace-pre-wrap leading-relaxed">{message.content}</p>{message.records?.length ? <div className="mt-2 pt-2 border-t border-border text-xs text-muted-foreground">{message.records.slice(0, 3).map((record) => <p key={record.recordId}>[{record.table}] {record.title}</p>)}</div> : null}</div>)}</div><div className="flex gap-2 mt-4"><Textarea value={driverQuestion} onChange={(event) => setDriverQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askAsDriver(); } }} placeholder="ドライバーからのメッセージ…" rows={2} disabled={!selectedDriver} className="rounded-none resize-none" /><Button onClick={() => void askAsDriver()} disabled={!selectedDriver || !driverQuestion.trim() || isDriverSending} className="rounded-none self-end">{isDriverSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}</Button></div></div>
           </div>
 
           <div className="border border-border bg-card">

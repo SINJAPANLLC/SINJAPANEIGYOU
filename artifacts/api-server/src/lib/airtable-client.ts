@@ -27,7 +27,21 @@ export type AirtableSearchResult = {
 export type AirtableLookupCandidate = {
   value: string;
   table: string;
+  recordId: string;
+  registrationFormUrl: string | null;
+  contractUrl: string | null;
 };
+
+export type AirtableDriverDetails = {
+  table: string;
+  recordId: string;
+  name: string;
+  registrationFormUrl: string | null;
+  contractUrl: string | null;
+};
+
+const REGISTRATION_FORM_FIELDS = ["登録フォーム", "登録フォームURL", "フォームURL", "registration_form_url"];
+const CONTRACT_FIELDS = ["契約書", "契約書URL", "電子契約", "電子契約URL", "contract_url"];
 
 export type AirtableSearchOptions = {
   scopeKey?: string;
@@ -159,6 +173,42 @@ function fieldText(value: unknown): string {
   return JSON.stringify(value) || "";
 }
 
+function firstFieldText(fields: Record<string, unknown>, names: string[]) {
+  for (const name of names) {
+    const value = fieldText(fields[name]).trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function safeHttpUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function configuredDriverDetailFields() {
+  const configured = (process.env.AIRTABLE_DRIVER_SAFE_FIELDS || "")
+    .split(",")
+    .map((field) => field.trim())
+    .filter(Boolean);
+  return {
+    registration: REGISTRATION_FORM_FIELDS.filter((field) => configured.includes(field)),
+    contract: CONTRACT_FIELDS.filter((field) => configured.includes(field)),
+  };
+}
+
+function requestedDriverDetailFields(table: AirtableTable, lookupFields: string[], tenantField: string) {
+  const details = configuredDriverDetailFields();
+  const requested = [...lookupFields, tenantField, ...details.registration, ...details.contract].filter(Boolean);
+  if (!table.fields.length) return [...new Set(requested)];
+  const available = new Set(table.fields.map((field) => field.name));
+  return [...new Set(requested.filter((field) => available.has(field)))];
+}
+
 function recordToSearchResult(table: AirtableTable, record: AirtableRecord, safeFields?: string[]): AirtableSearchRecord {
   const allowed = safeFields?.length ? new Set(safeFields) : null;
   const entries = Object.entries(record.fields)
@@ -247,12 +297,12 @@ export async function searchAirtableLookupCandidates(query: string): Promise<{ c
     for (const table of tables.slice(0, MAX_TABLES)) {
       try {
         const lookupFields = driverLookupFields(table, configuredLookupField);
+        const detailFields = configuredDriverDetailFields();
         const searchFormula = `OR(${lookupFields.map((field) => `SEARCH("${escapeFormulaValue(normalizedQuery)}", CONCATENATE(${formulaFieldName(field)})) > 0`).join(",")})`;
         const filters = [searchFormula];
         if (tenantField && tenantValue) filters.push(`${formulaFieldName(tenantField)} = "${escapeFormulaValue(tenantValue)}"`);
         const params = new URLSearchParams({ pageSize: String(MAX_LOOKUP_CANDIDATES), filterByFormula: `AND(${filters.join(",")})` });
-        lookupFields.forEach((field) => params.append("fields[]", field));
-        if (tenantField && !lookupFields.includes(tenantField)) params.append("fields[]", tenantField);
+        requestedDriverDetailFields(table, lookupFields, tenantField).forEach((field) => params.append("fields[]", field));
         const data = await airtableJson<{ records?: AirtableRecord[] }>(
           `${AIRTABLE_API_ROOT}/${encodeURIComponent(getConfig().baseId)}/${encodeURIComponent(table.id)}?${params.toString()}`,
         );
@@ -261,7 +311,13 @@ export async function searchAirtableLookupCandidates(query: string): Promise<{ c
           const key = value.toLocaleLowerCase("ja-JP");
           if (!value || seen.has(key) || !key.includes(normalizedQuery.toLocaleLowerCase("ja-JP"))) continue;
           seen.add(key);
-          candidates.push({ value, table: table.name });
+          candidates.push({
+            value,
+            table: table.name,
+            recordId: record.id,
+            registrationFormUrl: safeHttpUrl(firstFieldText(record.fields, detailFields.registration)),
+            contractUrl: safeHttpUrl(firstFieldText(record.fields, detailFields.contract)),
+          });
           if (candidates.length >= MAX_LOOKUP_CANDIDATES) return { candidates, error: null };
         }
       } catch {
@@ -275,6 +331,64 @@ export async function searchAirtableLookupCandidates(query: string): Promise<{ c
       error: error instanceof Error ? error.message : "Airtableから候補を検索できませんでした",
     };
   }
+}
+
+export async function getAirtableDriverDetails(
+  lookupKey: string,
+  tableName?: string | null,
+  recordId?: string | null,
+): Promise<AirtableDriverDetails> {
+  const normalizedKey = lookupKey.trim();
+  if (!normalizedKey) throw new Error("Airtable検索キーが未設定です");
+  const tables = await getTables();
+  const table = tableName
+    ? tables.find((candidate) => candidate.name === tableName || candidate.id === tableName)
+    : tables.find((candidate) => driverLookupFields(candidate, process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "").length > 0);
+  if (!table) throw new Error("ドライバー情報のAirtableテーブルが見つかりません");
+
+  const configuredLookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
+  if (!configuredLookupField) {
+    throw new Error("個別フォームの取得には、Airtableの検索項目の設定が必要です");
+  }
+  const lookupFields = driverLookupFields(table, configuredLookupField);
+  const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
+  const tenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
+  const detailFields = configuredDriverDetailFields();
+  if (!tenantField || !tenantValue || (!detailFields.registration.length && !detailFields.contract.length)) {
+    throw new Error("個別フォームの取得には、Airtableの会社条件と許可項目の設定が必要です");
+  }
+  let record: AirtableRecord | undefined;
+  if (recordId) {
+    const { baseId } = getConfig();
+    record = await airtableJson<AirtableRecord>(
+      `${AIRTABLE_API_ROOT}/${encodeURIComponent(baseId)}/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}`,
+    );
+  } else {
+    const { baseId } = getConfig();
+    const params = new URLSearchParams({ pageSize: "10" });
+    const exactFormula = `OR(${lookupFields.map((field) => `${formulaFieldName(field)} = "${escapeFormulaValue(normalizedKey)}"`).join(",")})`;
+    params.set("filterByFormula", tenantField && tenantValue
+      ? `AND(${exactFormula}, ${formulaFieldName(tenantField)} = "${escapeFormulaValue(tenantValue)}")`
+      : exactFormula);
+    requestedDriverDetailFields(table, lookupFields, tenantField).forEach((field) => params.append("fields[]", field));
+    const data = await airtableJson<{ records?: AirtableRecord[] }>(
+      `${AIRTABLE_API_ROOT}/${encodeURIComponent(baseId)}/${encodeURIComponent(table.id)}?${params.toString()}`,
+    );
+    record = (data.records || []).find((candidate) => lookupFields.some((field) => fieldText(candidate.fields[field]).trim() === normalizedKey));
+  }
+  if (!record || !lookupFields.some((field) => fieldText(record?.fields[field]).trim() === normalizedKey)) {
+    throw new Error("Airtableのドライバー情報を完全一致で確認できませんでした");
+  }
+  if (tenantField && tenantValue && fieldText(record.fields[tenantField]).trim() !== tenantValue) {
+    throw new Error("Airtableの会社条件が一致しません");
+  }
+  return {
+    table: table.name,
+    recordId: record.id,
+    name: lookupFields.map((field) => fieldText(record?.fields[field]).trim()).find(Boolean) || normalizedKey,
+    registrationFormUrl: safeHttpUrl(firstFieldText(record.fields, detailFields.registration)),
+    contractUrl: safeHttpUrl(firstFieldText(record.fields, detailFields.contract)),
+  };
 }
 
 export async function getAirtableStatus() {
