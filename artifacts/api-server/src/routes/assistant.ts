@@ -17,7 +17,7 @@ import {
   sinJapanResourcesTable,
 } from "@workspace/db";
 import { getUserId, requireAuth } from "../lib/auth";
-import { buildSinJapanDailyReport, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
+import { buildSinJapanDailyReport, buildSinJapanOnboardingGuide, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
 import { isLineConfigured, isSinJapanLineConfigured, replyLineText, replySinJapanLineText, safePushLineText, verifyLineSignature, verifySinJapanLineSignature } from "../lib/line-client";
 import { getAirtableStatus } from "../lib/airtable-client";
 
@@ -87,7 +87,12 @@ router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void>
       if (codeMatch) {
         try {
           const group = await linkSinJapanDriverGroup(groupId, codeMatch[1]);
-          if (event.replyToken) await replySinJapanLineText(event.replyToken, `グループの紐付けが完了いたしました。\n${group.groupType === "operation" ? "稼働用グループ" : "採用・面談用グループ"}として登録されております。`);
+          if (event.replyToken) {
+            const reply = group.groupType === "onboarding"
+              ? await buildSinJapanOnboardingGuide(group.ownerUserId, group.driverId)
+              : "グループの紐付けが完了いたしました。\n稼働用グループとして登録されております。";
+            await replySinJapanLineText(event.replyToken, reply);
+          }
         } catch (error) {
           if (event.replyToken) await replySinJapanLineText(event.replyToken, error instanceof Error ? error.message : "紐付けに失敗しました");
         }

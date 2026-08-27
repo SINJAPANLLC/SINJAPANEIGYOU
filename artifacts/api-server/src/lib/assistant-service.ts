@@ -370,6 +370,39 @@ export async function linkSinJapanDriverGroup(groupId: string, code: string) {
   return group;
 }
 
+export async function buildSinJapanOnboardingGuide(ownerUserId: string, driverId: number) {
+  const [driver] = await db.select({
+    name: sinJapanDriversTable.name,
+  }).from(sinJapanDriversTable).where(and(
+    eq(sinJapanDriversTable.id, driverId),
+    eq(sinJapanDriversTable.ownerUserId, ownerUserId),
+    eq(sinJapanDriversTable.status, "active"),
+  ));
+  const resources = await db.select({
+    title: sinJapanResourcesTable.title,
+    url: sinJapanResourcesTable.url,
+  }).from(sinJapanResourcesTable).where(and(
+    eq(sinJapanResourcesTable.ownerUserId, ownerUserId),
+    eq(sinJapanResourcesTable.isActive, true),
+    or(eq(sinJapanResourcesTable.phase, "all"), eq(sinJapanResourcesTable.phase, "hired")),
+  ));
+  const resourceLines = resources.slice(0, 8).map((resource) => `・${resource.title}\n  ${resource.url}`);
+  return [
+    `🌷 ${driver?.name || "ドライバー"}様、ご登録ありがとうございます。`,
+    "SIN JAPANの面談・採用後サポートを担当いたします。",
+    "",
+    "【まずお願いしたいこと】",
+    "・面談資料をご確認ください",
+    "・登録フォームをご入力ください",
+    "・研修、契約、車両準備をご確認ください",
+    "・Amazonアカウントと3つのアプリの状態をご確認ください",
+    "",
+    resourceLines.length ? `【ご案内資料】\n${resourceLines.join("\n")}\n` : "",
+    "ご不明点は「登録フォームを教えてください」「研修について教えてください」のようにお送りくださいませ。",
+    "なお、パスワード・認証コード・ログイン情報はLINEへ送らないようお願いいたします。",
+  ].filter(Boolean).join("\n");
+}
+
 export async function getSinJapanDriverGroup(groupId: string) {
   const [group] = await db.select().from(sinJapanDriverGroupsTable).where(and(eq(sinJapanDriverGroupsTable.groupId, groupId), eq(sinJapanDriverGroupsTable.status, "active")));
   if (!group) return null;
