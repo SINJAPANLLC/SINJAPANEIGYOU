@@ -7,7 +7,9 @@ import {
   Database,
   ExternalLink,
   FileText,
+  Info,
   Link2,
+  ListChecks,
   Loader2,
   MessageCircle,
   Plus,
@@ -310,7 +312,7 @@ export default function SinJapanLinePage() {
             <div>
               <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">SIN JAPAN LINE</h1>
               <p className="text-muted-foreground mt-3 max-w-2xl leading-relaxed">
-                面談後から初回稼働、その後の日々の運用まで。管理者がAirtableへ入力した情報をもとに、LINEで案内・報告受付・緊急連絡を一元化します。
+                採用・面談用グループはドライバー様ごとに紐付け、稼働報告は別グループで運用します。管理者様への重要通知と日次報告は、管理者様の公式LINEへお届けします。
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -325,6 +327,34 @@ export default function SinJapanLinePage() {
             </div>
           </div>
         </header>
+
+        <section className="border border-emerald-500/30 bg-emerald-500/5 mb-6">
+          <div className="p-5 border-b border-emerald-500/20 flex items-start gap-3">
+            <div className="w-10 h-10 border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center shrink-0"><ListChecks className="w-5 h-5 text-emerald-400" /></div>
+            <div>
+              <h2 className="font-semibold">まず行う設定</h2>
+              <p className="text-sm text-muted-foreground mt-1">SIN JAPAN LINEは、採用・面談後のドライバー様への案内窓口としてご利用くださいませ。</p>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-emerald-500/20">
+            {[
+              ["01", "ドライバー登録", "AirtableレコードIDがあれば入力"],
+              ["02", "案内リンク登録", "資料・フォーム・研修案内を登録"],
+              ["03", "採用グループ紐付け", "SIN JAPAN LINEを招待して認証"],
+              ["04", "稼働後は別グループ", "稼働報告グループは紐付け不要"],
+            ].map(([number, title, detail]) => (
+              <div key={number} className="p-4">
+                <span className="text-[10px] tracking-widest text-emerald-400 font-mono">{number}</span>
+                <p className="font-medium mt-2">{title}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">{detail}</p>
+              </div>
+            ))}
+          </div>
+          <div className="px-5 py-3 border-t border-emerald-500/20 flex items-start gap-2 text-xs text-emerald-100/80">
+            <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            <span>採用グループの紐付け完了時に、SIN JAPAN LINEから最初の案内が自動送信されます。以降は、ドライバー様が質問や報告を送ったときに返答します。</span>
+          </div>
+        </section>
 
         <section className="border border-border bg-card mb-6">
           <div className="p-5 border-b border-border flex items-start gap-3">
@@ -350,7 +380,7 @@ export default function SinJapanLinePage() {
             <div className="w-10 h-10 border border-sky-500/30 bg-sky-500/10 flex items-center justify-center shrink-0"><UserRound className="w-5 h-5 text-sky-300" /></div>
             <div>
               <h2 className="font-semibold">ドライバー別の進捗・グループ管理</h2>
-              <p className="text-sm text-muted-foreground mt-1">ドライバー1名ごとに、採用・面談用と稼働用の2つのグループを認証コードで紐付けます。</p>
+              <p className="text-sm text-muted-foreground mt-1">ドライバー1名ごとに採用・面談用グループだけを認証コードで紐付けます。稼働報告用の別グループは紐付け不要です。</p>
             </div>
           </div>
           <div className="p-5 grid lg:grid-cols-[260px_1fr] gap-6">
@@ -365,7 +395,7 @@ export default function SinJapanLinePage() {
                   <div key={driver.id} className={`flex items-center gap-2 border p-2 ${selectedDriverId === driver.id ? "border-emerald-500/60 bg-emerald-500/5" : "border-border"}`}>
                     <button onClick={() => { setSelectedDriverId(driver.id); setDriverMessages([]); setCodes({}); }} className="flex-1 text-left text-sm truncate">
                       {driver.name}
-                      <span className="block text-[10px] text-muted-foreground truncate">{workflowStages.find((stage) => stage.value === driver.workflowStatus)?.label || driver.workflowStatus} · グループ {driver.groups.length}/2</span>
+                      <span className="block text-[10px] text-muted-foreground truncate">{workflowStages.find((stage) => stage.value === driver.workflowStatus)?.label || driver.workflowStatus} · 採用グループ {driver.groups.some((group) => group.groupType === "onboarding") ? "連携済み" : "未連携"}</span>
                     </button>
                     <button onClick={() => void removeDriver(driver)} className="p-1 text-muted-foreground hover:text-red-300" aria-label={`${driver.name}を無効にする`}><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
@@ -408,13 +438,17 @@ export default function SinJapanLinePage() {
                   {(["onboarding", "operation"] as const).map((groupType) => {
                     const group = selectedDriver.groups.find((item) => item.groupType === groupType);
                     const code = codes[groupType];
-                    const label = groupType === "onboarding" ? "採用・面談用グループ" : "稼働用グループ";
+                    const isOnboarding = groupType === "onboarding";
+                    const label = isOnboarding ? "採用・面談用グループ" : "稼働報告用グループ";
                     return (
-                      <div key={groupType} className="border border-border p-4">
+                      <div key={groupType} className={`border p-4 ${isOnboarding ? "border-emerald-500/30" : "border-dashed border-amber-500/30 bg-amber-500/5"}`}>
                         <div className="flex items-center justify-between gap-3"><h4 className="font-medium">{label}</h4>{group ? <span className="text-xs text-emerald-300 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />紐付け済み</span> : <span className="text-xs text-amber-300">未紐付け</span>}</div>
-                        <p className="text-xs text-muted-foreground mt-2">{group ? "このグループからのメッセージをドライバー専用情報として処理します。" : "グループへSIN JAPAN LINEを招待後、認証コードを入力します。"}</p>
-                        {!group && <Button variant="outline" onClick={() => void issueCode(groupType)} className="rounded-none mt-4 w-full"><Link2 className="w-4 h-4 mr-2" />認証コードを発行</Button>}
-                        {code && !group ? <div className="mt-4 border border-emerald-500/30 bg-emerald-500/5 p-3"><p className="text-xs text-muted-foreground">グループで送信</p><p className="text-lg font-mono tracking-[0.22em] text-emerald-300 mt-1">登録 {code.code}</p><p className="text-[10px] text-muted-foreground mt-2">{formatDateTime(code.expiresAt)}まで・一回限り</p></div> : null}
+                        <p className="text-xs text-muted-foreground mt-2">{isOnboarding
+                          ? group ? "SIN JAPAN LINEから初回案内が届きます。以降の質問にも返答します。" : "SIN JAPAN LINEを招待し、認証コードでこのドライバー様と紐付けます。"
+                          : "稼働報告は別グループで行います。SIN JAPAN LINEの招待・認証コードによる紐付けは不要です。"}
+                        </p>
+                        {isOnboarding && !group && <Button variant="outline" onClick={() => void issueCode(groupType)} className="rounded-none mt-4 w-full"><Link2 className="w-4 h-4 mr-2" />採用グループの認証コードを発行</Button>}
+                        {isOnboarding && code && !group ? <div className="mt-4 border border-emerald-500/30 bg-emerald-500/5 p-3"><p className="text-xs text-muted-foreground">採用グループで送信</p><p className="text-lg font-mono tracking-[0.22em] text-emerald-300 mt-1">登録 {code.code}</p><p className="text-[10px] text-muted-foreground mt-2">{formatDateTime(code.expiresAt)}まで・一回限り</p></div> : null}
                       </div>
                     );
                   })}
