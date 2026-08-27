@@ -456,35 +456,45 @@ export async function buildSinJapanOnboardingGuide(ownerUserId: string, driverId
     eq(sinJapanResourcesTable.isActive, true),
     or(eq(sinJapanResourcesTable.phase, "all"), eq(sinJapanResourcesTable.phase, "hired")),
   ));
-  const resourceLines = resources.slice(0, 8).map((resource) => [
-    `・${resource.title}`,
+  const resourceLines = resources.slice(0, 8).map((resource, index) => [
+    `${index + 1}．${resource.title}`,
     resource.description || "",
-    `  ${resource.url}`,
+    resource.url,
   ].filter(Boolean).join("\n"));
   const contractNotice = driver?.contractStatus === "sent"
-    ? "・契約書は管理者様から送付済みです。内容をご確認ください"
+    ? "契約書：管理者様から送付済みです。内容をご確認ください。"
     : driver?.contractStatus === "confirmed"
-      ? "・契約書のご確認を承っております"
-      : "・契約書は管理者様から個別にご案内いたします";
+      ? "契約書：ご確認済みです。"
+      : "契約書：管理者様から個別にご案内いたします。";
   return [
-    `🌷 ${driver?.name || "ドライバー"}様、ご登録ありがとうございます。`,
-    "SIN JAPANの面談・採用後サポートを担当いたします。",
+    `🌷 ${driver?.name || "ドライバー"}様`,
+    "SIN JAPANへのご登録ありがとうございます。",
+    "これからの流れを、順番にご案内します。",
     "",
-    "【まずお願いしたいこと】",
-    "・面談資料をご確認ください",
+    "【1｜面談資料を読む】",
+    "報酬・契約条件・車両レンタルについてご確認ください。",
+    "",
+    "【2｜登録フォーム】",
     driver?.registrationFormUrl
-      ? `・登録フォームをご入力ください\n  ${driver.registrationFormUrl}`
-      : "・登録フォームは管理者様からのご案内をお待ちください",
-    "・研修、契約、車両準備をご確認ください",
-    contractNotice,
-    "・Amazonアカウントと3つのアプリの状態をご確認ください",
-    "・AmazonのIDは、ご自身の業務用メールアドレスをご利用ください",
+      ? `以下のフォームへ入力してください。\n${driver.registrationFormUrl}`
+      : "登録フォームは、管理者様からの案内をお待ちください。",
     "",
-    resourceLines.length ? `【ご案内資料】\n${resourceLines.join("\n")}\n` : "",
-    driver?.trainingGuidance ? `【研修の段取り】\n${driver.trainingGuidance}` : "",
-    driver?.vehiclePreparationGuidance ? `【車両準備のご案内】\n${driver.vehiclePreparationGuidance}` : "",
-    "ご不明点は「登録フォームを教えてください」「研修について教えてください」のようにお送りくださいませ。",
-    "なお、パスワード・認証コード・ログイン情報はLINEへ送らないようお願いいたします。",
+    "【3｜研修・契約・車両を準備】",
+    driver?.trainingGuidance ? `研修：${driver.trainingGuidance}` : "研修：管理者様からの案内をご確認ください。",
+    contractNotice,
+    driver?.vehiclePreparationGuidance ? `車両：${driver.vehiclePreparationGuidance}` : "車両：準備内容を管理者様にご確認ください。",
+    "",
+    "【4｜アカウント・アプリを確認】",
+    "Amazon Flex・Disprz・Mentor DDPの準備状況をご確認ください。",
+    "AmazonのIDには、ご自身の業務用メールアドレスをご利用ください。",
+    "",
+    resourceLines.length ? `【確認用資料】\n${resourceLines.join("\n\n")}` : "",
+    "",
+    "【ご質問】",
+    "「登録フォームを教えて」「研修について教えて」のように、このLINEへお送りください。",
+    "",
+    "【大切なお願い】",
+    "パスワード・認証コード・ログイン情報は、このLINEへ送らないでください。",
   ].filter(Boolean).join("\n");
 }
 
