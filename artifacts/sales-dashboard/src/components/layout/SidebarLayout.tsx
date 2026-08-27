@@ -48,6 +48,7 @@ const navigationExtra = [
   { name: "TikTok DM", href: "/tiktok-dm", icon: Music2 },
   { name: "ジモティー", href: "/jimoty", icon: MapPin },
   { name: "公式LINE", href: "/official-line", icon: MessageCircle },
+  { name: "SIN JAPAN LINE", href: "/sin-japan-line", icon: Building2 },
 ];
 
 export function SidebarLayout({ children }: { children: ReactNode }) {
