@@ -4,6 +4,7 @@ const TABLE_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_TABLES = 20;
 const MAX_RECORDS_PER_TABLE = 30;
 const MAX_LOOKUP_CANDIDATES = 20;
+const DEFAULT_DRIVER_LOOKUP_FIELDS = ["氏名", "ドライバー名", "名前", "乗務員名", "スタッフ名", "Name", "name", "driver_name"];
 
 type AirtableField = { id: string; name: string; type?: string };
 type AirtableTable = { id: string; name: string; fields: AirtableField[] };
@@ -123,12 +124,19 @@ function textFields(table: AirtableTable, allowedFields?: string[]) {
   return table.fields.filter((field) => (!allowed || allowed.has(field.name)) && (!field.type || supported.has(field.type))).slice(0, 30);
 }
 
+function driverLookupFields(table: AirtableTable, configuredField?: string | null) {
+  if (configuredField?.trim()) return [configuredField.trim()];
+  const availableFields = new Set(table.fields.map((field) => field.name));
+  const detectedFields = DEFAULT_DRIVER_LOOKUP_FIELDS.filter((field) => availableFields.has(field));
+  return detectedFields.length ? detectedFields : DEFAULT_DRIVER_LOOKUP_FIELDS;
+}
+
 function buildFilterFormula(table: AirtableTable, terms: string[], options: AirtableSearchOptions = {}, allowedFields?: string[]) {
   const fields = textFields(table, allowedFields);
   const queryExpressions = terms.flatMap((term) => fields.map((field) => `SEARCH("${escapeFormulaValue(term)}", CONCATENATE({${field.name}})) > 0`));
   const queryFormula = queryExpressions.length ? `OR(${queryExpressions.join(",")})` : "";
-  const driverLookupFormula = options.driverLookupField && options.driverLookupKey
-    ? `${formulaFieldName(options.driverLookupField)} = "${escapeFormulaValue(options.driverLookupKey)}"`
+  const driverLookupFormula = options.driverLookupKey
+    ? `OR(${driverLookupFields(table, options.driverLookupField).map((field) => `${formulaFieldName(field)} = "${escapeFormulaValue(options.driverLookupKey!)}"`).join(",")})`
     : "";
   const tenantFormula = options.driverTenantField && options.driverTenantValue
     ? `${formulaFieldName(options.driverTenantField)} = "${escapeFormulaValue(options.driverTenantValue)}"`
@@ -180,7 +188,7 @@ async function getMatchingRecords(table: AirtableTable, terms: string[], options
   );
   return (data.records || [])
     .filter((record) => {
-      if (options.driverLookupField && options.driverLookupKey && fieldText(record.fields[options.driverLookupField]) !== options.driverLookupKey) return false;
+      if (options.driverLookupKey && !driverLookupFields(table, options.driverLookupField).some((field) => fieldText(record.fields[field]) === options.driverLookupKey)) return false;
       if (options.driverTenantField && options.driverTenantValue && fieldText(record.fields[options.driverTenantField]) !== options.driverTenantValue) return false;
       return true;
     })
@@ -199,7 +207,7 @@ export async function searchAirtable(query: string, options: AirtableSearchOptio
     const tables = await getTables();
     const records: AirtableSearchRecord[] = [];
     const driverMode = options.driverLookupKey !== undefined || options.driverLookupField !== undefined || options.driverSafeFields !== undefined;
-    const privateDriverSearchAllowed = Boolean(options.driverLookupKey && options.driverLookupField && options.driverSafeFields?.length && options.driverTenantField && options.driverTenantValue);
+    const privateDriverSearchAllowed = Boolean(options.driverLookupKey && options.driverSafeFields?.length && options.driverTenantField && options.driverTenantValue);
     for (const table of tables.slice(0, MAX_TABLES)) {
       try {
         const isCommonTable = (options.commonTables || []).some((name) => name.trim() === table.name);
@@ -228,29 +236,28 @@ export async function searchAirtableLookupCandidates(query: string): Promise<{ c
   const normalizedQuery = query.trim().replace(/\s+/g, " ");
   if (normalizedQuery.length < 2) return { candidates: [], error: null };
 
-  const lookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
+  const configuredLookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
   const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
   const tenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
-  if (!lookupField || !tenantField || !tenantValue) {
-    return { candidates: [], error: "ドライバー候補検索にはAirtableの検索項目とテナント条件の設定が必要です" };
-  }
 
   try {
     const tables = await getTables();
     const candidates: AirtableLookupCandidate[] = [];
     const seen = new Set<string>();
-    const searchFormula = `SEARCH("${escapeFormulaValue(normalizedQuery)}", CONCATENATE(${formulaFieldName(lookupField)})) > 0`;
-    const tenantFormula = `${formulaFieldName(tenantField)} = "${escapeFormulaValue(tenantValue)}"`;
     for (const table of tables.slice(0, MAX_TABLES)) {
       try {
-        const params = new URLSearchParams({ pageSize: String(MAX_LOOKUP_CANDIDATES), filterByFormula: `AND(${searchFormula}, ${tenantFormula})` });
-        params.append("fields[]", lookupField);
-        if (tenantField !== lookupField) params.append("fields[]", tenantField);
+        const lookupFields = driverLookupFields(table, configuredLookupField);
+        const searchFormula = `OR(${lookupFields.map((field) => `SEARCH("${escapeFormulaValue(normalizedQuery)}", CONCATENATE(${formulaFieldName(field)})) > 0`).join(",")})`;
+        const filters = [searchFormula];
+        if (tenantField && tenantValue) filters.push(`${formulaFieldName(tenantField)} = "${escapeFormulaValue(tenantValue)}"`);
+        const params = new URLSearchParams({ pageSize: String(MAX_LOOKUP_CANDIDATES), filterByFormula: `AND(${filters.join(",")})` });
+        lookupFields.forEach((field) => params.append("fields[]", field));
+        if (tenantField && !lookupFields.includes(tenantField)) params.append("fields[]", tenantField);
         const data = await airtableJson<{ records?: AirtableRecord[] }>(
           `${AIRTABLE_API_ROOT}/${encodeURIComponent(getConfig().baseId)}/${encodeURIComponent(table.id)}?${params.toString()}`,
         );
         for (const record of data.records || []) {
-          const value = fieldText(record.fields[lookupField]).trim();
+          const value = lookupFields.map((field) => fieldText(record.fields[field]).trim()).find(Boolean) || "";
           const key = value.toLocaleLowerCase("ja-JP");
           if (!value || seen.has(key) || !key.includes(normalizedQuery.toLocaleLowerCase("ja-JP"))) continue;
           seen.add(key);
