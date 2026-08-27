@@ -94,6 +94,9 @@ function formatAssistantReply(reply: string) {
     .replace(/\r\n/g, "\n")
     .replace(/^\s*#{1,6}\s*/gm, "")
     .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -274,7 +277,15 @@ type AssistantProcessOptions = {
 
 export async function processAssistantMessage(userId: string, text: string, source = "line", lineMessageId?: string, options: AssistantProcessOptions = {}) {
   const inserted = await db.insert(assistantMessagesTable).values({ userId, source, role: "user", content: text, lineMessageId: lineMessageId || null }).onConflictDoNothing().returning();
-  if (!inserted.length) return { reply: "", actions: [] as AssistantAction[], duplicate: true };
+  if (!inserted.length) {
+    return {
+      reply: "",
+      actions: [] as AssistantAction[],
+      duplicate: true,
+      needsManagerConfirmation: false,
+      managerConfirmationReason: "",
+    };
+  }
   const driverMode = source === "sin-japan-driver";
   const context = await buildAssistantContext(userId);
   const searchResults = driverMode ? [] : await searchAssistantKnowledge(userId, text);
@@ -294,8 +305,15 @@ export async function processAssistantMessage(userId: string, text: string, sour
   const client = getOpenAIClient();
   let reply: string;
   let actions: AssistantAction[] = [];
+  let needsManagerConfirmation = false;
+  let managerConfirmationReason = "";
   if (!client) {
     ({ reply, actions } = fallbackResponse(text, context, driverMode));
+    if (driverMode) {
+      needsManagerConfirmation = true;
+      managerConfirmationReason = "AI応答を生成できないため";
+      reply = "お問い合わせありがとうございます。内容を確認のうえ、管理者様からご案内いたします。";
+    }
     if (airtableResult?.error) {
       reply = `Airtable検索に失敗しました（${airtableResult.error}）。\n\n${reply}`;
     } else if (airtableResult?.records.length) {
@@ -310,13 +328,14 @@ export async function processAssistantMessage(userId: string, text: string, sour
 とても丁寧で柔らかく、安心感のある敬語でお話しください。業務上の正確さを保ちながら、冷たくならない親身な表現にしてください。
 ドライバーには担当する配車・案件と会社共通の運用案内だけを案内してください。他のドライバーの案件、報酬、個人情報、全社の不要な情報は絶対に開示しないでください。
 個人用AI秘書の記憶、TODO、過去会話、営業情報は使用しないでください。Airtable検索結果にない事実は推測せず、管理者確認が必要と伝えてください。
+回答に必要な根拠が不足している場合は、needs_manager_confirmationをtrueにし、管理者へ確認する旨だけを丁寧に返してください。manager_reasonには管理者が確認すべき要点を短く記載してください。
 この会話ではactionsは必ず空配列にしてください。`
       : `あなたは日本語で応答する、女性の本人専用AI秘書です。
 とても丁寧で柔らかく、上品で安心感のある敬語でお話しください。`}
 外部に影響する操作（メール送信、電話、SNS投稿、予約、購入）は絶対に実行せず、必要なら確認を取って下書き・提案だけします。
 「覚えて」「記憶して」と明示された内容だけ長期記憶に保存し、「忘れて」と明示された場合だけ削除候補にします。
-次のJSONだけを返してください。replyはユーザーにそのまま見せる自然な日本語、actionsは必要な時だけ使用します。
-{"reply":"...", "actions":[{"type":"create_todo","title":"...", "details":"...", "priority":"high|normal|low"},{"type":"create_note","title":"...", "content":"...", "category":"todo|idea|decision|person_company|sales|reference|temporary"},{"type":"complete_todo","id":1},{"type":"save_memory","content":"...", "category":"preference|goal|business|general"},{"type":"forget_memory","id":1}]}
+次のJSONだけを返してください。replyはユーザーにそのまま見せる自然な日本語、actionsは必要な時だけ使用します。needs_manager_confirmationはドライバー対応で管理者確認が必要な場合だけtrueにし、それ以外はfalseにしてください。
+{"reply":"...", "actions":[{"type":"create_todo","title":"...", "details":"...", "priority":"high|normal|low"},{"type":"create_note","title":"...", "content":"...", "category":"todo|idea|decision|person_company|sales|reference|temporary"},{"type":"complete_todo","id":1},{"type":"save_memory","content":"...", "category":"preference|goal|business|general"},{"type":"forget_memory","id":1}], "needs_manager_confirmation":false, "manager_reason":""}
 壁打ち、アイデア、悩み、情報整理の依頼では、replyに【要点】【論点】【決まっていること】【未決定のこと】【次に考えること】【TODO候補】【確認すること】を必要な範囲で含め、actionsにcreate_noteを追加してください。create_noteは長期記憶ではなく、分類付きの整理メモです。通常の雑談や明確な依頼には不要です。
 LINEで読むことを前提に、返信は短く読みやすく整えてください。女性の秘書らしい、やわらかく非常に丁寧な敬語を必ず使ってください。1文を短くし、段落の間に空行を入れてください。重要な項目は【見出し】、複数項目は「・」の箇条書きを使ってください。Markdownの表、長い一段落、過剰な前置きは避け、原則300文字以内にまとめてください。
 利用可能なコンテキスト:
@@ -343,6 +362,8 @@ ${driverMode ? `現在の進捗に対応する案内リンク: ${JSON.stringify(
       const parsed = JSON.parse(result.choices[0]?.message?.content || "{}");
       reply = typeof parsed.reply === "string" ? parsed.reply : "承知しました。";
       actions = Array.isArray(parsed.actions) ? parsed.actions : [];
+      needsManagerConfirmation = driverMode && parsed.needs_manager_confirmation === true;
+      managerConfirmationReason = typeof parsed.manager_reason === "string" ? parsed.manager_reason.trim().slice(0, 240) : "";
     } catch (error) {
       logger.error({ err: error }, "assistant response generation failed");
       ({ reply, actions } = fallbackResponse(text, context, driverMode));
@@ -354,18 +375,37 @@ ${driverMode ? `現在の進捗に対応する案内リンク: ${JSON.stringify(
     }
   }
   if (driverMode) actions = [];
+  if (driverMode && needsManagerConfirmation && !reply.includes("管理者")) {
+    reply = `${reply}\n\n確認が必要な内容です。管理者様へ確認のうえ、ご案内いたします。`;
+  }
   reply = formatAssistantReply(reply);
   await applyAssistantActions(userId, actions);
   await db.insert(assistantMessagesTable).values({ userId, source, role: "assistant", content: reply });
-  return { reply, actions, airtable: airtableResult };
+  return { reply, actions, airtable: airtableResult, needsManagerConfirmation, managerConfirmationReason };
 }
 
 export async function processSinJapanDriverMessage(ownerUserId: string, driverId: number, text: string, lineMessageId?: string, groupType?: "onboarding" | "operation") {
   if (groupType === "operation") {
-    return { reply: "", actions: [] as AssistantAction[], airtable: null, duplicate: false, readOnly: true };
+    return {
+      reply: "",
+      actions: [] as AssistantAction[],
+      airtable: null,
+      duplicate: false,
+      readOnly: true,
+      needsManagerConfirmation: false,
+      managerConfirmationReason: "",
+    };
   }
   if (containsDriverCredential(text)) {
-    return { reply: driverCredentialSafetyReply(), actions: [] as AssistantAction[], airtable: null, duplicate: false, blocked: true };
+    return {
+      reply: driverCredentialSafetyReply(),
+      actions: [] as AssistantAction[],
+      airtable: null,
+      duplicate: false,
+      blocked: true,
+      needsManagerConfirmation: false,
+      managerConfirmationReason: "",
+    };
   }
   const [driver] = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.id, driverId), eq(sinJapanDriversTable.ownerUserId, ownerUserId), eq(sinJapanDriversTable.status, "active")));
   if (!driver) throw new Error("有効なドライバーが見つかりません");
@@ -466,8 +506,8 @@ export async function buildSinJapanOnboardingGuide(ownerUserId: string, driverId
     : driver?.contractStatus === "confirmed"
       ? "契約書：ご確認済みです。"
       : "契約書：管理者様から個別にご案内いたします。";
-  return [
-    `🌷 ${driver?.name || "ドライバー"}様`,
+  return formatAssistantReply([
+    `${driver?.name || "ドライバー"}様`,
     "SIN JAPANへのご登録ありがとうございます。",
     "これからの流れを、順番にご案内します。",
     "",
@@ -495,7 +535,7 @@ export async function buildSinJapanOnboardingGuide(ownerUserId: string, driverId
     "",
     "【大切なお願い】",
     "パスワード・認証コード・ログイン情報は、このLINEへ送らないでください。",
-  ].filter(Boolean).join("\n");
+  ].filter(Boolean).join("\n"));
 }
 
 export async function getSinJapanDriverGroup(groupId: string) {
@@ -561,9 +601,50 @@ export async function notifySinJapanManager(ownerUserId: string, escalation: typ
   const profile = await getOrCreateAssistantProfile(ownerUserId);
   if (!profile.lineUserId) return { ok: false as const, error: "管理者の公式LINEが連携されていません" };
   const [driver] = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.id, escalation.driverId), eq(sinJapanDriversTable.ownerUserId, ownerUserId)));
-  const sent = await safePushLineText(profile.lineUserId, `【要確認｜SIN JAPAN LINE】\nドライバー：${driver?.name || "不明"}\n分類：${escalation.category}\n内容：${escalation.summary}`);
+  const summary = formatAssistantReply(escalation.summary).slice(0, 180);
+  const sent = await safePushLineText(profile.lineUserId, `【要確認｜SIN JAPAN LINE】\nドライバー：${driver?.name || "不明"}\n分類：${escalation.category}\n内容：${summary}`);
   if (sent.ok) await db.update(sinJapanEscalationsTable).set({ managerNotifiedAt: new Date() }).where(eq(sinJapanEscalationsTable.id, escalation.id));
   return sent;
+}
+
+export async function notifySinJapanManagerConfirmation(params: {
+  ownerUserId: string;
+  driverId: number;
+  groupId: string;
+  question: string;
+  reason?: string;
+}) {
+  const question = formatAssistantReply(params.question).slice(0, 180);
+  const reason = params.reason ? formatAssistantReply(params.reason).slice(0, 240) : "";
+  const [escalation] = await db.insert(sinJapanEscalationsTable).values({
+    ownerUserId: params.ownerUserId,
+    driverId: params.driverId,
+    groupId: params.groupId,
+    category: "ドライバー質問・管理者確認",
+    urgency: "normal",
+    summary: question,
+    details: reason ? `確認事項：${reason}\n\n質問：${question}` : question,
+  }).returning();
+  const profile = await getOrCreateAssistantProfile(params.ownerUserId);
+  if (!profile.lineUserId) return { ok: false as const, error: "管理者の公式LINEが連携されていません", escalation };
+  const [driver] = await db.select().from(sinJapanDriversTable).where(and(
+    eq(sinJapanDriversTable.id, params.driverId),
+    eq(sinJapanDriversTable.ownerUserId, params.ownerUserId),
+  ));
+  const message = [
+    "【管理者確認｜SIN JAPAN LINE】",
+    `ドライバー：${driver?.name || "不明"}`,
+    "ドライバーからの質問に確認が必要です。",
+    `内容：${question}`,
+    reason ? `確認事項：${reason}` : "",
+  ].filter(Boolean).join("\n");
+  const sent = await safePushLineText(profile.lineUserId, message);
+  if (sent.ok) {
+    await db.update(sinJapanEscalationsTable)
+      .set({ managerNotifiedAt: new Date() })
+      .where(eq(sinJapanEscalationsTable.id, escalation.id));
+  }
+  return { ...sent, escalation };
 }
 
 export async function retrySinJapanManagerNotifications() {
@@ -618,9 +699,9 @@ export async function buildSinJapanDailyReport(ownerUserId: string) {
   ];
   if (missingReports.length) lines.push("", "■ 未報告ドライバー", ...missingReports.map((driver) => `・${driver.name}`));
   if (incidents.length) {
-    lines.push("", "⚠️ 事故・トラブル", ...incidents.slice(0, 5).map((item) => `・${nameOf(item.driverId)}：${item.content.slice(0, 100)}`));
+    lines.push("", "【事故・トラブル】", ...incidents.slice(0, 5).map((item) => `・${nameOf(item.driverId)}：${item.content.slice(0, 100)}`));
   }
-  return { content: lines.join("\n"), reports, escalations };
+  return { content: formatAssistantReply(lines.join("\n")), reports, escalations };
 }
 
 export async function sendSinJapanDailyReport(ownerUserId: string) {
@@ -713,7 +794,7 @@ function buildDailyReportDraft(timezone: string, context: Awaited<ReturnType<typ
   const organizationNotes = context.notes.filter((note) => ["idea", "decision", "person_company", "reference"].includes(note.category)).slice(0, 4);
   const date = reportDateLabel(timezone);
   const bullets = (items: string[], empty: string) => items.length ? items.map((item) => `・${item}`).join("\n") : `・${empty}`;
-  return `🌅 おはようございます（${date}）\n\n🎯 今日の目的\n${bullets(goals.map((goal) => goal.content), "今日の最優先タスクを1つ決めて、着手する")}\n\n🧠 TODO（受け取った内容を要約）\n${bullets(topTodos.map((todo) => `${todo.title}${todo.priority === "high" ? "（重要）" : ""}`), "未完了のTODOはありません")}\n\n💰 売上タスク\n${bullets([`営業リード ${context.sales.leads}件`, `送信済みメール ${context.sales.sentEmails}件`, `有効な営業スケジュール ${context.sales.activeSchedules}件`], "営業タスクはありません")}\n\n🏢 組織タスク\n${bullets(organizationNotes.map((note) => `${note.title}: ${note.content}`), "整理中の組織タスクはありません")}\n\n📞 電話確認\n・電話連携は未接続です\n\n✉️ メール確認\n・個人メールは未接続です\n・営業メールの送信状況を確認してください（送信済み ${context.sales.sentEmails}件）\n\n💬 LINE確認\n・AI秘書のLINE連携：${context.profile.lineUserId ? "連携済み" : "未連携"}\n\n📝 メモ・注意事項\n${bullets(oldTodos.map((todo) => `未処理の可能性：${todo.title}`), "特にありません")}\n\n⚠️ 注意すべきリスク\n・期限が近いTODOと返信待ちの案件を確認してください\n\n⏰ 次のチェック\n・11:00に進捗確認\n\n📰 今日の情報\n${bullets(research.slice(0, 5).map((item) => `${item.title}\\n  ${item.url}`), "新しい情報はありません")}`;
+  return `おはようございます（${date}）\n\n【今日の目的】\n${bullets(goals.map((goal) => goal.content), "今日の最優先タスクを1つ決めて、着手する")}\n\n【TODO】\n${bullets(topTodos.map((todo) => `${todo.title}${todo.priority === "high" ? "（重要）" : ""}`), "未完了のTODOはありません")}\n\n【売上タスク】\n${bullets([`営業リード ${context.sales.leads}件`, `送信済みメール ${context.sales.sentEmails}件`, `有効な営業スケジュール ${context.sales.activeSchedules}件`], "営業タスクはありません")}\n\n【組織タスク】\n${bullets(organizationNotes.map((note) => `${note.title}: ${note.content}`), "整理中の組織タスクはありません")}\n\n【電話確認】\n・電話連携は未接続です\n\n【メール確認】\n・個人メールは未接続です\n・営業メールの送信状況を確認してください（送信済み ${context.sales.sentEmails}件）\n\n【LINE確認】\n・AI秘書のLINE連携：${context.profile.lineUserId ? "連携済み" : "未連携"}\n\n【メモ・注意事項】\n${bullets(oldTodos.map((todo) => `未処理の可能性：${todo.title}`), "特にありません")}\n\n【注意すべきリスク】\n・期限が近いTODOと返信待ちの案件を確認してください\n\n【次のチェック】\n・11:00に進捗確認\n\n【今日の情報】\n${bullets(research.slice(0, 5).map((item) => `${item.title}\\n  ${item.url}`), "新しい情報はありません")}`;
 }
 
 export async function generateDailyReport(userId: string, options: { deliver?: boolean; force?: boolean } = {}) {
@@ -755,7 +836,7 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
         model: "gpt-4o-mini",
         messages: [{
           role: "system",
-          content: "あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字はそのまま使い、可愛く親しみやすいが、仕事で読みやすい文章にしてください。情報がない項目も削除せず「ありません」「未接続」と明記してください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。情報源URLは改変しないでください。\n🌅 おはようございます（M/D 曜日）\n🎯 今日の目的\n🧠 TODO（受け取った内容を要約）\n💰 売上タスク\n🏢 組織タスク\n📞 電話確認\n✉️ メール確認\n💬 LINE確認\n📝 メモ・注意事項\n⚠️ 注意すべきリスク\n⏰ 次のチェック\n📰 今日の情報",
+          content: "あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字は使わず、親しみやすく仕事で読みやすい文章にしてください。情報がない項目も削除せず「ありません」「未接続」と明記してください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。情報源URLは改変しないでください。\nおはようございます（M/D 曜日）\n【今日の目的】\n【TODO】\n【売上タスク】\n【組織タスク】\n【電話確認】\n【メール確認】\n【LINE確認】\n【メモ・注意事項】\n【注意すべきリスク】\n【次のチェック】\n【今日の情報】",
         }, {
           role: "user",
           content: `日付: ${reportDate}\n未完了TODO: ${JSON.stringify(context.todos)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary}`,
@@ -763,6 +844,7 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
       });
       content = result.choices[0]?.message?.content?.trim() || content;
     }
+    content = formatAssistantReply(content);
     await db.delete(assistantResearchItemsTable).where(eq(assistantResearchItemsTable.reportId, report.id));
     if (research.length) await db.insert(assistantResearchItemsTable).values(research.map((item) => ({ reportId: report.id, ...item })));
     const [completed] = await db.update(assistantReportsTable).set({ status: "completed", content, sourceSummary, completedAt: new Date(), deliveredAt: null, error: null }).where(eq(assistantReportsTable.id, report.id)).returning();

@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import crypto from "crypto";
+import { existsSync } from "node:fs";
 import path from "path";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import {
@@ -18,7 +19,7 @@ import {
   sinJapanResourcesTable,
 } from "@workspace/db";
 import { getUserId, requireAuth } from "../lib/auth";
-import { buildSinJapanDailyReport, buildSinJapanOnboardingGuide, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, ensureSinJapanDefaultResources, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
+import { buildSinJapanDailyReport, buildSinJapanOnboardingGuide, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, ensureSinJapanDefaultResources, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, notifySinJapanManagerConfirmation, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
 import { isLineConfigured, isSinJapanLineConfigured, replyLineText, replySinJapanLineText, safePushLineText, safePushSinJapanLineText, verifyLineSignature, verifySinJapanLineSignature } from "../lib/line-client";
 import { getAirtableDriverDetails, getAirtableStatus, searchAirtableLookupCandidates } from "../lib/airtable-client";
 
@@ -40,7 +41,11 @@ router.get("/assistant/sin-japan-line/guides/:slug.pdf", async (req, res): Promi
     res.status(404).json({ error: "資料が見つかりません" });
     return;
   }
-  const root = path.resolve(process.cwd(), "../../attached_assets");
+  const guideRoots = [
+    path.resolve(process.cwd(), "attached_assets"),
+    path.resolve(process.cwd(), "../../attached_assets"),
+  ];
+  const root = guideRoots.find((candidate) => existsSync(candidate)) || guideRoots[0];
   const filePath = path.resolve(root, guide.fileName);
   if (!filePath.startsWith(`${root}${path.sep}`)) {
     res.status(400).json({ error: "不正な資料パスです" });
@@ -48,6 +53,8 @@ router.get("/assistant/sin-japan-line/guides/:slug.pdf", async (req, res): Promi
   }
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="${guide.downloadName}"`);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "private, no-store");
   res.sendFile(filePath, (error) => {
     if (error && !res.headersSent) res.status((error as any).statusCode || 404).json({ error: "資料を配信できません" });
   });
@@ -150,6 +157,19 @@ router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void>
       if (relation.group.groupType === "operation") continue;
       const result = await processSinJapanDriverMessage(relation.driver.ownerUserId, relation.driver.id, text, event.message?.id, relation.group.groupType === "operation" ? "operation" : "onboarding");
       if (event.replyToken && !result.duplicate) await replySinJapanLineText(event.replyToken, result.reply);
+      if (result.needsManagerConfirmation) {
+        try {
+          await notifySinJapanManagerConfirmation({
+            ownerUserId: relation.driver.ownerUserId,
+            driverId: relation.driver.id,
+            groupId,
+            question: text,
+            reason: result.managerConfirmationReason,
+          });
+        } catch (error) {
+          req.log?.error({ err: error, groupId }, "SIN JAPAN manager confirmation notification failed");
+        }
+      }
     } catch (error) {
       req.log?.error({ err: error }, "SIN JAPAN LINE webhook event failed");
     }
