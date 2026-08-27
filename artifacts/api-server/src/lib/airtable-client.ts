@@ -37,9 +37,16 @@ function configuredTables() {
   return (process.env.AIRTABLE_TABLES || "")
     .split(/[\n,]/)
     .map((name) => name.trim())
-    .filter(Boolean)
+    .filter((name) => Boolean(name) && !["全部", "全て", "すべて", "all", "*"].includes(name.toLowerCase()))
     .slice(0, MAX_TABLES)
     .map((name) => ({ id: name, name, fields: [] }));
+}
+
+function requestsAllTables() {
+  return (process.env.AIRTABLE_TABLES || "")
+    .split(/[\n,]/)
+    .map((name) => name.trim().toLowerCase())
+    .some((name) => ["全部", "全て", "すべて", "all", "*"].includes(name));
 }
 
 async function airtableJson<T>(url: string): Promise<T> {
@@ -69,6 +76,9 @@ async function getTables(): Promise<AirtableTable[]> {
     const data = await airtableJson<{ tables?: AirtableTable[] }>(`${AIRTABLE_META_ROOT}/bases/${encodeURIComponent(baseId)}/tables`);
     tables = (data.tables || []).filter((table) => table.id && table.name);
   } catch (error) {
+    if (requestsAllTables()) {
+      throw new Error("Airtableの全テーブル自動検出には、トークンへschema.bases:read権限を付与してください。");
+    }
     tables = configuredTables();
     if (!tables.length) throw error;
   }
