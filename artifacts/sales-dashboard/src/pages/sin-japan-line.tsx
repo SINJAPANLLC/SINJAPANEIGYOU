@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 
-type AirtableStatus = { configured: boolean; baseConfigured: boolean; tablesCached: boolean };
+type AirtableStatus = { configured: boolean; connection: "connected" | "not_configured" | "error"; baseConfigured: boolean; tablesCached: boolean; error: string | null };
 type AirtableRecord = { table: string; recordId: string; title: string; content: string; createdAt: string | null };
 type ChatMessage = { role: "user" | "assistant"; content: string; records?: AirtableRecord[] };
 
@@ -66,9 +66,9 @@ export default function SinJapanLinePage() {
                 SIN JAPANの物流事業専用AI秘書です。話しかけるとAirtableの情報を読み取り、案件・顧客・売上・車両・スタッフに関する回答を整理します。
               </p>
             </div>
-            <span className={`inline-flex items-center gap-2 border px-3 py-2 text-xs w-fit ${status?.configured ? "border-emerald-500/40 text-emerald-300" : "border-amber-500/40 text-amber-300"}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${status?.configured ? "bg-emerald-400" : "bg-amber-400"}`} />
-              {status?.configured ? "Airtable連携済み" : "Airtable設定を確認中"}
+            <span className={`inline-flex items-center gap-2 border px-3 py-2 text-xs w-fit ${status?.connection === "connected" ? "border-emerald-500/40 text-emerald-300" : "border-amber-500/40 text-amber-300"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${status?.connection === "connected" ? "bg-emerald-400" : "bg-amber-400"}`} />
+              {status?.connection === "connected" ? "Airtable接続済み" : status?.connection === "error" ? "Airtable接続エラー" : "Airtable設定を確認中"}
             </span>
           </div>
         </header>
@@ -102,11 +102,12 @@ export default function SinJapanLinePage() {
             )}
             <div className="flex flex-col sm:flex-row gap-2">
               <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askSecretary(); } }} placeholder="物流について質問・相談してください…" rows={3} className="rounded-none resize-none" />
-              <Button onClick={() => void askSecretary()} disabled={!question.trim() || isSending || status?.configured === false} className="rounded-none sm:self-end">
+              <Button onClick={() => void askSecretary()} disabled={!question.trim() || isSending || status?.connection !== "connected"} className="rounded-none sm:self-end">
                 {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 mr-2" />相談する</>}
               </Button>
             </div>
-            {status && !status.configured ? <p className="text-xs text-amber-300">AirtableのAPIキーまたはBase IDが未設定です。Secretsと環境変数を確認してください。</p> : null}
+            {status?.connection === "not_configured" ? <p className="text-xs text-amber-300">AirtableのAPIキーまたはBase IDが未設定です。Secretsと環境変数を確認してください。</p> : null}
+            {status?.connection === "error" ? <p className="text-xs text-amber-300">{status.error}</p> : null}
           </div>
         </section>
 

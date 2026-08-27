@@ -46,3 +46,4 @@ channel = "stable-25_05"
 
 [userenv.shared]
 AIRTABLE_BASE_ID = "appOhazfap5Gm4jNi/tblYxvJE30QBQuxNK/viwiZgrRjXYFSslQW?blocks=hide"
+AIRTABLE_TABLES = "全部"

@@ -48,8 +48,13 @@ async function airtableJson<T>(url: string): Promise<T> {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
   });
   if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(`Airtable API ${response.status}${detail ? `: ${detail.slice(0, 160)}` : ""}`);
+    if (response.status === 401 || response.status === 403) {
+      throw new Error("Airtableの読み取り権限がありません。トークンのdata.records:read権限と、対象Baseへのアクセスを確認してください。");
+    }
+    if (response.status === 404) {
+      throw new Error("AirtableのBase IDまたはテーブル名を確認してください。");
+    }
+    throw new Error(`Airtable API ${response.status}で検索に失敗しました`);
   }
   return response.json() as Promise<T>;
 }
@@ -153,12 +158,39 @@ export async function searchAirtable(query: string): Promise<AirtableSearchResul
   }
 }
 
-export function getAirtableStatus() {
+export async function getAirtableStatus() {
   const { apiKey, baseId } = getConfig();
-  return {
-    configured: Boolean(apiKey && baseId),
-    baseConfigured: Boolean(baseId),
-    manualTablesConfigured: configuredTables().length,
-    tablesCached: Boolean(tableCache && tableCache.baseId === baseId && tableCache.expiresAt > Date.now()),
-  };
+  const configured = Boolean(apiKey && baseId);
+  if (!configured) {
+    return {
+      configured: false,
+      connection: "not_configured" as const,
+      baseConfigured: Boolean(baseId),
+      manualTablesConfigured: configuredTables().length,
+      tablesCached: false,
+      error: null,
+    };
+  }
+  try {
+    const tables = await getTables();
+    if (!tables.length) throw new Error("検索対象のAirtableテーブルが設定されていません。");
+    await getMatchingRecords(tables[0], ["__sin_japan_connection_check__"]);
+    return {
+      configured: true,
+      connection: "connected" as const,
+      baseConfigured: Boolean(baseId),
+      manualTablesConfigured: configuredTables().length,
+      tablesCached: Boolean(tableCache && tableCache.baseId === baseId && tableCache.expiresAt > Date.now()),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      connection: "error" as const,
+      baseConfigured: Boolean(baseId),
+      manualTablesConfigured: configuredTables().length,
+      tablesCached: false,
+      error: error instanceof Error ? error.message : "Airtable接続を確認できませんでした",
+    };
+  }
 }

@@ -122,7 +122,7 @@ router.post("/assistant/chat", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.get("/assistant/sin-japan-line/status", requireAuth, async (_req, res): Promise<void> => {
-  res.json(getAirtableStatus());
+  res.json(await getAirtableStatus());
 });
 
 router.post("/assistant/sin-japan-line/chat", requireAuth, async (req, res): Promise<void> => {
