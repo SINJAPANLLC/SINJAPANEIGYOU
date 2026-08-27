@@ -1,55 +1,112 @@
-import { ArrowUpRight, Building2, CheckCircle2, Link2, MessageCircle, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowUpRight, Building2, Database, Link2, Loader2, MessageCircle, Send, Sparkles } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+
+type AirtableStatus = { configured: boolean; baseConfigured: boolean; tablesCached: boolean };
+type AirtableRecord = { table: string; recordId: string; title: string; content: string; createdAt: string | null };
+type ChatMessage = { role: "user" | "assistant"; content: string; records?: AirtableRecord[] };
 
 const operatingAreas = [
-  { icon: MessageCircle, title: "お問い合わせ対応", description: "SIN JAPANへの相談や問い合わせを受け取る窓口です。" },
-  { icon: Sparkles, title: "情報発信", description: "採用・営業・事業のお知らせを届ける準備ができます。" },
-  { icon: Building2, title: "会社運用", description: "個人用AI秘書の公式LINEとは分けて管理します。" },
+  { icon: Database, title: "Airtable横断検索", description: "案件・顧客・売上・車両・スタッフなど、物流事業の情報を横断して探します。" },
+  { icon: MessageCircle, title: "物流の壁打ち", description: "案件判断、配車、営業、採用の相談を、保存されている情報をもとに整理します。" },
+  { icon: Building2, title: "会社専用の秘書", description: "個人用AI秘書とは分け、SIN JAPANの物流事業に必要な情報だけを扱います。" },
 ];
 
 export default function SinJapanLinePage() {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<AirtableStatus | null>(null);
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/assistant/sin-japan-line/status", { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Airtable設定を確認できませんでした");
+        setStatus(await response.json());
+      })
+      .catch((error: Error) => toast({ title: "Airtable設定を確認できませんでした", description: error.message, variant: "destructive" }));
+  }, [toast]);
+
+  const askSecretary = async () => {
+    const text = question.trim();
+    if (!text || isSending) return;
+    setQuestion("");
+    setMessages((current) => [...current, { role: "user", content: text }]);
+    setIsSending(true);
+    try {
+      const response = await fetch("/api/assistant/sin-japan-line/chat", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "物流秘書からの返信に失敗しました");
+      setMessages((current) => [...current, { role: "assistant", content: data.reply, records: data.airtable?.records || [] }]);
+    } catch (error) {
+      toast({ title: "検索に失敗しました", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto p-6 md:p-10">
-        <header className="mb-10">
-          <p className="text-[10px] uppercase tracking-[0.28em] text-emerald-400 font-mono">Company communication</p>
+        <header className="mb-8">
+          <p className="text-[10px] uppercase tracking-[0.28em] text-emerald-400 font-mono">Logistics secretary</p>
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-5 mt-3">
             <div>
               <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">SIN JAPAN LINE</h1>
-              <p className="text-muted-foreground mt-3 max-w-xl leading-relaxed">
-                合同会社SIN JAPANの会社用LINEを管理する専用スペースです。
-                個人用AI秘書の公式LINEとは分けて運用できます。
+              <p className="text-muted-foreground mt-3 max-w-2xl leading-relaxed">
+                SIN JAPANの物流事業専用AI秘書です。話しかけるとAirtableの情報を読み取り、案件・顧客・売上・車両・スタッフに関する回答を整理します。
               </p>
             </div>
-            <span className="inline-flex items-center gap-2 border border-amber-500/40 text-amber-300 px-3 py-2 text-xs w-fit">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              連携準備中
+            <span className={`inline-flex items-center gap-2 border px-3 py-2 text-xs w-fit ${status?.configured ? "border-emerald-500/40 text-emerald-300" : "border-amber-500/40 text-amber-300"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${status?.configured ? "bg-emerald-400" : "bg-amber-400"}`} />
+              {status?.configured ? "Airtable連携済み" : "Airtable設定を確認中"}
             </span>
           </div>
         </header>
 
-        <section className="border border-border bg-card p-6 md:p-8 mb-6">
-          <div className="flex items-start gap-4">
-            <div className="w-11 h-11 border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center shrink-0">
-              <Link2 className="w-5 h-5 text-emerald-400" />
+        <section className="border border-border bg-card mb-6">
+          <div className="p-5 border-b border-border flex items-start gap-3">
+            <div className="w-10 h-10 border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-center shrink-0"><Sparkles className="w-5 h-5 text-emerald-400" /></div>
+            <div>
+              <h2 className="font-semibold">物流秘書に相談する</h2>
+              <p className="text-sm text-muted-foreground mt-1">例：「○○社の案件の進捗は？」「今週の配車で注意することは？」「売上が遅れている案件を教えて」</p>
             </div>
-            <div className="flex-1">
-              <p className="text-xs text-emerald-400 uppercase tracking-widest font-mono">Next step</p>
-              <h2 className="text-xl font-semibold mt-2">SIN JAPAN LINEを連携する</h2>
-              <p className="text-sm text-muted-foreground mt-2 leading-relaxed max-w-2xl">
-                LINE公式アカウントのチャネル情報を設定すると、このスペースから会社用のメッセージ運用を始められます。
-                外部への送信は、設定後も確認してから実行します。
-              </p>
-              <div className="flex flex-wrap gap-3 mt-6">
-                <Button asChild className="rounded-none bg-emerald-600 hover:bg-emerald-500">
-                  <Link href="/official-line">LINE設定を確認する <ArrowUpRight className="w-4 h-4 ml-2" /></Link>
-                </Button>
-                <Button variant="outline" className="rounded-none" disabled>
-                  チャネルを設定する
-                </Button>
+          </div>
+          <div className="p-5 space-y-4">
+            {messages.length === 0 ? (
+              <div className="border border-dashed border-border px-4 py-8 text-sm text-muted-foreground text-center">質問すると、Airtableの関連情報を読み取って回答します。</div>
+            ) : (
+              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                {messages.map((message, index) => (
+                  <div key={`${message.role}-${index}`} className={message.role === "user" ? "ml-8 border border-emerald-500/30 bg-emerald-500/5 p-4" : "mr-8 border border-border bg-muted/20 p-4"}>
+                    <p className="text-[10px] uppercase tracking-widest text-emerald-400 mb-2">{message.role === "user" ? "あなた" : "SIN JAPAN物流秘書"}</p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                    {message.records?.length ? (
+                      <div className="mt-4 pt-3 border-t border-border space-y-2">
+                        <p className="text-xs text-muted-foreground">Airtable参照レコード</p>
+                        {message.records.slice(0, 5).map((record) => <div key={record.recordId} className="text-xs bg-background/50 border border-border p-2"><span className="text-emerald-400">[{record.table}]</span> <strong>{record.title}</strong><p className="text-muted-foreground whitespace-pre-wrap mt-1 line-clamp-3">{record.content}</p></div>)}
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
               </div>
+            )}
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Textarea value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askSecretary(); } }} placeholder="物流について質問・相談してください…" rows={3} className="rounded-none resize-none" />
+              <Button onClick={() => void askSecretary()} disabled={!question.trim() || isSending || status?.configured === false} className="rounded-none sm:self-end">
+                {isSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Send className="w-4 h-4 mr-2" />相談する</>}
+              </Button>
             </div>
+            {status && !status.configured ? <p className="text-xs text-amber-300">AirtableのAPIキーまたはBase IDが未設定です。Secretsと環境変数を確認してください。</p> : null}
           </div>
         </section>
 
@@ -63,25 +120,12 @@ export default function SinJapanLinePage() {
           ))}
         </section>
 
-        <section className="border border-border bg-card">
-          <div className="p-5 border-b border-border">
-            <h2 className="font-semibold">連携ステータス</h2>
-            <p className="text-xs text-muted-foreground mt-1">会社用LINEの接続状況を確認できます。</p>
+        <section className="border border-border bg-card p-5 flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold">LINEチャネルの接続</h2>
+            <p className="text-sm text-muted-foreground mt-1">外部への送信や自動返信は、別途LINE公式アカウントを設定してから有効にします。</p>
           </div>
-          <div className="divide-y divide-border">
-            {[
-              ["LINEチャネル", "未設定"],
-              ["Webhook", "未設定"],
-              ["自動応答", "準備中"],
-            ].map(([label, status]) => (
-              <div key={label} className="flex items-center justify-between px-5 py-4 text-sm">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="inline-flex items-center gap-2 text-amber-300">
-                  <CheckCircle2 className="w-3.5 h-3.5" />{status}
-                </span>
-              </div>
-            ))}
-          </div>
+          <Button asChild variant="outline" className="rounded-none w-fit"><Link href="/official-line">公式LINE設定を見る <ArrowUpRight className="w-4 h-4 ml-2" /></Link></Button>
         </section>
       </div>
     </div>

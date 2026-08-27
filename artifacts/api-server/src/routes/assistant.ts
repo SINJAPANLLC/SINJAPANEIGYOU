@@ -14,6 +14,7 @@ import {
 import { getUserId, requireAuth } from "../lib/auth";
 import { getAssistantDate, generateDailyReport, getOrCreateAssistantProfile, processAssistantMessage, searchAssistantKnowledge } from "../lib/assistant-service";
 import { isLineConfigured, replyLineText, safePushLineText, verifyLineSignature } from "../lib/line-client";
+import { getAirtableStatus } from "../lib/airtable-client";
 
 const router: IRouter = Router();
 
@@ -117,6 +118,17 @@ router.post("/assistant/chat", requireAuth, async (req, res): Promise<void> => {
   const text = typeof req.body.text === "string" ? req.body.text.trim() : "";
   if (!text) { res.status(400).json({ error: "text is required" }); return; }
   const result = await processAssistantMessage(getUserId(req), text, "dashboard");
+  res.json(result);
+});
+
+router.get("/assistant/sin-japan-line/status", requireAuth, async (_req, res): Promise<void> => {
+  res.json(getAirtableStatus());
+});
+
+router.post("/assistant/sin-japan-line/chat", requireAuth, async (req, res): Promise<void> => {
+  const text = typeof req.body.text === "string" ? req.body.text.trim() : "";
+  if (!text) { res.status(400).json({ error: "text is required" }); return; }
+  const result = await processAssistantMessage(getUserId(req), text, "sin-japan-line");
   res.json(result);
 });
 

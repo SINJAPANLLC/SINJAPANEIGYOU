@@ -18,6 +18,7 @@ import {
 import { logger } from "./logger";
 import { searchYahooJapan } from "./search";
 import { isLineConfigured, safePushLineText } from "./line-client";
+import { searchAirtable } from "./airtable-client";
 
 const DEFAULT_TOPICS = [
   "日本と世界の経済ニュース 今日",
@@ -192,6 +193,7 @@ export async function processAssistantMessage(userId: string, text: string, sour
   if (!inserted.length) return { reply: "", actions: [] as AssistantAction[], duplicate: true };
   const context = await buildAssistantContext(userId);
   const searchResults = await searchAssistantKnowledge(userId, text);
+  const airtableResult = source === "sin-japan-line" ? await searchAirtable(text) : null;
   const notesForAssistant = context.notes.map((note) => ({
     id: note.id,
     category: note.category,
@@ -209,6 +211,11 @@ export async function processAssistantMessage(userId: string, text: string, sour
   let actions: AssistantAction[] = [];
   if (!client) {
     ({ reply, actions } = fallbackResponse(text, context));
+    if (airtableResult?.error) {
+      reply = `Airtable検索に失敗しました（${airtableResult.error}）。\n\n${reply}`;
+    } else if (airtableResult?.records.length) {
+      reply = `【Airtableから見つかった情報】\n${airtableResult.records.slice(0, 3).map((record) => `・${record.title}\n${record.content}`).join("\n\n")}\n\n${reply}`;
+    }
     if (searchResults.length) {
       reply = `【見つかった情報】\n${searchResults.slice(0, 3).map((result) => `・${result.title}: ${result.content}`).join("\n")}\n\n${reply}`;
     }
@@ -226,6 +233,8 @@ LINEで読むことを前提に、返信は短く読みやすく整えてくだ�
 営業概要: ${JSON.stringify(context.sales)}
 整理メモ: ${JSON.stringify(notesForAssistant)}
 検索一致: ${JSON.stringify(searchForAssistant)}
+${airtableResult ? `SIN JAPAN物流Airtable検索結果: ${JSON.stringify(airtableResult)}
+この検索結果にない事実は推測せず「Airtableでは確認できません」と伝えてください。返答では、参照した情報がAirtable由来と分かるようにしてください。` : ""}
 直近会話: ${JSON.stringify(context.messages.map((m) => ({ role: m.role, content: m.content })))}`;
     try {
       const result = await client.chat.completions.create({
@@ -239,12 +248,17 @@ LINEで読むことを前提に、返信は短く読みやすく整えてくだ�
     } catch (error) {
       logger.error({ err: error }, "assistant response generation failed");
       ({ reply, actions } = fallbackResponse(text, context));
+      if (airtableResult?.error) {
+        reply = `Airtable検索に失敗しました（${airtableResult.error}）。\n\n${reply}`;
+      } else if (airtableResult?.records.length) {
+        reply = `【Airtableから見つかった情報】\n${airtableResult.records.slice(0, 3).map((record) => `・${record.title}\n${record.content}`).join("\n\n")}\n\n${reply}`;
+      }
     }
   }
   reply = formatAssistantReply(reply);
   await applyAssistantActions(userId, actions);
   await db.insert(assistantMessagesTable).values({ userId, source, role: "assistant", content: reply });
-  return { reply, actions };
+  return { reply, actions, airtable: airtableResult };
 }
 
 async function applyAssistantActions(userId: string, actions: AssistantAction[]) {
