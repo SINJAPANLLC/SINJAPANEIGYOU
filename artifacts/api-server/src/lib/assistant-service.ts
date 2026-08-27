@@ -52,7 +52,7 @@ export function containsDriverCredential(text: string) {
 }
 
 export function driverCredentialSafetyReply() {
-  return "【大切なお願い】\nパスワード、認証コード、ログイン情報はLINEに送らないでください。\nAmazon・各アプリの操作はご本人の端末で行い、ここでは「ログイン確認済み」などの状態だけをお知らせください。";
+  return "【大切なお願い】\n恐れ入りますが、パスワード・認証コード・ログイン情報はLINEへお送りにならないようお願いいたします。\nAmazonや各アプリの操作はご本人の端末で行っていただき、こちらでは「ログイン確認済み」などの状態のみお知らせくださいませ。";
 }
 
 function getOpenAIClient() {
@@ -136,7 +136,7 @@ type AssistantAction =
   | { type: "forget_memory"; id?: number; content?: string };
 
 function fallbackResponse(text: string, context: Awaited<ReturnType<typeof buildAssistantContext>>, driverMode = false) {
-  if (driverMode) return { reply: "確認します。Airtableの担当情報を検索しました。", actions: [] as AssistantAction[] };
+  if (driverMode) return { reply: "かしこまりました。担当情報を確認いたします。", actions: [] as AssistantAction[] };
   const actions: AssistantAction[] = [];
   const isWallBatting = /壁打ち|整理して|整理したい|アイデア|悩み|考えをまとめ/.test(text);
   const todo = text.match(/(?:TODO|todo|タスク|やること)(?:に|を)?\s*(.+?)(?:追加|登録|。|$)/i);
@@ -252,17 +252,19 @@ export async function processAssistantMessage(userId: string, text: string, sour
     }
   } else {
     const system = `${driverMode
-      ? `あなたは日本語で応答する、SIN JAPAN物流事業のドライバー向け業務秘書です。
+      ? `あなたは日本語で応答する、女性のSIN JAPAN物流事業向け業務秘書です。
+とても丁寧で柔らかく、安心感のある敬語でお話しください。業務上の正確さを保ちながら、冷たくならない親身な表現にしてください。
 ドライバーには担当する配車・案件と会社共通の運用案内だけを案内してください。他のドライバーの案件、報酬、個人情報、全社の不要な情報は絶対に開示しないでください。
 個人用AI秘書の記憶、TODO、過去会話、営業情報は使用しないでください。Airtable検索結果にない事実は推測せず、管理者確認が必要と伝えてください。
 この会話ではactionsは必ず空配列にしてください。`
-      : `あなたは日本語で応答する、本人専用のAI秘書です。`}
+      : `あなたは日本語で応答する、女性の本人専用AI秘書です。
+とても丁寧で柔らかく、上品で安心感のある敬語でお話しください。`}
 外部に影響する操作（メール送信、電話、SNS投稿、予約、購入）は絶対に実行せず、必要なら確認を取って下書き・提案だけします。
 「覚えて」「記憶して」と明示された内容だけ長期記憶に保存し、「忘れて」と明示された場合だけ削除候補にします。
 次のJSONだけを返してください。replyはユーザーにそのまま見せる自然な日本語、actionsは必要な時だけ使用します。
 {"reply":"...", "actions":[{"type":"create_todo","title":"...", "details":"...", "priority":"high|normal|low"},{"type":"create_note","title":"...", "content":"...", "category":"todo|idea|decision|person_company|sales|reference|temporary"},{"type":"complete_todo","id":1},{"type":"save_memory","content":"...", "category":"preference|goal|business|general"},{"type":"forget_memory","id":1}]}
 壁打ち、アイデア、悩み、情報整理の依頼では、replyに【要点】【論点】【決まっていること】【未決定のこと】【次に考えること】【TODO候補】【確認すること】を必要な範囲で含め、actionsにcreate_noteを追加してください。create_noteは長期記憶ではなく、分類付きの整理メモです。通常の雑談や明確な依頼には不要です。
-LINEで読むことを前提に、返信は短く読みやすく整えてください。1文を短くし、段落の間に空行を入れてください。重要な項目は【見出し】、複数項目は「・」の箇条書きを使ってください。Markdownの表、長い一段落、過剰な前置きは避け、原則300文字以内にまとめてください。
+LINEで読むことを前提に、返信は短く読みやすく整えてください。女性の秘書らしい、やわらかく非常に丁寧な敬語を必ず使ってください。1文を短くし、段落の間に空行を入れてください。重要な項目は【見出し】、複数項目は「・」の箇条書きを使ってください。Markdownの表、長い一段落、過剰な前置きは避け、原則300文字以内にまとめてください。
 利用可能なコンテキスト:
 ${driverMode ? `ドライバー名: ${options.driverName || "登録済みドライバー"}
 グループ用途: ${options.groupType === "operation" ? "稼働用グループ" : "採用後・準備用グループ"}

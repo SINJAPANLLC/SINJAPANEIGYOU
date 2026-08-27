@@ -77,7 +77,7 @@ router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void>
       const groupId = typeof event.source?.groupId === "string" ? event.source.groupId : "";
       if (!groupId) continue;
       if (event.type === "join" && event.replyToken) {
-        await replySinJapanLineText(event.replyToken, "SIN JAPAN LINEが参加しました。\n管理者から受け取った認証コードを「登録 123456」の形式で送信してください。");
+        await replySinJapanLineText(event.replyToken, "SIN JAPAN LINEが参加いたしました。\n恐れ入りますが、管理者からお受け取りになった認証コードを「登録 123456」の形式で送信してくださいませ。");
         continue;
       }
       if (event.type !== "message" || event.message?.type !== "text") continue;
@@ -87,7 +87,7 @@ router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void>
       if (codeMatch) {
         try {
           const group = await linkSinJapanDriverGroup(groupId, codeMatch[1]);
-          if (event.replyToken) await replySinJapanLineText(event.replyToken, `グループの紐付けが完了しました。\n${group.groupType === "operation" ? "稼働用グループ" : "採用・面談用グループ"}として登録されています。`);
+          if (event.replyToken) await replySinJapanLineText(event.replyToken, `グループの紐付けが完了いたしました。\n${group.groupType === "operation" ? "稼働用グループ" : "採用・面談用グループ"}として登録されております。`);
         } catch (error) {
           if (event.replyToken) await replySinJapanLineText(event.replyToken, error instanceof Error ? error.message : "紐付けに失敗しました");
         }
@@ -95,7 +95,7 @@ router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void>
       }
       const relation = await getSinJapanDriverGroup(groupId);
       if (!relation) {
-        if (event.replyToken) await replySinJapanLineText(event.replyToken, "このグループはまだドライバー情報と紐付いていません。\n管理者から認証コードを受け取り、「登録 123456」の形式で送信してください。");
+        if (event.replyToken) await replySinJapanLineText(event.replyToken, "恐れ入りますが、このグループはまだドライバー情報と紐付いておりません。\n管理者から認証コードをお受け取りのうえ、「登録 123456」の形式で送信してくださいませ。");
         continue;
       }
       if (containsDriverCredential(text)) {
