@@ -43,13 +43,116 @@ export const sinJapanDriversTable = pgTable(
     ownerUserId: text("owner_user_id").notNull(),
     name: text("name").notNull(),
     airtableLookupKey: text("airtable_lookup_key").notNull(),
+    airtableRecordId: text("airtable_record_id"),
     lineUserId: text("line_user_id"),
     status: text("status").notNull().default("active"),
+    workflowStatus: text("workflow_status").notNull().default("hired"),
+    amazonAccountStatus: text("amazon_account_status").notNull().default("not_required"),
+    appsStatus: text("apps_status").notNull().default("pending"),
+    firstOperationDate: text("first_operation_date"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   },
   (table) => ({
     ownerLineUnique: uniqueIndex("sin_japan_drivers_owner_line_idx").on(table.ownerUserId, table.lineUserId),
+  }),
+);
+
+export const sinJapanDriverGroupsTable = pgTable(
+  "sin_japan_driver_groups",
+  {
+    id: serial("id").primaryKey(),
+    ownerUserId: text("owner_user_id").notNull(),
+    driverId: integer("driver_id").notNull().references(() => sinJapanDriversTable.id, { onDelete: "cascade" }),
+    groupId: text("group_id").notNull(),
+    groupType: text("group_type").notNull().default("onboarding"),
+    status: text("status").notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    groupIdUnique: uniqueIndex("sin_japan_driver_groups_group_id_idx").on(table.groupId),
+    driverTypeUnique: uniqueIndex("sin_japan_driver_groups_driver_type_idx").on(table.driverId, table.groupType),
+  }),
+);
+
+export const sinJapanDriverLinkCodesTable = pgTable(
+  "sin_japan_driver_link_codes",
+  {
+    id: serial("id").primaryKey(),
+    ownerUserId: text("owner_user_id").notNull(),
+    driverId: integer("driver_id").notNull().references(() => sinJapanDriversTable.id, { onDelete: "cascade" }),
+    groupType: text("group_type").notNull().default("onboarding"),
+    code: text("code").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    codeUnique: uniqueIndex("sin_japan_driver_link_codes_code_idx").on(table.code),
+  }),
+);
+
+export const sinJapanDriverReportsTable = pgTable("sin_japan_driver_reports", {
+  id: serial("id").primaryKey(),
+  ownerUserId: text("owner_user_id").notNull(),
+  driverId: integer("driver_id").notNull().references(() => sinJapanDriversTable.id, { onDelete: "cascade" }),
+  groupId: text("group_id"),
+  lineMessageId: text("line_message_id"),
+  reportType: text("report_type").notNull().default("question"),
+  urgency: text("urgency").notNull().default("normal"),
+  content: text("content").notNull(),
+  status: text("status").notNull().default("received"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  lineMessageIdUnique: uniqueIndex("sin_japan_driver_reports_line_message_id_idx").on(table.lineMessageId),
+}));
+
+export const sinJapanEscalationsTable = pgTable("sin_japan_escalations", {
+  id: serial("id").primaryKey(),
+  ownerUserId: text("owner_user_id").notNull(),
+  driverId: integer("driver_id").notNull().references(() => sinJapanDriversTable.id, { onDelete: "cascade" }),
+  groupId: text("group_id"),
+  category: text("category").notNull(),
+  urgency: text("urgency").notNull().default("normal"),
+  summary: text("summary").notNull(),
+  details: text("details"),
+  status: text("status").notNull().default("open"),
+  managerNotifiedAt: timestamp("manager_notified_at", { withTimezone: true }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const sinJapanResourcesTable = pgTable("sin_japan_resources", {
+  id: serial("id").primaryKey(),
+  ownerUserId: text("owner_user_id").notNull(),
+  title: text("title").notNull(),
+  url: text("url").notNull(),
+  phase: text("phase").notNull().default("onboarding"),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const sinJapanDailyReportsTable = pgTable(
+  "sin_japan_daily_reports",
+  {
+    id: serial("id").primaryKey(),
+    ownerUserId: text("owner_user_id").notNull(),
+    reportDate: text("report_date").notNull(),
+    content: text("content").notNull(),
+    status: text("status").notNull().default("pending"),
+    error: text("error"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => ({
+    userDateUnique: uniqueIndex("sin_japan_daily_reports_user_date_idx").on(table.ownerUserId, table.reportDate),
   }),
 );
 
@@ -139,6 +242,12 @@ export const insertAssistantTodoSchema = createInsertSchema(assistantTodosTable)
 export const insertSinJapanDriverSchema = createInsertSchema(sinJapanDriversTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type AssistantProfile = typeof assistantProfilesTable.$inferSelect;
 export type SinJapanDriver = typeof sinJapanDriversTable.$inferSelect;
+export type SinJapanDriverGroup = typeof sinJapanDriverGroupsTable.$inferSelect;
+export type SinJapanDriverLinkCode = typeof sinJapanDriverLinkCodesTable.$inferSelect;
+export type SinJapanDriverReport = typeof sinJapanDriverReportsTable.$inferSelect;
+export type SinJapanEscalation = typeof sinJapanEscalationsTable.$inferSelect;
+export type SinJapanResource = typeof sinJapanResourcesTable.$inferSelect;
+export type SinJapanDailyReport = typeof sinJapanDailyReportsTable.$inferSelect;
 export type AssistantMessage = typeof assistantMessagesTable.$inferSelect;
 export type AssistantMemory = typeof assistantMemoriesTable.$inferSelect;
 export type AssistantNote = typeof assistantNotesTable.$inferSelect;

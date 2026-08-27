@@ -25,6 +25,10 @@ export type AirtableSearchResult = {
 export type AirtableSearchOptions = {
   scopeKey?: string;
   commonTables?: string[];
+  driverRecordId?: string | null;
+  driverSafeFields?: string[];
+  driverTenantField?: string;
+  driverTenantValue?: string;
 };
 
 let tableCache: { baseId: string; tables: AirtableTable[]; expiresAt: number } | null = null;
@@ -102,21 +106,28 @@ function searchTerms(input: string) {
   return normalized.length >= 2 ? [normalized] : [];
 }
 
-function textFields(table: AirtableTable) {
+function textFields(table: AirtableTable, allowedFields?: string[]) {
   const supported = new Set(["singleLineText", "multilineText", "email", "url", "phoneNumber", "singleSelect", "multipleSelects", "date", "dateTime"]);
-  return table.fields.filter((field) => !field.type || supported.has(field.type)).slice(0, 30);
+  const allowed = allowedFields?.length ? new Set(allowedFields) : null;
+  return table.fields.filter((field) => (!allowed || allowed.has(field.name)) && (!field.type || supported.has(field.type))).slice(0, 30);
 }
 
-function buildFilterFormula(table: AirtableTable, terms: string[], scopeKey?: string) {
-  const fields = textFields(table);
-  if (!fields.length || !terms.length) return "";
+function buildFilterFormula(table: AirtableTable, terms: string[], options: AirtableSearchOptions = {}, allowedFields?: string[]) {
+  const fields = textFields(table, allowedFields);
   const queryExpressions = terms.flatMap((term) => fields.map((field) => `SEARCH("${escapeFormulaValue(term)}", CONCATENATE({${field.name}})) > 0`));
-  const scopeExpressions = scopeKey
-    ? fields.map((field) => `SEARCH("${escapeFormulaValue(scopeKey)}", CONCATENATE({${field.name}})) > 0`)
+  const queryFormula = queryExpressions.length ? `OR(${queryExpressions.join(",")})` : "";
+  const recordIdFormula = options.driverRecordId ? `RECORD_ID() = "${escapeFormulaValue(options.driverRecordId)}"` : "";
+  const tenantFormula = options.driverTenantField && options.driverTenantValue
+    ? `{${options.driverTenantField.replace(/}/g, "\\}")}} = "${escapeFormulaValue(options.driverTenantValue)}"`
+    : "";
+  const exactDriverFormula = recordIdFormula && tenantFormula ? `AND(${recordIdFormula}, ${tenantFormula})` : "";
+  const legacyScopeExpressions = options.scopeKey
+    ? fields.map((field) => `SEARCH("${escapeFormulaValue(options.scopeKey!)}", CONCATENATE({${field.name}})) > 0`)
     : [];
-  if (!queryExpressions.length) return "";
-  const queryFormula = `OR(${queryExpressions.join(",")})`;
-  return scopeExpressions.length ? `AND(${queryFormula}, OR(${scopeExpressions.join(",")}))` : queryFormula;
+  const legacyScopeFormula = legacyScopeExpressions.length ? `OR(${legacyScopeExpressions.join(",")})` : "";
+  const scopeFormula = exactDriverFormula || legacyScopeFormula;
+  if (queryFormula && scopeFormula) return `AND(${queryFormula}, ${scopeFormula})`;
+  return scopeFormula || queryFormula;
 }
 
 function fieldText(value: unknown): string {
@@ -126,12 +137,15 @@ function fieldText(value: unknown): string {
   return JSON.stringify(value) || "";
 }
 
-function recordToSearchResult(table: AirtableTable, record: AirtableRecord): AirtableSearchRecord {
+function recordToSearchResult(table: AirtableTable, record: AirtableRecord, safeFields?: string[]): AirtableSearchRecord {
+  const allowed = safeFields?.length ? new Set(safeFields) : null;
   const entries = Object.entries(record.fields)
+    .filter(([key]) => !allowed || allowed.has(key))
     .map(([key, value]) => [key, fieldText(value)] as const)
     .filter(([, value]) => value);
+  const safeFieldValues = Object.fromEntries(entries);
   const preferredTitle = ["会社名", "企業名", "案件名", "顧客名", "氏名", "名前", "Name", "name", "Title", "title"]
-    .map((key) => fieldText(record.fields[key]))
+    .map((key) => safeFieldValues[key] || "")
     .find(Boolean);
   return {
     table: table.name,
@@ -142,20 +156,20 @@ function recordToSearchResult(table: AirtableTable, record: AirtableRecord): Air
   };
 }
 
-async function getMatchingRecords(table: AirtableTable, terms: string[], scopeKey?: string) {
+async function getMatchingRecords(table: AirtableTable, terms: string[], options: AirtableSearchOptions = {}, safeFields?: string[]) {
   const { baseId } = getConfig();
   const params = new URLSearchParams({ pageSize: String(MAX_RECORDS_PER_TABLE) });
-  const formula = buildFilterFormula(table, terms, scopeKey);
+  const formula = buildFilterFormula(table, terms, options, safeFields);
   if (formula) params.set("filterByFormula", formula);
   const data = await airtableJson<{ records?: AirtableRecord[] }>(
     `${AIRTABLE_API_ROOT}/${encodeURIComponent(baseId)}/${encodeURIComponent(table.id)}?${params.toString()}`,
   );
   return (data.records || [])
-    .map((record) => recordToSearchResult(table, record))
+    .map((record) => recordToSearchResult(table, record, safeFields))
     .filter((record) => {
       const text = `${record.title}\n${record.content}`.toLocaleLowerCase("ja-JP");
       return terms.some((term) => text.includes(term.toLocaleLowerCase("ja-JP")))
-        && (!scopeKey || text.includes(scopeKey.toLocaleLowerCase("ja-JP")));
+        && (!options.scopeKey || text.includes(options.scopeKey.toLocaleLowerCase("ja-JP")));
     });
 }
 
@@ -165,10 +179,18 @@ export async function searchAirtable(query: string, options: AirtableSearchOptio
   try {
     const tables = await getTables();
     const records: AirtableSearchRecord[] = [];
+    const driverMode = options.driverRecordId !== undefined || options.driverSafeFields !== undefined;
+    const privateDriverSearchAllowed = Boolean(options.driverRecordId && options.driverSafeFields?.length && options.driverTenantField && options.driverTenantValue);
     for (const table of tables.slice(0, MAX_TABLES)) {
       try {
         const isCommonTable = (options.commonTables || []).some((name) => name.trim() === table.name);
-        records.push(...await getMatchingRecords(table, terms, isCommonTable ? undefined : options.scopeKey));
+        if (driverMode && !isCommonTable && !privateDriverSearchAllowed) continue;
+        records.push(...await getMatchingRecords(
+          table,
+          terms,
+          isCommonTable ? {} : options,
+          isCommonTable ? undefined : options.driverSafeFields,
+        ));
       } catch {
         // One table with restricted fields should not hide results from other tables.
       }

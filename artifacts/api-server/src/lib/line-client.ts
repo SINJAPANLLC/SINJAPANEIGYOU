@@ -7,8 +7,7 @@ export function isLineConfigured() {
   return Boolean(process.env.LINE_CHANNEL_SECRET && process.env.LINE_CHANNEL_ACCESS_TOKEN);
 }
 
-export function verifyLineSignature(rawBody: string, signature: string | undefined) {
-  const secret = process.env.LINE_CHANNEL_SECRET;
+function verifySignature(rawBody: string, signature: string | undefined, secret: string | undefined) {
   if (!secret || !signature) return false;
   const digest = crypto.createHmac("sha256", secret).update(rawBody).digest("base64");
   const expected = Buffer.from(digest);
@@ -16,8 +15,19 @@ export function verifyLineSignature(rawBody: string, signature: string | undefin
   return expected.length === received.length && crypto.timingSafeEqual(expected, received);
 }
 
-async function lineRequest(path: string, body: unknown) {
-  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+export function verifyLineSignature(rawBody: string, signature: string | undefined) {
+  return verifySignature(rawBody, signature, process.env.LINE_CHANNEL_SECRET);
+}
+
+export function isSinJapanLineConfigured() {
+  return Boolean(process.env.SIN_JAPAN_LINE_CHANNEL_SECRET && process.env.SIN_JAPAN_LINE_CHANNEL_ACCESS_TOKEN);
+}
+
+export function verifySinJapanLineSignature(rawBody: string, signature: string | undefined) {
+  return verifySignature(rawBody, signature, process.env.SIN_JAPAN_LINE_CHANNEL_SECRET);
+}
+
+async function lineRequest(path: string, body: unknown, token = process.env.LINE_CHANNEL_ACCESS_TOKEN) {
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKEN is not configured");
   const response = await fetch(`${LINE_API}${path}`, {
     method: "POST",
@@ -70,5 +80,32 @@ export async function safePushLineText(userId: string, text: string) {
   } catch (error) {
     logger.error({ err: error }, "LINE push failed");
     return { ok: false as const, error: error instanceof Error ? error.message : "LINE送信に失敗しました" };
+  }
+}
+
+export async function pushSinJapanLineText(targetId: string, text: string) {
+  const token = process.env.SIN_JAPAN_LINE_CHANNEL_ACCESS_TOKEN;
+  for (const part of splitMessage(text)) {
+    await lineRequest("/message/push", {
+      to: targetId,
+      messages: [{ type: "text", text: part }],
+    }, token);
+  }
+}
+
+export async function replySinJapanLineText(replyToken: string, text: string) {
+  await lineRequest("/message/reply", {
+    replyToken,
+    messages: splitMessage(text).slice(0, 5).map((part) => ({ type: "text", text: part })),
+  }, process.env.SIN_JAPAN_LINE_CHANNEL_ACCESS_TOKEN);
+}
+
+export async function safePushSinJapanLineText(targetId: string, text: string) {
+  try {
+    await pushSinJapanLineText(targetId, text);
+    return { ok: true as const };
+  } catch (error) {
+    logger.error({ err: error }, "SIN JAPAN LINE push failed");
+    return { ok: false as const, error: error instanceof Error ? error.message : "SIN JAPAN LINE送信に失敗しました" };
   }
 }

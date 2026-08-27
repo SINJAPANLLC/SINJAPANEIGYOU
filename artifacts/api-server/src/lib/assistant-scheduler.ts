@@ -1,5 +1,5 @@
 import cron from "node-cron";
-import { runAssistantScheduler } from "./assistant-service";
+import { retrySinJapanManagerNotifications, runAssistantScheduler, runSinJapanDailyReporter } from "./assistant-service";
 import { logger } from "./logger";
 
 let running = false;
@@ -8,7 +8,7 @@ async function tick() {
   if (running) return;
   running = true;
   try {
-    await runAssistantScheduler();
+    await Promise.all([runAssistantScheduler(), runSinJapanDailyReporter(), retrySinJapanManagerNotifications()]);
   } catch (error) {
     logger.error({ err: error }, "assistant scheduler tick failed");
   } finally {

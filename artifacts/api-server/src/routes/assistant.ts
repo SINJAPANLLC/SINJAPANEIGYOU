@@ -10,11 +10,15 @@ import {
   assistantResearchItemsTable,
   assistantTodosTable,
   db,
+  sinJapanDriverGroupsTable,
+  sinJapanDriverReportsTable,
   sinJapanDriversTable,
+  sinJapanEscalationsTable,
+  sinJapanResourcesTable,
 } from "@workspace/db";
 import { getUserId, requireAuth } from "../lib/auth";
-import { getAssistantDate, generateDailyReport, getOrCreateAssistantProfile, processAssistantMessage, processSinJapanDriverMessage, searchAssistantKnowledge } from "../lib/assistant-service";
-import { isLineConfigured, replyLineText, safePushLineText, verifyLineSignature } from "../lib/line-client";
+import { buildSinJapanDailyReport, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
+import { isLineConfigured, isSinJapanLineConfigured, replyLineText, replySinJapanLineText, safePushLineText, verifyLineSignature, verifySinJapanLineSignature } from "../lib/line-client";
 import { getAirtableStatus } from "../lib/airtable-client";
 
 const router: IRouter = Router();
@@ -60,6 +64,61 @@ router.post("/assistant/line/webhook", async (req, res): Promise<void> => {
   }
 });
 
+router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void> => {
+  const rawBody = (req as any).rawBody || JSON.stringify(req.body);
+  if (!verifySinJapanLineSignature(rawBody, req.header("x-line-signature"))) {
+    res.status(401).json({ error: isSinJapanLineConfigured() ? "Invalid LINE signature" : "SIN JAPAN LINE is not configured" });
+    return;
+  }
+  res.status(200).json({ ok: true });
+  const events = Array.isArray(req.body?.events) ? req.body.events : [];
+  for (const event of events) {
+    try {
+      const groupId = typeof event.source?.groupId === "string" ? event.source.groupId : "";
+      if (!groupId) continue;
+      if (event.type === "join" && event.replyToken) {
+        await replySinJapanLineText(event.replyToken, "SIN JAPAN LINEが参加しました。\n管理者から受け取った認証コードを「登録 123456」の形式で送信してください。");
+        continue;
+      }
+      if (event.type !== "message" || event.message?.type !== "text") continue;
+      const text = String(event.message.text || "").trim();
+      if (!text) continue;
+      const codeMatch = text.match(/^(?:登録|連携|紐付け)\s*[:：]?\s*(\d{6})$/u);
+      if (codeMatch) {
+        try {
+          const group = await linkSinJapanDriverGroup(groupId, codeMatch[1]);
+          if (event.replyToken) await replySinJapanLineText(event.replyToken, `グループの紐付けが完了しました。\n${group.groupType === "operation" ? "稼働用グループ" : "採用・面談用グループ"}として登録されています。`);
+        } catch (error) {
+          if (event.replyToken) await replySinJapanLineText(event.replyToken, error instanceof Error ? error.message : "紐付けに失敗しました");
+        }
+        continue;
+      }
+      const relation = await getSinJapanDriverGroup(groupId);
+      if (!relation) {
+        if (event.replyToken) await replySinJapanLineText(event.replyToken, "このグループはまだドライバー情報と紐付いていません。\n管理者から認証コードを受け取り、「登録 123456」の形式で送信してください。");
+        continue;
+      }
+      if (containsDriverCredential(text)) {
+        if (event.replyToken) await replySinJapanLineText(event.replyToken, driverCredentialSafetyReply());
+        continue;
+      }
+      const received = await recordSinJapanDriverReport({
+        ownerUserId: relation.driver.ownerUserId,
+        driverId: relation.driver.id,
+        groupId,
+        text,
+        lineMessageId: event.message?.id,
+      });
+      if (received.duplicate) continue;
+      if (received.escalation) await notifySinJapanManager(relation.driver.ownerUserId, received.escalation);
+      const result = await processSinJapanDriverMessage(relation.driver.ownerUserId, relation.driver.id, text, event.message?.id, relation.group.groupType === "operation" ? "operation" : "onboarding");
+      if (event.replyToken && !result.duplicate) await replySinJapanLineText(event.replyToken, result.reply);
+    } catch (error) {
+      req.log?.error({ err: error }, "SIN JAPAN LINE webhook event failed");
+    }
+  }
+});
+
 function parseJson<T>(value: string | null | undefined, fallback: T): T {
   try {
     const parsed = JSON.parse(value || "");
@@ -82,6 +141,12 @@ function presentProfile(profile: typeof assistantProfilesTable.$inferSelect) {
 function nextLinkCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   return Array.from(crypto.randomBytes(8), (byte) => alphabet[byte % alphabet.length]).join("");
+}
+
+function parseRouteId(value: string | string[]) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const id = Number(raw);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 router.get("/assistant/state", requireAuth, async (req, res): Promise<void> => {
@@ -123,7 +188,12 @@ router.post("/assistant/chat", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.get("/assistant/sin-japan-line/status", requireAuth, async (_req, res): Promise<void> => {
-  res.json(await getAirtableStatus());
+  res.json({
+    ...await getAirtableStatus(),
+    lineConfigured: isSinJapanLineConfigured(),
+    managerLineConfigured: isLineConfigured(),
+    webhookUrl: `${process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || "your-domain"}`}/api/assistant/sin-japan-line/webhook`,
+  });
 });
 
 router.post("/assistant/sin-japan-line/chat", requireAuth, async (req, res): Promise<void> => {
@@ -135,7 +205,8 @@ router.post("/assistant/sin-japan-line/chat", requireAuth, async (req, res): Pro
 
 router.get("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): Promise<void> => {
   const drivers = await db.select().from(sinJapanDriversTable).where(eq(sinJapanDriversTable.ownerUserId, getUserId(req))).orderBy(desc(sinJapanDriversTable.createdAt));
-  res.json(drivers);
+  const groups = await db.select().from(sinJapanDriverGroupsTable).where(eq(sinJapanDriverGroupsTable.ownerUserId, getUserId(req)));
+  res.json(drivers.map((driver) => ({ ...driver, groups: groups.filter((group) => group.driverId === driver.id) })));
 });
 
 router.post("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): Promise<void> => {
@@ -148,25 +219,46 @@ router.post("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): 
     ownerUserId: getUserId(req),
     name,
     airtableLookupKey,
+    airtableRecordId: typeof req.body.airtableRecordId === "string" && req.body.airtableRecordId.trim() ? req.body.airtableRecordId.trim() : null,
     lineUserId: typeof req.body.lineUserId === "string" && req.body.lineUserId.trim() ? req.body.lineUserId.trim() : null,
   }).returning();
   res.status(201).json(driver);
 });
 
 router.patch("/assistant/sin-japan-line/drivers/:id", requireAuth, async (req, res): Promise<void> => {
+  const driverId = parseRouteId(req.params.id);
+  if (!driverId) { res.status(400).json({ error: "Invalid driver id" }); return; }
   const updates: Partial<typeof sinJapanDriversTable.$inferInsert> = {};
   if (typeof req.body.name === "string" && req.body.name.trim()) updates.name = req.body.name.trim();
   if (typeof req.body.airtableLookupKey === "string" && req.body.airtableLookupKey.trim()) updates.airtableLookupKey = req.body.airtableLookupKey.trim();
+  if (typeof req.body.airtableRecordId === "string") updates.airtableRecordId = req.body.airtableRecordId.trim() || null;
   if (typeof req.body.lineUserId === "string") updates.lineUserId = req.body.lineUserId.trim() || null;
   if (req.body.status === "active" || req.body.status === "inactive") updates.status = req.body.status;
-  const [driver] = await db.update(sinJapanDriversTable).set(updates).where(and(eq(sinJapanDriversTable.id, Number(req.params.id)), eq(sinJapanDriversTable.ownerUserId, getUserId(req)))).returning();
+  if (["hired", "onboarding", "ready", "operating", "inactive"].includes(req.body.workflowStatus)) updates.workflowStatus = req.body.workflowStatus;
+  if (["not_required", "pending", "verified", "needs_help"].includes(req.body.amazonAccountStatus)) updates.amazonAccountStatus = req.body.amazonAccountStatus;
+  if (["pending", "verified", "needs_help"].includes(req.body.appsStatus)) updates.appsStatus = req.body.appsStatus;
+  if (typeof req.body.firstOperationDate === "string") updates.firstOperationDate = req.body.firstOperationDate.trim() || null;
+  const [driver] = await db.update(sinJapanDriversTable).set(updates).where(and(eq(sinJapanDriversTable.id, driverId), eq(sinJapanDriversTable.ownerUserId, getUserId(req)))).returning();
   if (!driver) { res.status(404).json({ error: "Driver not found" }); return; }
   res.json(driver);
 });
 
 router.delete("/assistant/sin-japan-line/drivers/:id", requireAuth, async (req, res): Promise<void> => {
-  await db.update(sinJapanDriversTable).set({ status: "inactive", lineUserId: null }).where(and(eq(sinJapanDriversTable.id, Number(req.params.id)), eq(sinJapanDriversTable.ownerUserId, getUserId(req))));
+  const driverId = parseRouteId(req.params.id);
+  if (!driverId) { res.status(400).json({ error: "Invalid driver id" }); return; }
+  await db.update(sinJapanDriversTable).set({ status: "inactive", lineUserId: null }).where(and(eq(sinJapanDriversTable.id, driverId), eq(sinJapanDriversTable.ownerUserId, getUserId(req))));
   res.status(204).send();
+});
+
+router.post("/assistant/sin-japan-line/drivers/:id/link-code", requireAuth, async (req, res): Promise<void> => {
+  const driverId = parseRouteId(req.params.id);
+  const groupType = req.body.groupType === "operation" ? "operation" : "onboarding";
+  if (!driverId) { res.status(400).json({ error: "Invalid driver id" }); return; }
+  try {
+    res.status(201).json(await createSinJapanDriverLinkCode(getUserId(req), driverId, groupType));
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : "認証コードを発行できません" });
+  }
 });
 
 router.post("/assistant/sin-japan-line/driver-chat", requireAuth, async (req, res): Promise<void> => {
@@ -179,6 +271,74 @@ router.post("/assistant/sin-japan-line/driver-chat", requireAuth, async (req, re
   } catch (error) {
     res.status(404).json({ error: error instanceof Error ? error.message : "ドライバー対応を開始できません" });
   }
+});
+
+router.get("/assistant/sin-japan-line/resources", requireAuth, async (req, res): Promise<void> => {
+  const resources = await db.select().from(sinJapanResourcesTable).where(and(eq(sinJapanResourcesTable.ownerUserId, getUserId(req)), eq(sinJapanResourcesTable.isActive, true))).orderBy(desc(sinJapanResourcesTable.createdAt));
+  res.json(resources);
+});
+
+router.post("/assistant/sin-japan-line/resources", requireAuth, async (req, res): Promise<void> => {
+  const title = typeof req.body.title === "string" ? req.body.title.trim() : "";
+  const url = typeof req.body.url === "string" ? req.body.url.trim() : "";
+  const phase = ["all", "hired", "onboarding", "ready", "operating"].includes(req.body.phase) ? req.body.phase : "onboarding";
+  if (!title || !url) { res.status(400).json({ error: "title and url are required" }); return; }
+  try {
+    const parsed = new URL(url);
+    if (!["https:", "http:"].includes(parsed.protocol)) throw new Error("invalid protocol");
+  } catch {
+    res.status(400).json({ error: "有効なURLを入力してください" });
+    return;
+  }
+  const [resource] = await db.insert(sinJapanResourcesTable).values({
+    ownerUserId: getUserId(req),
+    title,
+    url,
+    phase,
+    description: typeof req.body.description === "string" && req.body.description.trim() ? req.body.description.trim() : null,
+  }).returning();
+  res.status(201).json(resource);
+});
+
+router.delete("/assistant/sin-japan-line/resources/:id", requireAuth, async (req, res): Promise<void> => {
+  const resourceId = parseRouteId(req.params.id);
+  if (!resourceId) { res.status(400).json({ error: "Invalid resource id" }); return; }
+  await db.update(sinJapanResourcesTable).set({ isActive: false }).where(and(eq(sinJapanResourcesTable.id, resourceId), eq(sinJapanResourcesTable.ownerUserId, getUserId(req))));
+  res.status(204).send();
+});
+
+router.get("/assistant/sin-japan-line/reports", requireAuth, async (req, res): Promise<void> => {
+  const reports = await db.select().from(sinJapanDriverReportsTable).where(eq(sinJapanDriverReportsTable.ownerUserId, getUserId(req))).orderBy(desc(sinJapanDriverReportsTable.createdAt)).limit(100);
+  res.json(reports);
+});
+
+router.get("/assistant/sin-japan-line/escalations", requireAuth, async (req, res): Promise<void> => {
+  const escalations = await db.select().from(sinJapanEscalationsTable).where(and(eq(sinJapanEscalationsTable.ownerUserId, getUserId(req)), eq(sinJapanEscalationsTable.status, "open"))).orderBy(desc(sinJapanEscalationsTable.createdAt)).limit(50);
+  res.json(escalations);
+});
+
+router.patch("/assistant/sin-japan-line/escalations/:id", requireAuth, async (req, res): Promise<void> => {
+  const escalationId = parseRouteId(req.params.id);
+  if (!escalationId) { res.status(400).json({ error: "Invalid escalation id" }); return; }
+  if (!["open", "acknowledged", "in_progress", "resolved"].includes(req.body.status)) { res.status(400).json({ error: "Invalid escalation status" }); return; }
+  const status = req.body.status as string;
+  const [escalation] = await db.update(sinJapanEscalationsTable).set({
+    status,
+    acknowledgedAt: status === "acknowledged" || status === "in_progress" || status === "resolved" ? new Date() : null,
+    resolvedAt: status === "resolved" ? new Date() : null,
+  }).where(and(eq(sinJapanEscalationsTable.id, escalationId), eq(sinJapanEscalationsTable.ownerUserId, getUserId(req)))).returning();
+  if (!escalation) { res.status(404).json({ error: "Escalation not found" }); return; }
+  res.json(escalation);
+});
+
+router.get("/assistant/sin-japan-line/daily-report", requireAuth, async (req, res): Promise<void> => {
+  res.json(await buildSinJapanDailyReport(getUserId(req)));
+});
+
+router.post("/assistant/sin-japan-line/daily-report/send", requireAuth, async (req, res): Promise<void> => {
+  const result = await sendSinJapanDailyReport(getUserId(req));
+  if (!result.ok) { res.status(400).json(result); return; }
+  res.json(result);
 });
 
 router.post("/assistant/memories", requireAuth, async (req, res): Promise<void> => {

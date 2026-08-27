@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import crypto from "crypto";
-import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   assistantMemoriesTable,
   assistantMessagesTable,
@@ -14,7 +14,13 @@ import {
   db,
   emailLogsTable,
   leadsTable,
+  sinJapanDriverGroupsTable,
+  sinJapanDriverLinkCodesTable,
+  sinJapanDriverReportsTable,
   sinJapanDriversTable,
+  sinJapanDailyReportsTable,
+  sinJapanEscalationsTable,
+  sinJapanResourcesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
 import { searchYahooJapan } from "./search";
@@ -35,6 +41,18 @@ function formatAssistantReply(reply: string) {
     .replace(/^\s*#{1,6}\s*/gm, "")
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .trim();
+}
+
+const DRIVER_CREDENTIAL_PATTERN = /パスワード|password|passcode|暗証番号|認証コード|ワンタイム(?:パス)?コード|otp|verification\s*code|ログイン情報|二段階認証|2fa|(?:^|[\s\n])(?:pw|pass|login\s*id|user(?:name)?|id|メール|e-?mail)\s*[:：=]/iu;
+const STANDALONE_OTP_PATTERN = /^\s*\d{6,8}\s*$/u;
+const STANDALONE_EMAIL_PATTERN = /^\s*[^\s@]+@[^\s@]+\.[^\s@]+\s*$/u;
+
+export function containsDriverCredential(text: string) {
+  return DRIVER_CREDENTIAL_PATTERN.test(text) || STANDALONE_OTP_PATTERN.test(text) || STANDALONE_EMAIL_PATTERN.test(text);
+}
+
+export function driverCredentialSafetyReply() {
+  return "【大切なお願い】\nパスワード、認証コード、ログイン情報はLINEに送らないでください。\nAmazon・各アプリの操作はご本人の端末で行い、ここでは「ログイン確認済み」などの状態だけをお知らせください。";
 }
 
 function getOpenAIClient() {
@@ -193,6 +211,11 @@ export async function searchAssistantKnowledge(userId: string, query: string) {
 type AssistantProcessOptions = {
   airtable?: AirtableSearchOptions;
   driverName?: string;
+  driverWorkflow?: string;
+  amazonAccountStatus?: string;
+  appsStatus?: string;
+  groupType?: "onboarding" | "operation";
+  resources?: Array<{ title: string; url: string; description: string | null }>;
 };
 
 export async function processAssistantMessage(userId: string, text: string, source = "line", lineMessageId?: string, options: AssistantProcessOptions = {}) {
@@ -241,13 +264,19 @@ export async function processAssistantMessage(userId: string, text: string, sour
 壁打ち、アイデア、悩み、情報整理の依頼では、replyに【要点】【論点】【決まっていること】【未決定のこと】【次に考えること】【TODO候補】【確認すること】を必要な範囲で含め、actionsにcreate_noteを追加してください。create_noteは長期記憶ではなく、分類付きの整理メモです。通常の雑談や明確な依頼には不要です。
 LINEで読むことを前提に、返信は短く読みやすく整えてください。1文を短くし、段落の間に空行を入れてください。重要な項目は【見出し】、複数項目は「・」の箇条書きを使ってください。Markdownの表、長い一段落、過剰な前置きは避け、原則300文字以内にまとめてください。
 利用可能なコンテキスト:
-${driverMode ? `ドライバー名: ${options.driverName || "登録済みドライバー"}` : `記憶: ${JSON.stringify(context.memories.map((m) => ({ id: m.id, category: m.category, content: m.content })))}
+${driverMode ? `ドライバー名: ${options.driverName || "登録済みドライバー"}
+グループ用途: ${options.groupType === "operation" ? "稼働用グループ" : "採用後・準備用グループ"}
+進捗: ${options.driverWorkflow || "採用後準備中"}
+Amazonアカウント確認: ${options.amazonAccountStatus || "未確認"}
+アプリ設定確認: ${options.appsStatus || "未確認"}` : `記憶: ${JSON.stringify(context.memories.map((m) => ({ id: m.id, category: m.category, content: m.content })))}
 未完了TODO: ${JSON.stringify(context.todos.map((t) => ({ id: t.id, title: t.title, priority: t.priority })))}
 営業概要: ${JSON.stringify(context.sales)}
 整理メモ: ${JSON.stringify(notesForAssistant)}
 検索一致: ${JSON.stringify(searchForAssistant)}`}
 ${airtableResult ? `SIN JAPAN物流Airtable検索結果: ${JSON.stringify(airtableResult)}
 この検索結果にない事実は推測せず「Airtableでは確認できません」と伝えてください。返答では、参照した情報がAirtable由来と分かるようにしてください。` : ""}
+${driverMode ? `現在の進捗に対応する案内リンク: ${JSON.stringify(options.resources || [])}
+資料、フォーム、マニュアル、契約書を尋ねられた場合は、上記の案内リンクだけを使ってください。リンクがない場合は管理者へ確認するよう案内してください。` : ""}
 直近会話: ${driverMode ? "[]" : JSON.stringify(context.messages.map((m) => ({ role: m.role, content: m.content })))}`;
     try {
       const result = await client.chat.completions.create({
@@ -275,15 +304,233 @@ ${airtableResult ? `SIN JAPAN物流Airtable検索結果: ${JSON.stringify(airtab
   return { reply, actions, airtable: airtableResult };
 }
 
-export async function processSinJapanDriverMessage(ownerUserId: string, driverId: number, text: string) {
+export async function processSinJapanDriverMessage(ownerUserId: string, driverId: number, text: string, lineMessageId?: string, groupType?: "onboarding" | "operation") {
+  if (containsDriverCredential(text)) {
+    return { reply: driverCredentialSafetyReply(), actions: [] as AssistantAction[], airtable: null, duplicate: false, blocked: true };
+  }
   const [driver] = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.id, driverId), eq(sinJapanDriversTable.ownerUserId, ownerUserId), eq(sinJapanDriversTable.status, "active")));
   if (!driver) throw new Error("有効なドライバーが見つかりません");
   const commonTables = (process.env.AIRTABLE_COMMON_TABLES || "会社案内,運用案内,マニュアル,お知らせ")
     .split(/[\n,]/).map((name) => name.trim()).filter(Boolean);
-  return processAssistantMessage(ownerUserId, text, "sin-japan-driver", undefined, {
+  const resources = await db.select({
+    title: sinJapanResourcesTable.title,
+    url: sinJapanResourcesTable.url,
+    description: sinJapanResourcesTable.description,
+  }).from(sinJapanResourcesTable).where(and(
+    eq(sinJapanResourcesTable.ownerUserId, ownerUserId),
+    eq(sinJapanResourcesTable.isActive, true),
+    or(eq(sinJapanResourcesTable.phase, "all"), eq(sinJapanResourcesTable.phase, driver.workflowStatus)),
+  ));
+  const driverSafeFields = (process.env.AIRTABLE_DRIVER_SAFE_FIELDS || "").split(/[\n,]/).map((field) => field.trim()).filter(Boolean);
+  const driverTenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
+  const driverTenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
+  return processAssistantMessage(ownerUserId, text, "sin-japan-driver", lineMessageId, {
     driverName: driver.name,
-    airtable: { scopeKey: driver.airtableLookupKey, commonTables },
+    driverWorkflow: driver.workflowStatus,
+    amazonAccountStatus: driver.amazonAccountStatus,
+    appsStatus: driver.appsStatus,
+    groupType,
+    resources,
+    airtable: { driverRecordId: driver.airtableRecordId, driverSafeFields, driverTenantField, driverTenantValue, commonTables },
   });
+}
+
+function driverLinkCode() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+export async function createSinJapanDriverLinkCode(ownerUserId: string, driverId: number, groupType: "onboarding" | "operation") {
+  const [driver] = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.id, driverId), eq(sinJapanDriversTable.ownerUserId, ownerUserId), eq(sinJapanDriversTable.status, "active")));
+  if (!driver) throw new Error("有効なドライバーが見つかりません");
+  const code = driverLinkCode();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  await db.update(sinJapanDriverLinkCodesTable).set({ usedAt: new Date() }).where(and(
+    eq(sinJapanDriverLinkCodesTable.ownerUserId, ownerUserId),
+    eq(sinJapanDriverLinkCodesTable.driverId, driverId),
+    eq(sinJapanDriverLinkCodesTable.groupType, groupType),
+    isNull(sinJapanDriverLinkCodesTable.usedAt),
+  ));
+  const [created] = await db.insert(sinJapanDriverLinkCodesTable).values({ ownerUserId, driverId, groupType, code, expiresAt }).returning();
+  return { ...created, driverName: driver.name };
+}
+
+export async function linkSinJapanDriverGroup(groupId: string, code: string) {
+  const [link] = await db.select().from(sinJapanDriverLinkCodesTable).where(and(eq(sinJapanDriverLinkCodesTable.code, code), isNull(sinJapanDriverLinkCodesTable.usedAt), gt(sinJapanDriverLinkCodesTable.expiresAt, new Date())));
+  if (!link) throw new Error("認証コードが無効または期限切れです");
+  const [existing] = await db.select().from(sinJapanDriverGroupsTable).where(eq(sinJapanDriverGroupsTable.groupId, groupId));
+  if (existing) throw new Error("このグループはすでに紐付け済みです");
+  const [claimed] = await db.update(sinJapanDriverLinkCodesTable)
+    .set({ usedAt: new Date() })
+    .where(and(eq(sinJapanDriverLinkCodesTable.id, link.id), isNull(sinJapanDriverLinkCodesTable.usedAt)))
+    .returning();
+  if (!claimed) throw new Error("認証コードはすでに使用されています");
+  const [group] = await db.insert(sinJapanDriverGroupsTable).values({ ownerUserId: link.ownerUserId, driverId: link.driverId, groupId, groupType: link.groupType }).returning();
+  return group;
+}
+
+export async function getSinJapanDriverGroup(groupId: string) {
+  const [group] = await db.select().from(sinJapanDriverGroupsTable).where(and(eq(sinJapanDriverGroupsTable.groupId, groupId), eq(sinJapanDriverGroupsTable.status, "active")));
+  if (!group) return null;
+  const [driver] = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.id, group.driverId), eq(sinJapanDriversTable.ownerUserId, group.ownerUserId), eq(sinJapanDriversTable.status, "active")));
+  return driver ? { group, driver } : null;
+}
+
+export function classifySinJapanDriverMessage(text: string) {
+  if (/事故|怪我|けが|破損|クレーム|警察|救急|車両.*動かない|故障/u.test(text)) {
+    return { reportType: "incident", urgency: "urgent", category: "事故・トラブル" };
+  }
+  if (/欠勤|休み|体調|遅刻|遅延|配車.*変更|変更.*配車/u.test(text)) {
+    return { reportType: "attendance", urgency: "high", category: "稼働・配車確認" };
+  }
+  if (/納品.*完了|配送.*完了|稼働.*終了|終わりました|完了しました/u.test(text)) {
+    return { reportType: "shift_end", urgency: "normal", category: "稼働終了報告" };
+  }
+  if (/到着|出発|集荷/u.test(text)) {
+    return { reportType: "milestone", urgency: "normal", category: "稼働進捗" };
+  }
+  return { reportType: "question", urgency: "normal", category: "ドライバー相談" };
+}
+
+export async function recordSinJapanDriverReport(params: {
+  ownerUserId: string;
+  driverId: number;
+  groupId: string;
+  text: string;
+  lineMessageId?: string;
+}) {
+  if (containsDriverCredential(params.text)) {
+    return { report: null, escalation: undefined, classification: null, blocked: true, duplicate: false };
+  }
+  const classification = classifySinJapanDriverMessage(params.text);
+  const [report] = await db.insert(sinJapanDriverReportsTable).values({
+    ownerUserId: params.ownerUserId,
+    driverId: params.driverId,
+    groupId: params.groupId,
+    lineMessageId: params.lineMessageId || null,
+    reportType: classification.reportType,
+    urgency: classification.urgency,
+    content: params.text,
+  }).onConflictDoNothing().returning();
+  if (!report) return { report: null, escalation: undefined, classification, blocked: false, duplicate: true };
+  let escalation: typeof sinJapanEscalationsTable.$inferSelect | undefined;
+  if (classification.urgency === "urgent" || classification.urgency === "high") {
+    [escalation] = await db.insert(sinJapanEscalationsTable).values({
+      ownerUserId: params.ownerUserId,
+      driverId: params.driverId,
+      groupId: params.groupId,
+      category: classification.category,
+      urgency: classification.urgency,
+      summary: params.text.slice(0, 180),
+      details: params.text,
+    }).returning();
+  }
+  return { report, escalation, classification, blocked: false, duplicate: false };
+}
+
+export async function notifySinJapanManager(ownerUserId: string, escalation: typeof sinJapanEscalationsTable.$inferSelect) {
+  const profile = await getOrCreateAssistantProfile(ownerUserId);
+  if (!profile.lineUserId) return { ok: false as const, error: "管理者の公式LINEが連携されていません" };
+  const [driver] = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.id, escalation.driverId), eq(sinJapanDriversTable.ownerUserId, ownerUserId)));
+  const sent = await safePushLineText(profile.lineUserId, `【要確認｜SIN JAPAN LINE】\nドライバー：${driver?.name || "不明"}\n分類：${escalation.category}\n内容：${escalation.summary}`);
+  if (sent.ok) await db.update(sinJapanEscalationsTable).set({ managerNotifiedAt: new Date() }).where(eq(sinJapanEscalationsTable.id, escalation.id));
+  return sent;
+}
+
+export async function retrySinJapanManagerNotifications() {
+  if (!isLineConfigured()) return;
+  const pending = await db.select().from(sinJapanEscalationsTable).where(and(isNull(sinJapanEscalationsTable.managerNotifiedAt), eq(sinJapanEscalationsTable.status, "open"))).orderBy(desc(sinJapanEscalationsTable.createdAt)).limit(20);
+  for (const escalation of pending) {
+    try {
+      await notifySinJapanManager(escalation.ownerUserId, escalation);
+    } catch (error) {
+      logger.warn({ err: error, escalationId: escalation.id }, "SIN JAPAN escalation notification retry failed");
+    }
+  }
+}
+
+function japanDailyStart() {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts();
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const day = Number(parts.find((part) => part.type === "day")?.value);
+  return new Date(Date.UTC(year, month - 1, day - 1, 15, 0, 0));
+}
+
+export async function buildSinJapanDailyReport(ownerUserId: string) {
+  const drivers = await db.select().from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.ownerUserId, ownerUserId), eq(sinJapanDriversTable.status, "active")));
+  const driverIds = drivers.map((driver) => driver.id);
+  const reports = driverIds.length
+    ? await db.select().from(sinJapanDriverReportsTable).where(and(eq(sinJapanDriverReportsTable.ownerUserId, ownerUserId), inArray(sinJapanDriverReportsTable.driverId, driverIds), gte(sinJapanDriverReportsTable.createdAt, japanDailyStart()))).orderBy(desc(sinJapanDriverReportsTable.createdAt)).limit(100)
+    : [];
+  const escalations = driverIds.length
+    ? await db.select().from(sinJapanEscalationsTable).where(and(eq(sinJapanEscalationsTable.ownerUserId, ownerUserId), inArray(sinJapanEscalationsTable.driverId, driverIds), eq(sinJapanEscalationsTable.status, "open"))).orderBy(desc(sinJapanEscalationsTable.createdAt)).limit(20)
+    : [];
+  const nameOf = (driverId: number) => drivers.find((driver) => driver.id === driverId)?.name || "不明なドライバー";
+  const completed = reports.filter((report) => report.reportType === "shift_end").length;
+  const incidents = reports.filter((report) => report.urgency === "urgent");
+  const pending = reports.filter((report) => report.status === "received" && report.reportType !== "question");
+  const operatingDrivers = drivers.filter((driver) => driver.workflowStatus === "operating");
+  const reportedDriverIds = new Set(reports.map((report) => report.driverId));
+  const missingReports = operatingDrivers.filter((driver) => !reportedDriverIds.has(driver.id));
+  const lines = [
+    "【SIN JAPAN｜本日のドライバー報告】",
+    "",
+    `■ 稼働報告：${completed}件`,
+    `■ 受信報告：${reports.length}件`,
+    `■ 未報告：${missingReports.length}名`,
+    `■ 未処理エスカレーション：${escalations.length}件`,
+    "",
+    "■ 要確認",
+    ...(escalations.length ? escalations.slice(0, 8).map((item) => `・${nameOf(item.driverId)}：${item.summary}`) : ["・現在、未処理のエスカレーションはありません"]),
+    "",
+    "■ 本日の主な報告",
+    ...(pending.length ? pending.slice(0, 8).map((item) => `・${nameOf(item.driverId)}：${item.content.slice(0, 100)}`) : ["・報告はありません"]),
+  ];
+  if (missingReports.length) lines.push("", "■ 未報告ドライバー", ...missingReports.map((driver) => `・${driver.name}`));
+  if (incidents.length) {
+    lines.push("", "⚠️ 事故・トラブル", ...incidents.slice(0, 5).map((item) => `・${nameOf(item.driverId)}：${item.content.slice(0, 100)}`));
+  }
+  return { content: lines.join("\n"), reports, escalations };
+}
+
+export async function sendSinJapanDailyReport(ownerUserId: string) {
+  const profile = await getOrCreateAssistantProfile(ownerUserId);
+  if (!profile.lineUserId) return { ok: false as const, error: "管理者の公式LINEが連携されていません" };
+  const report = await buildSinJapanDailyReport(ownerUserId);
+  const sent = await safePushLineText(profile.lineUserId, report.content);
+  return sent.ok ? { ok: true as const, content: report.content } : sent;
+}
+
+export async function runSinJapanDailyReporter() {
+  const { hour } = localClock("Asia/Tokyo");
+  if (hour < 19 || !isLineConfigured()) return;
+  const reportDate = localDate("Asia/Tokyo");
+  const profiles = await db.select().from(assistantProfilesTable).where(isNotNull(assistantProfilesTable.lineUserId));
+  for (const profile of profiles) {
+    const [existing] = await db.select().from(sinJapanDailyReportsTable).where(and(eq(sinJapanDailyReportsTable.ownerUserId, profile.userId), eq(sinJapanDailyReportsTable.reportDate, reportDate)));
+    if (existing?.status === "delivered") continue;
+    const [driver] = await db.select({ id: sinJapanDriversTable.id }).from(sinJapanDriversTable).where(and(eq(sinJapanDriversTable.ownerUserId, profile.userId), eq(sinJapanDriversTable.status, "active"))).limit(1);
+    if (!driver) continue;
+    const report = await buildSinJapanDailyReport(profile.userId);
+    const [reserved] = existing
+      ? await db.update(sinJapanDailyReportsTable).set({ status: "sending", attemptCount: sql`${sinJapanDailyReportsTable.attemptCount} + 1`, error: null, content: report.content }).where(and(
+        eq(sinJapanDailyReportsTable.id, existing.id),
+        or(
+          eq(sinJapanDailyReportsTable.status, "failed"),
+          and(eq(sinJapanDailyReportsTable.status, "sending"), lt(sinJapanDailyReportsTable.updatedAt, new Date(Date.now() - 10 * 60 * 1000))),
+        ),
+      )).returning()
+      : await db.insert(sinJapanDailyReportsTable).values({ ownerUserId: profile.userId, reportDate, content: report.content, status: "sending", attemptCount: 1 }).onConflictDoNothing().returning();
+    if (!reserved) continue;
+    const sent = await safePushLineText(profile.lineUserId!, report.content);
+    if (sent.ok) {
+      await db.update(sinJapanDailyReportsTable).set({ status: "delivered", sentAt: new Date(), error: null }).where(eq(sinJapanDailyReportsTable.id, reserved.id));
+      logger.info({ ownerUserId: profile.userId, reportDate }, "SIN JAPAN daily report delivered");
+    } else {
+      await db.update(sinJapanDailyReportsTable).set({ status: "failed", error: sent.error }).where(eq(sinJapanDailyReportsTable.id, reserved.id));
+      logger.warn({ ownerUserId: profile.userId, error: sent.error }, "SIN JAPAN daily report was not delivered");
+    }
+  }
 }
 
 async function applyAssistantActions(userId: string, actions: AssistantAction[]) {

@@ -1,0 +1,1 @@
+- [Driver data isolation](sin-japan-driver-data-isolation.md) — Driver messages are credential-scrubbed and individual Airtable views fail closed unless safe binding controls are configured.
