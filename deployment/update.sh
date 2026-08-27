@@ -9,5 +9,5 @@ pnpm install --frozen-lockfile
 (cd lib/api-zod && pnpm exec tsc -p tsconfig.json)
 (cd artifacts/api-server && pnpm run build)
 (cd artifacts/sales-dashboard && NODE_ENV=production BASE_PATH=/ PORT=18816 pnpm run build)
-pm2 restart sinjapan-sales-api
+pm2 restart sinjapan-sales-api --update-env
 echo "✅ 完了"

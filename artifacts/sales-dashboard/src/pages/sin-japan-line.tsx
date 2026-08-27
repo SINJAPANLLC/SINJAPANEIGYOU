@@ -30,6 +30,8 @@ type AirtableStatus = {
   baseConfigured: boolean;
   tablesCached: boolean;
   error: string | null;
+  driverCandidateSearchReady: boolean;
+  driverCandidateSearchError: string | null;
   lineConfigured: boolean;
   managerLineConfigured: boolean;
   webhookUrl: string;
@@ -493,6 +495,18 @@ export default function SinJapanLinePage() {
                   </div>
                 )}
               </div>
+               {status && !status.driverCandidateSearchReady ? (
+                 <div role="alert" className="border border-amber-500/40 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-100 leading-relaxed">
+                   <p className="font-medium text-amber-300">本番Airtableの候補検索は未設定です</p>
+                   <p className="mt-1">{status.driverCandidateSearchError}</p>
+                 </div>
+               ) : null}
+               {status?.connection === "error" ? (
+                 <div role="alert" className="border border-amber-500/40 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-100 leading-relaxed">
+                   <p className="font-medium text-amber-300">Airtable接続を確認してください</p>
+                   <p className="mt-1">{status.error}</p>
+                 </div>
+               ) : null}
               <input value={newDriverKey} onChange={(event) => { setNewDriverKey(event.target.value); setSelectedCandidate(null); }} placeholder="Airtable検索キー（氏名など）" className="w-full h-10 border border-border bg-background px-3 text-sm outline-none focus:border-emerald-500" />
               <p className="text-[11px] text-muted-foreground leading-relaxed">候補リストから選んだ同一行だけを完全一致で確認し、「登録フォーム」を紐付けます。氏名の手入力やレコードIDの直接入力では登録できません。</p>
               {selectedCandidate ? <p className="text-[11px] text-emerald-300">選択中：{selectedCandidate.table} の「{selectedCandidate.value}」</p> : null}

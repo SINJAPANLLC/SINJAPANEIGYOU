@@ -241,7 +241,10 @@ router.post("/assistant/sin-japan-line/chat", requireAuth, async (req, res): Pro
 });
 
 router.get("/assistant/sin-japan-line/drivers", requireAuth, async (req, res): Promise<void> => {
-  const drivers = await db.select().from(sinJapanDriversTable).where(eq(sinJapanDriversTable.ownerUserId, getUserId(req))).orderBy(desc(sinJapanDriversTable.createdAt));
+  const drivers = await db.select().from(sinJapanDriversTable).where(and(
+    eq(sinJapanDriversTable.ownerUserId, getUserId(req)),
+    eq(sinJapanDriversTable.status, "active"),
+  )).orderBy(desc(sinJapanDriversTable.createdAt));
   const groups = await db.select().from(sinJapanDriverGroupsTable).where(eq(sinJapanDriverGroupsTable.ownerUserId, getUserId(req)));
   res.json(drivers.map((driver) => ({ ...driver, groups: groups.filter((group) => group.driverId === driver.id) })));
 });

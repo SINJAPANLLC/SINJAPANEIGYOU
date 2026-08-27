@@ -201,6 +201,20 @@ function configuredDriverDetailFields() {
   };
 }
 
+function driverCandidateSearchConfigurationError() {
+  const lookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
+  const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
+  const tenantValue = process.env.AIRTABLE_DRIVER_TENANT_VALUE?.trim() || "";
+  const detailFields = configuredDriverDetailFields();
+
+  if (!lookupField) return "候補検索には、AIRTABLE_DRIVER_LOOKUP_FIELD の設定が必要です。";
+  if (!tenantField || !tenantValue) return "候補検索には、AIRTABLE_DRIVER_TENANT_FIELD と AIRTABLE_DRIVER_TENANT_VALUE の設定が必要です。";
+  if (!detailFields.registration.length && !detailFields.contract.length) {
+    return "候補検索には、AIRTABLE_DRIVER_SAFE_FIELDS に許可する「登録フォーム」または「契約書」項目名の設定が必要です。";
+  }
+  return null;
+}
+
 function requestedDriverDetailFields(table: AirtableTable, lookupFields: string[], tenantField: string) {
   const details = configuredDriverDetailFields();
   const requested = [...lookupFields, tenantField, ...details.registration, ...details.contract].filter(Boolean);
@@ -285,6 +299,9 @@ export async function searchAirtable(query: string, options: AirtableSearchOptio
 export async function searchAirtableLookupCandidates(query: string): Promise<{ candidates: AirtableLookupCandidate[]; error: string | null }> {
   const normalizedQuery = query.trim().replace(/\s+/g, " ");
   if (!normalizedQuery) return { candidates: [], error: null };
+
+  const configurationError = driverCandidateSearchConfigurationError();
+  if (configurationError) return { candidates: [], error: configurationError };
 
   const configuredLookupField = process.env.AIRTABLE_DRIVER_LOOKUP_FIELD?.trim() || "";
   const tenantField = process.env.AIRTABLE_DRIVER_TENANT_FIELD?.trim() || "";
@@ -394,6 +411,8 @@ export async function getAirtableDriverDetails(
 export async function getAirtableStatus() {
   const { apiKey, baseId } = getConfig();
   const configured = Boolean(apiKey && baseId);
+  const driverCandidateSearchError = driverCandidateSearchConfigurationError();
+  const driverCandidateSearchReady = Boolean(configured && !driverCandidateSearchError);
   if (!configured) {
     return {
       configured: false,
@@ -402,6 +421,8 @@ export async function getAirtableStatus() {
       manualTablesConfigured: configuredTables().length,
       tablesCached: false,
       error: null,
+      driverCandidateSearchReady,
+      driverCandidateSearchError,
     };
   }
   try {
@@ -415,6 +436,8 @@ export async function getAirtableStatus() {
       manualTablesConfigured: configuredTables().length,
       tablesCached: Boolean(tableCache && tableCache.baseId === baseId && tableCache.expiresAt > Date.now()),
       error: null,
+      driverCandidateSearchReady,
+      driverCandidateSearchError,
     };
   } catch (error) {
     return {
@@ -424,6 +447,8 @@ export async function getAirtableStatus() {
       manualTablesConfigured: configuredTables().length,
       tablesCached: false,
       error: error instanceof Error ? error.message : "Airtable接続を確認できませんでした",
+      driverCandidateSearchReady,
+      driverCandidateSearchError,
     };
   }
 }
