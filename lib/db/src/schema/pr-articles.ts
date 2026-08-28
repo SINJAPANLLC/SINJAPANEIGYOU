@@ -10,7 +10,11 @@ export const prArticlesTable = pgTable("pr_articles", {
   content: text("content").notNull(),
   status: text("status").notNull().default("draft"),
   scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
   postedAt: timestamp("posted_at", { withTimezone: true }),
+  publicationUrl: text("publication_url"),
+  submissionMessage: text("submission_message"),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

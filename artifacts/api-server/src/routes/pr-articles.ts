@@ -2,12 +2,9 @@ import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import { db, prArticlesTable, businessesTable } from "@workspace/db";
 import { requireAuth, getUserId } from "../lib/auth";
-import OpenAI from "openai";
 import { postToPrFreePlaywright } from "../lib/pr-free-playwright";
 
 const router: IRouter = Router();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 async function ownsBusiness(userId: string, businessId: number) {
   const [b] = await db.select().from(businessesTable).where(
     and(eq(businessesTable.id, businessId), eq(businessesTable.userId, userId))
@@ -30,7 +27,11 @@ router.get("/pr-articles", requireAuth, async (req, res): Promise<void> => {
         content: prArticlesTable.content,
         status: prArticlesTable.status,
         scheduledAt: prArticlesTable.scheduledAt,
+        submittedAt: prArticlesTable.submittedAt,
         postedAt: prArticlesTable.postedAt,
+        publicationUrl: prArticlesTable.publicationUrl,
+        submissionMessage: prArticlesTable.submissionMessage,
+        lastCheckedAt: prArticlesTable.lastCheckedAt,
         createdAt: prArticlesTable.createdAt,
       })
       .from(prArticlesTable)
@@ -51,7 +52,11 @@ router.get("/pr-articles", requireAuth, async (req, res): Promise<void> => {
         content: prArticlesTable.content,
         status: prArticlesTable.status,
         scheduledAt: prArticlesTable.scheduledAt,
+        submittedAt: prArticlesTable.submittedAt,
         postedAt: prArticlesTable.postedAt,
+        publicationUrl: prArticlesTable.publicationUrl,
+        submissionMessage: prArticlesTable.submissionMessage,
+        lastCheckedAt: prArticlesTable.lastCheckedAt,
         createdAt: prArticlesTable.createdAt,
       })
       .from(prArticlesTable)
@@ -70,49 +75,13 @@ router.post("/pr-articles/generate", requireAuth, async (req, res): Promise<void
   const biz = await ownsBusiness(userId, businessId);
   if (!biz) { res.status(403).json({ error: "Forbidden" }); return; }
 
-  const prompt = `
-あなたは日本語のプレスリリース（PR TIMES FREE向け）ライターです。
-以下のビジネス情報をもとに、PR TIMES FREEに投稿できるプレスリリース記事を作成してください。
-
-ビジネス名: ${biz.name}
-会社名: ${biz.companyName || "合同会社SIN JAPAN"}
-${topic ? `テーマ・トピック: ${topic}` : ""}
-
-【フォーマット】
-タイトル: （キャッチーで検索されやすい20〜40文字）
----
-本文:
-（リード文：2〜3行でニュースの要点を伝える）
-
-【サービス概要】
-（ビジネスのサービス内容を300〜400字で説明）
-
-【特徴・強み】
-・（箇条書き3〜5項目）
-
-【お問い合わせ】
-会社名: ${biz.companyName || "合同会社SIN JAPAN"}
-メール: info@sinjapan.jp
-${biz.serviceUrl ? `URL: ${biz.serviceUrl}` : ""}
-
-記事全体で500〜800字程度で作成してください。PR TIMESのルールに沿ったビジネスライクな文体で。
-`;
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.7,
-  });
-
-  const rawText = completion.choices[0].message.content || "";
-  const titleMatch = rawText.match(/タイトル[:：]\s*(.+)/);
-  const title = titleMatch ? titleMatch[1].trim() : `${biz.name} プレスリリース`;
-  const content = rawText.replace(/タイトル[:：]\s*.+\n?-{3,}\n?/, "").trim();
+  const { generatePrFreeArticle } = await import("../lib/pr-free-scheduler");
+  const generated = await generatePrFreeArticle(biz, typeof topic === "string" && topic.trim() ? topic.trim() : undefined);
 
   const [article] = await db.insert(prArticlesTable).values({
     businessId,
-    title,
-    content,
+    title: generated.title,
+    content: generated.content,
     status: "draft",
   }).returning();
 
@@ -123,10 +92,17 @@ router.patch("/pr-articles/:id", requireAuth, async (req, res): Promise<void> =>
   const userId = getUserId(req);
   const id = Number(req.params.id);
   const { title, content, status, scheduledAt } = req.body;
+  const allowedStatuses = ["draft", "scheduled"];
+  if (status !== undefined && !allowedStatuses.includes(status)) {
+    res.status(400).json({ error: "この状態には手動変更できません" }); return;
+  }
 
   const [article] = await db.select().from(prArticlesTable).where(eq(prArticlesTable.id, id));
   if (!article) { res.status(404).json({ error: "Not found" }); return; }
   if (!(await ownsBusiness(userId, article.businessId))) { res.status(403).json({ error: "Forbidden" }); return; }
+  if (!["draft", "failed", "scheduled"].includes(article.status)) {
+    res.status(409).json({ error: "送信後の記事は編集できません。修正する場合は新しい下書きを作成してください" }); return;
+  }
 
   const [updated] = await db.update(prArticlesTable).set({
     ...(title !== undefined && { title }),
@@ -167,6 +143,9 @@ router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise
 
   const [article] = await db.select().from(prArticlesTable).where(eq(prArticlesTable.id, id));
   if (!article) { res.status(404).json({ error: "Not found" }); return; }
+  if (!["draft", "failed", "scheduled"].includes(article.status)) {
+    res.status(409).json({ error: "審査待ちまたは公開済みの記事は再送できません" }); return;
+  }
 
   const biz = await ownsBusiness(userId, article.businessId);
   if (!biz) { res.status(403).json({ error: "Forbidden" }); return; }
@@ -183,7 +162,7 @@ router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise
     email: "info@sinjapan.jp",
     url: siteUrl,
     category,
-    companyname: "合同会社SIN JAPAN",
+    companyname: biz.name.slice(0, 30),
     title: article.title,
     subtitle: "",
     content: article.content,
@@ -191,13 +170,39 @@ router.post("/pr-articles/:id/auto-post", requireAuth, async (req, res): Promise
 
   if (result.success) {
     await db.update(prArticlesTable).set({
-      status: "posted",
-      postedAt: new Date(),
+      status: "submitted",
+      submittedAt: new Date(),
+      submissionMessage: result.message,
+      lastCheckedAt: null,
       updatedAt: new Date(),
     }).where(eq(prArticlesTable.id, id));
-    res.json({ ok: true, message: result.message || "投稿成功（Playwright）" });
+    res.json({ ok: true, message: result.message || "送信を受け付けました。現在は審査待ちです。" });
   } else {
+    await db.update(prArticlesTable).set({
+      status: "failed",
+      submissionMessage: result.message,
+      updatedAt: new Date(),
+    }).where(eq(prArticlesTable.id, id));
     res.status(422).json({ error: result.message || "PR-FREE送信失敗", detail: result });
+  }
+});
+
+router.post("/pr-articles/:id/check-publication", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const id = Number(req.params.id);
+  const [article] = await db.select().from(prArticlesTable).where(eq(prArticlesTable.id, id));
+  if (!article) { res.status(404).json({ error: "Not found" }); return; }
+  if (!(await ownsBusiness(userId, article.businessId))) { res.status(403).json({ error: "Forbidden" }); return; }
+  if (!["submitted", "unknown", "posted"].includes(article.status)) {
+    res.status(409).json({ error: "審査待ちの記事だけ公開確認できます" }); return;
+  }
+
+  try {
+    const { checkPrFreePublication } = await import("../lib/pr-free-scheduler");
+    const result = await checkPrFreePublication(id);
+    res.json(result);
+  } catch (error) {
+    res.status(502).json({ error: error instanceof Error ? error.message : "公開確認に失敗しました" });
   }
 });
 

@@ -40,9 +40,15 @@ export interface PrFreePostOptions {
   content: string;
 }
 
+export interface PrFreePostResult {
+  success: boolean;
+  message: string;
+  responseUrl: string;
+}
+
 export async function postToPrFreePlaywright(
   options: PrFreePostOptions,
-): Promise<{ success: boolean; message: string }> {
+): Promise<PrFreePostResult> {
   logger.info({ url: options.url, category: options.category }, "pr-free-playwright: launch");
 
   const browser = await chromium.launch({
@@ -73,7 +79,7 @@ export async function postToPrFreePlaywright(
     await page.goto(PR_FREE_URL, { waitUntil: "domcontentloaded", timeout: 40000 });
     await sleep(rand(2000, 4000));
 
-    await page.evaluate(() => window.scrollTo(0, 300));
+    await page.evaluate("window.scrollTo(0, 300)");
     await sleep(rand(500, 1200));
 
     // チームネーム
@@ -120,7 +126,7 @@ export async function postToPrFreePlaywright(
     }
 
     // ページ下部にスクロール
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)");
     await sleep(rand(1000, 2000));
 
     // 規約同意・確認ボタンがあるか確認（wpcf7c 2ステップフォーム）
@@ -162,13 +168,12 @@ export async function postToPrFreePlaywright(
       : "";
     const currentUrl = page.url();
 
-    const isSuccess =
-      responseText.includes("ありがとう") ||
-      responseText.includes("送信") ||
-      responseText.includes("受け付け") ||
-      currentUrl.includes("thanks") ||
-      currentUrl.includes("complete") ||
-      (await page.$(".wpcf7-mail-sent-ok")) !== null;
+    const hasExplicitError =
+      /失敗|エラー|入力.*確認|必須|送信できません|問題が発生/.test(responseText);
+    const hasAcceptedMessage =
+      /リリースを受け付けました|投稿ありがとうございます|審査後.*公開/.test(responseText);
+    const isThanksPage = /\/thanks\/?(?:[?#].*)?$/.test(currentUrl);
+    const isSuccess = !hasExplicitError && (hasAcceptedMessage || isThanksPage);
 
     logger.info(
       { isSuccess, responseText: responseText.slice(0, 100), currentUrl },
@@ -177,11 +182,12 @@ export async function postToPrFreePlaywright(
 
     return {
       success: isSuccess,
-      message: responseText || (isSuccess ? "投稿完了" : "送信失敗：レスポンス不明"),
+      message: responseText || (isSuccess ? "リリースを受け付けました。審査後に公開されます。" : "送信失敗：受付完了を確認できませんでした"),
+      responseUrl: currentUrl,
     };
   } catch (err: any) {
     logger.error({ err: err?.message }, "pr-free-playwright: error");
-    return { success: false, message: err?.message || "Playwright エラー" };
+    return { success: false, message: err?.message || "Playwright エラー", responseUrl: page.url() };
   } finally {
     await browser.close();
   }

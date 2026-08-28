@@ -23,7 +23,11 @@ interface PrArticle {
   content: string;
   status: string;
   scheduledAt: string | null;
+  submittedAt: string | null;
   postedAt: string | null;
+  publicationUrl: string | null;
+  submissionMessage: string | null;
+  lastCheckedAt: string | null;
   createdAt: string;
 }
 
@@ -39,7 +43,11 @@ const PR_FREE_CATEGORIES = [
 const statusLabel: Record<string, { label: string; color: string }> = {
   draft: { label: "下書き", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
   scheduled: { label: "スケジュール済", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-  posted: { label: "投稿済み", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  submitted: { label: "審査待ち", color: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+  posted: { label: "審査待ち（旧）", color: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+  published: { label: "公開済み", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  failed: { label: "送信失敗", color: "bg-red-500/20 text-red-400 border-red-500/30" },
+  unknown: { label: "要確認", color: "bg-orange-500/20 text-orange-300 border-orange-500/30" },
 };
 
 function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () => void }) {
@@ -64,7 +72,7 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
       setEditing(false);
-      toast({ title: "✅ 更新しました" });
+      toast({ title: "更新しました" });
     },
   });
 
@@ -82,14 +90,34 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
-      toast({ title: "🎉 PR-FREEへの自動投稿が完了しました！" });
+      toast({ title: "PR-FREEへ送信しました", description: "現在は審査待ちです。公開確認後に状態が更新されます。" });
     },
     onError: (e: Error) => toast({ title: "投稿エラー", description: e.message, variant: "destructive" }),
   });
 
+  const checkPublicationMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/pr-articles/${article.id}/check-publication`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "公開確認に失敗しました");
+      return data as { published: boolean; publicationUrl: string | null };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pr-articles"] });
+      toast({
+        title: data.published ? "公開を確認しました" : "まだ公開されていません",
+        description: data.published ? "公開URLを保存しました。" : "審査待ち、または非公開の可能性があります。",
+      });
+    },
+    onError: (e: Error) => toast({ title: "公開確認エラー", description: e.message, variant: "destructive" }),
+  });
+
   function copyToClipboard() {
     navigator.clipboard.writeText(`${article.title}\n\n${article.content}`);
-    toast({ title: "📋 コピーしました" });
+    toast({ title: "コピーしました" });
   }
 
   if (editing) {
@@ -120,9 +148,14 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
             <h3 className="font-semibold text-sm leading-tight">{article.title}</h3>
             <p className="text-xs text-muted-foreground mt-1">
               {new Date(article.createdAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+              {article.submittedAt && (
+                <span className="ml-2 text-blue-300">
+                  送信: {new Date(article.submittedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                </span>
+              )}
               {article.postedAt && (
                 <span className="ml-2 text-green-400">
-                  投稿: {new Date(article.postedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
+                  公開確認: {new Date(article.postedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}
                 </span>
               )}
             </p>
@@ -137,8 +170,22 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
           {article.content}
         </pre>
 
+        {(article.submissionMessage || article.lastCheckedAt || article.publicationUrl) && (
+          <div className="mb-3 rounded-lg border border-border bg-muted/10 p-3 text-xs text-muted-foreground space-y-1">
+            {article.submissionMessage && <p className="whitespace-pre-wrap">送信結果: {article.submissionMessage}</p>}
+            {article.lastCheckedAt && (
+              <p>最終公開確認: {new Date(article.lastCheckedAt).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" })}</p>
+            )}
+            {article.publicationUrl && (
+              <a href={article.publicationUrl} target="_blank" rel="noreferrer" className="text-green-400 hover:underline">
+                PR-FREE公開ページを開く
+              </a>
+            )}
+          </div>
+        )}
+
         {/* 自動投稿 */}
-        {article.status !== "posted" && (
+        {["draft", "failed", "scheduled"].includes(article.status) && (
           <div className="flex items-center gap-2 mb-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
             <Send className="w-4 h-4 text-blue-400 shrink-0" />
             <span className="text-xs text-blue-300 flex-1">PR-FREEに自動投稿</span>
@@ -170,13 +217,17 @@ function ArticleCard({ article, onDelete }: { article: PrArticle; onDelete: () =
           <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={copyToClipboard}>
             <Copy className="w-3 h-3" />コピー
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => setEditing(true)}>
-            <PenLine className="w-3 h-3" />編集
-          </Button>
-          {article.status !== "posted" && (
+          {["draft", "failed", "scheduled"].includes(article.status) && (
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => setEditing(true)}>
+              <PenLine className="w-3 h-3" />編集
+            </Button>
+          )}
+          {["submitted", "unknown", "posted"].includes(article.status) && (
             <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7"
-              onClick={() => updateMutation.mutate({ status: "posted", postedAt: new Date().toISOString() })}>
-              投稿済みにする
+              onClick={() => checkPublicationMutation.mutate()}
+              disabled={checkPublicationMutation.isPending}>
+              {checkPublicationMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              公開を確認
             </Button>
           )}
           <Button size="sm" variant="ghost" className="gap-1.5 text-xs h-7 text-destructive hover:text-destructive ml-auto" onClick={onDelete}>
@@ -204,7 +255,7 @@ export default function PrFreePage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "🚀 全ビジネスの自動投稿を開始しました", description: "バックグラウンドで順番に投稿します（約2分/社）" });
+      toast({ title: "全ビジネスの自動投稿を開始しました", description: "未送信の対象だけをバックグラウンドで順番に処理します。" });
     },
     onError: () => toast({ title: "エラー", description: "実行に失敗しました", variant: "destructive" }),
   });
@@ -217,6 +268,7 @@ export default function PrFreePage() {
       if (!res.ok) throw new Error("fetch failed");
       return res.json();
     },
+    refetchInterval: 60_000,
   });
 
   const deleteMutation = useMutation({
@@ -229,9 +281,17 @@ export default function PrFreePage() {
     },
   });
 
-  const filtered = filterStatus === "all" ? articles : articles.filter((a) => a.status === filterStatus);
-  const postedCount = articles.filter((a) => a.status === "posted").length;
+  const filtered = filterStatus === "all"
+    ? articles
+    : filterStatus === "submitted"
+      ? articles.filter((a) => ["submitted", "posted"].includes(a.status))
+      : filterStatus === "failed"
+        ? articles.filter((a) => ["failed", "unknown"].includes(a.status))
+        : articles.filter((a) => a.status === filterStatus);
+  const publishedCount = articles.filter((a) => a.status === "published").length;
+  const submittedCount = articles.filter((a) => ["submitted", "posted"].includes(a.status)).length;
   const draftCount = articles.filter((a) => a.status === "draft").length;
+  const failedCount = articles.filter((a) => ["failed", "unknown"].includes(a.status)).length;
 
   return (
     <div className="p-6">
@@ -261,7 +321,7 @@ export default function PrFreePage() {
             </Button>
             <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
               <CalendarClock className="w-3 h-3" />
-              毎日10:00 (JST) 自動実行
+               毎日9:00 (JST) 自動実行
             </span>
           </div>
         </div>
@@ -272,7 +332,7 @@ export default function PrFreePage() {
         <div className="flex items-center gap-3 mb-4">
           <span className="text-sm text-muted-foreground">全 {articles.length} 件</span>
           <div className="flex gap-2">
-            {(["all", "posted", "draft"] as const).map((s) => (
+            {(["all", "published", "submitted", "draft", "failed"] as const).map((s) => (
               <button
                 key={s}
                 onClick={() => setFilterStatus(s)}
@@ -282,7 +342,15 @@ export default function PrFreePage() {
                     : "border-border text-muted-foreground hover:border-foreground/50"
                 }`}
               >
-                {s === "all" ? `すべて (${articles.length})` : s === "posted" ? `投稿済み (${postedCount})` : `下書き (${draftCount})`}
+                {s === "all"
+                  ? `すべて (${articles.length})`
+                  : s === "published"
+                    ? `公開済み (${publishedCount})`
+                    : s === "submitted"
+                      ? `審査待ち (${submittedCount})`
+                      : s === "failed"
+                        ? `要確認 (${failedCount})`
+                        : `下書き (${draftCount})`}
               </button>
             ))}
           </div>

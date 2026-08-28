@@ -1,9 +1,10 @@
 import cron from "node-cron";
 import { db, businessesTable, prArticlesTable } from "@workspace/db";
-import { eq, and, gte } from "drizzle-orm";
+import { eq, and, gte, inArray, desc, sql } from "drizzle-orm";
 import OpenAI from "openai";
 import { logger } from "./logger";
 import { postToPrFreePlaywright } from "./pr-free-playwright";
+import { isPrFreePublicTitleMatch } from "./pr-free-publication";
 
 const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "";
 const openaiBaseURL = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
@@ -16,8 +17,9 @@ const FIXED_CONTACT = {
   teamname: "合同会社SIN JAPAN",
   name: "大谷",
   email: "info@sinjapan.jp",
-  companyname: "合同会社SIN JAPAN",
 };
+
+const AUTOMATIC_ARTICLE_FORBIDDEN = /導入実績|累計|突破|業務提携|提携を締結|料金プラン|新機能|正式リリース|ベータ版|アプリ版|無料トライアル|全国(?:47都道府県)?対応|初期費用(?:ゼロ|0円)|業界最安|高収入|\d[\d,.]*\s*(?:社|件|人|%|％|倍)/;
 
 function detectCategory(bizName: string): string {
   if (/TikTok|SNS|動画|広告|マーケ/i.test(bizName)) return "広告・マーケティング";
@@ -32,33 +34,33 @@ function detectCategory(bizName: string): string {
 function getServiceDescription(bizName: string, serviceUrl: string): string {
   const n = bizName;
   if (/KEI MATCH/i.test(n))
-    return "軽貨物ドライバーと荷主をダイレクトにマッチングするBtoBプラットフォーム。仲介業者を介さない直接契約モデルで、ドライバー側の報酬向上と荷主側のコスト削減を同時に実現。全国対応でスマホから案件確認・応募が完結し、完全成果報酬型のため初期費用ゼロで導入できる軽貨物専門のマッチングサービス。";
+    return "軽貨物ドライバーと配送案件を探す事業者をつなぐ、軽貨物業界向けのマッチングサービスです。";
   if (/TRA MATCH/i.test(n))
-    return "一般貨物（大型・中型トラック）の運送会社と荷主をダイレクトにマッチングするBtoBプラットフォーム。仲介なしの直接契約で傭車コストを削減し、運送会社の安定稼働を支援。全国対応で新規取引先開拓をスムーズに実現する一般貨物専門のマッチングサービス。";
+    return "一般貨物の運送会社と荷主をつなぎ、取引先探しを支援する事業者向けマッチングサービスです。";
   if (/KEI SAIYOU/i.test(n))
-    return "軽貨物ドライバーの採用に特化した求人・採用支援サービス。独立開業を目指すドライバーや副業ドライバーの獲得から、軽貨物事業者向けの採用コンサルティングまでワンストップで対応。採用コストを抑えながら即戦力ドライバーを確保できる軽貨物採用専門サービス。";
+    return "軽貨物ドライバーを採用したい事業者の求人・採用活動を支援するサービスです。";
   if (/SIN JAPAN AI/i.test(n))
-    return "合同会社SIN JAPANが提供する営業DX・業務自動化AIソリューション。リード獲得からメール送信・フォローアップまでの営業プロセスをAIで自動化し、中小企業の営業効率を劇的に向上させる。ChatGPT・AIを活用した日本語対応の営業自動化プラットフォーム。";
+    return "営業活動や日常業務の整理・自動化を支援する、日本語対応のAIサービスです。";
   if (/TikTok/i.test(n))
-    return "TikTok ONE公認代理店として、TikTok広告の企画・運用代行とTikTokクリエイターを活用したPR施策を提供。中小企業から大手企業まで予算規模を問わず対応し、TikTokの短尺動画広告で新規顧客獲得と認知拡大を実現する広告代理サービス。";
+    return "TikTok広告の企画・運用と、クリエイターを活用したPR施策を支援するサービスです。";
   if (/フルコミ|フル・コミ/i.test(n))
-    return "完全成果報酬型（フルコミッション）の営業代理人・営業パートナーを獲得・マッチングするサービス。固定給不要で即戦力の営業人材を確保でき、営業組織の立ち上げコストをゼロに抑えながら売上拡大を実現。中小企業向けのフルコミ営業パートナー獲得支援サービス。";
+    return "営業人材を必要とする企業と営業パートナーをつなぐ、営業活動の支援サービスです。";
   if (/軽貨物.*ドライバー|ドライバー.*軽貨物/i.test(n))
-    return "軽貨物ドライバーの求人・採用に特化した人材採用サービス。未経験・経験者問わず応募でき、週払い・日払い対応で安定した高収入が得られる。個人事業主として独立開業を目指す方や副業として軽貨物配送を始めたい方を広く募集。合同会社SIN JAPANが運営する軽貨物ドライバー専門の採用プラットフォーム。";
+    return "軽貨物ドライバーの仕事探しと、配送事業者の採用活動を支援する求人サービスです。";
   if (/チャットレディ/i.test(n))
-    return "在宅・店舗でできるチャットレディのお仕事を紹介する女性向け求人サービス。スマートフォン1台で始められ、時間・場所を選ばない柔軟な働き方が可能。未経験者でも安心のサポート体制を完備し、高収入・在宅ワークを希望する女性を積極採用。合同会社SIN JAPANが運営するチャットレディ専門の求人プラットフォーム。";
+    return "チャットを通じた仕事を探す方へ、求人情報と応募機会を案内するサービスです。";
   if (/軽貨物.*案件|案件.*軽貨物/i.test(n))
-    return "軽貨物ドライバー・軽貨物事業者向けの運送案件獲得支援サービス。直接契約の高単価案件を継続的に紹介し、不安定な稼働問題を解消。個人事業主から法人まで対応し、軽貨物ビジネスの安定収益化をサポートする案件獲得プラットフォーム。";
+    return "軽貨物ドライバーや軽貨物事業者の配送案件探しを支援するサービスです。";
   if (/軽貨物.*協力|協力.*軽貨物/i.test(n))
-    return "軽貨物配送の協力会社・傭車パートナーを効率的に獲得できるマッチングサービス。急増する配送需要に対応するための協力会社ネットワーク構築を支援。全国の軽貨物事業者とのマッチングで、繁忙期の対応力強化と安定した配送体制を実現。";
+    return "軽貨物配送の協力会社を探す事業者と、仕事を探す軽貨物事業者をつなぐサービスです。";
   if (/一般貨物.*案件|案件.*一般貨物/i.test(n))
-    return "一般貨物（大型・中型トラック）運送会社向けの運送案件獲得支援サービス。直接契約の高単価長距離・チャーター案件を継続紹介し、空車率の削減と安定稼働を実現。一般貨物事業者の新規荷主開拓をサポートする案件獲得プラットフォーム。";
+    return "一般貨物の運送会社が配送案件や取引先を探すための支援サービスです。";
   if (/一般貨物.*協力|協力.*一般貨物/i.test(n))
-    return "一般貨物運送の協力会社・傭車パートナーを効率的に獲得するマッチングサービス。全国の一般貨物事業者とのネットワーク構築で、急な運送依頼にも柔軟に対応できる協力体制を整備。物流会社の傭車コスト削減と対応力向上を支援。";
+    return "一般貨物運送の協力会社を探す事業者同士をつなぐマッチングサービスです。";
   if (/人材.*案件|案件.*人材/i.test(n))
-    return "人材紹介・人材派遣会社向けの求人案件・クライアント企業獲得支援サービス。人材業界の新規取引先開拓を効率化し、安定した求人案件のパイプラインを構築。人材会社の営業コストを削減しながら継続的な案件獲得を実現するBtoBマッチングサービス。";
+    return "人材紹介・人材派遣会社の求人案件や取引先探しを支援する事業者向けサービスです。";
   if (/人材.*協力|協力.*人材/i.test(n))
-    return "人材業界の協力会社・業務提携パートナーを獲得するマッチングサービス。人材紹介・派遣各社のネットワーク拡充を支援し、紹介しきれない候補者の連携対応や合同案件への対応力を強化。人材会社間のパートナーシップ構築を促進するサービス。";
+    return "人材紹介・人材派遣会社同士の協力先探しを支援する事業者向けサービスです。";
   return `合同会社SIN JAPANが提供する「${bizName}」サービス。`;
 }
 
@@ -66,25 +68,34 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function hasPostedTodayJST(businessId: number): Promise<boolean> {
+async function shouldSkipAutomaticPost(businessId: number): Promise<boolean> {
   const nowJST = new Date(Date.now() + 9 * 60 * 60 * 1000);
   const startOfDayJST = new Date(nowJST);
   startOfDayJST.setUTCHours(0, 0, 0, 0);
   startOfDayJST.setTime(startOfDayJST.getTime() - 9 * 60 * 60 * 1000);
 
-  const rows = await db
+  const attemptedToday = await db
     .select({ id: prArticlesTable.id })
     .from(prArticlesTable)
     .where(
       and(
         eq(prArticlesTable.businessId, businessId),
-        eq(prArticlesTable.status, "posted"),
-        gte(prArticlesTable.postedAt, startOfDayJST),
+        gte(prArticlesTable.createdAt, startOfDayJST),
       ),
     )
     .limit(1);
 
-  return rows.length > 0;
+  if (attemptedToday.length > 0) return true;
+
+  const acceptedSubmission = await db
+    .select({ id: prArticlesTable.id })
+    .from(prArticlesTable)
+    .where(and(
+      eq(prArticlesTable.businessId, businessId),
+      inArray(prArticlesTable.status, ["submitted", "published", "unknown", "posted"]),
+    ))
+    .limit(1);
+  return acceptedSubmission.length > 0;
 }
 
 interface GeneratedArticle {
@@ -93,37 +104,30 @@ interface GeneratedArticle {
   content: string;
 }
 
-const NEWS_HOOKS = [
-  { hook: "正式リリース", detail: "本日より正式サービスを開始いたしました。" },
-  { hook: "ベータ版提供開始", detail: "先行ベータ版の一般提供を開始し、登録受付中です。" },
-  { hook: "導入実績100社突破", detail: "導入企業が100社を突破し、サービス拡充を図ります。" },
-  { hook: "新機能追加", detail: "ユーザーの声を反映した新機能を実装し、利便性をさらに向上させました。" },
-  { hook: "春の無料トライアルキャンペーン開始", detail: "期間限定で30日間の無料トライアルを提供いたします。" },
-  { hook: "業務提携締結", detail: "新たなパートナー企業との業務提携を締結し、サービス提供エリアを拡大します。" },
-  { hook: "料金プラン改定", detail: "より多くの中小企業に導入いただけるよう、料金プランを見直しました。" },
-  { hook: "累計マッチング件数1,000件突破", detail: "累計マッチング件数が1,000件を突破し、順調に成長を続けています。" },
-  { hook: "全国対応エリア拡大", detail: "これまでの主要都市圏に加え、全国47都道府県への対応を完了しました。" },
-  { hook: "スマートフォンアプリ版リリース", detail: "iOS・Android対応のスマートフォンアプリ版を新たにリリースしました。" },
-];
-
-function pickNewsHook(): typeof NEWS_HOOKS[number] {
-  return NEWS_HOOKS[Math.floor(Math.random() * NEWS_HOOKS.length)];
-}
-
 function getTodayJST(): string {
   const d = new Date(Date.now() + 9 * 60 * 60 * 1000);
   return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
 }
 
-async function generateArticle(biz: typeof businessesTable.$inferSelect): Promise<GeneratedArticle> {
+function cleanTitle(title: string, bizName: string): string {
+  return title
+    .replace(/^合同会社SIN JAPAN[、／:：\s-]*/i, "")
+    .replace(new RegExp(`^${bizName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[、／:：\\s-]*`, "i"), "")
+    .trim()
+    .slice(0, 60);
+}
+
+export async function generatePrFreeArticle(
+  biz: typeof businessesTable.$inferSelect,
+  verifiedTopic?: string,
+): Promise<GeneratedArticle> {
   const siteUrl = biz.serviceUrl || "https://sinjapan.work";
   const serviceDesc = getServiceDescription(biz.name, siteUrl);
-  const newsHook = pickNewsHook();
   const todayJST = getTodayJST();
 
   const prompt = `
 あなたはプロの日本語プレスリリースライターです。
-編集者が「これは本物のニュースだ」と判断できる、ニュース性の高いプレスリリースを作成してください。
+PR-FREEの審査担当者が読みやすい、事実に基づくサービス紹介文を作成してください。
 
 【発表日】${todayJST}
 
@@ -133,20 +137,21 @@ async function generateArticle(biz: typeof businessesTable.$inferSelect): Promis
 サービスURL: ${siteUrl}
 サービス説明: ${serviceDesc}
 
-【今回のニュース角度】
-${newsHook.hook}：${newsHook.detail}
+【今回伝える内容】
+${verifiedTopic || `${biz.name}がどのような利用者の、どのような課題を支援するサービスかを紹介する`}
 
 【作成にあたっての注意事項】
-- 冒頭は「〇〇（会社名）は、${todayJST}、〜を発表しました」という形式で始める
-- サービス名・サービス内容を正確に反映する（他サービスと混同しない）
-- 具体的な数字・事実・ユーザーメリットを盛り込む
+- 入力情報にない実績、件数、利用者数、提携、受賞、料金、対応地域、開始日、新機能、アプリ提供などを絶対に創作しない
+- 「正式リリース」「突破」「業務提携」「料金改定」「全国対応」など、入力情報にないニュースを作らない
+- サービス名・サービス内容を正確に反映し、断定できない効果は「支援する」「目指す」と表現する
 - 宣伝文句（「最高の」「業界最安値」など根拠のない表現）は避ける
 - ビジネスニュースとして自然な文体（PR TIMESレベル）で書く
 - テンプレートっぽい文章・箇条書きの羅列は避け、流れのある文章にする
+- タイトルには「合同会社SIN JAPAN」やサービス名を入れない（フォーム側でサービス名が先頭に付くため）
 
 【出力フォーマット（必ずこの形式で出力）】
-タイトル: （25〜45文字。「〇〇、〜を〜」という第三者視点のニュースタイトル）
-サブタイトル: （20〜35文字の補足タイトル）
+タイトル: （20〜30文字。サービス名・会社名を繰り返さない）
+サブタイトル: （20〜30文字の補足タイトル）
 ---
 （本文：700〜900字。リード文→背景→サービス詳細→今後の展開→お問い合わせの構成で）
 
@@ -166,13 +171,18 @@ URL: ${siteUrl}
   const rawText = completion.choices[0].message.content || "";
   const titleMatch = rawText.match(/タイトル[:：]\s*(.+)/);
   const subtitleMatch = rawText.match(/サブタイトル[:：]\s*(.+)/);
-  const title = titleMatch ? titleMatch[1].trim() : `${biz.name} プレスリリース`;
+  const title = cleanTitle(titleMatch ? titleMatch[1].trim() : "事業者向けサービスの提供内容を紹介", biz.name);
   const subtitle = subtitleMatch ? subtitleMatch[1].trim() : "";
   const content = rawText
     .replace(/タイトル[:：]\s*.+\n?/, "")
     .replace(/サブタイトル[:：]\s*.+\n?/, "")
     .replace(/^-{3,}\n?/, "")
     .trim();
+
+  if (!verifiedTopic && AUTOMATIC_ARTICLE_FORBIDDEN.test(`${title}\n${subtitle}\n${content}`)) {
+    throw new Error("事実確認できない実績・提携・料金・機能などが生成されたため投稿を中止しました");
+  }
+  if (content.length < 300) throw new Error("PR-FREEの最低文字数を満たさないため投稿を中止しました");
 
   return { title, subtitle, content };
 }
@@ -184,7 +194,12 @@ export async function generateAndPost(biz: typeof businessesTable.$inferSelect):
 
   logger.info({ bizId, bizName: biz.name, category }, "pr-free: start generate+post (Playwright)");
 
-  const article = await generateArticle(biz);
+  if (await shouldSkipAutomaticPost(bizId)) {
+    logger.info({ bizId, bizName: biz.name }, "pr-free: recent attempt or accepted submission exists, skip");
+    return;
+  }
+
+  const article = await generatePrFreeArticle(biz);
 
   const [savedArticle] = await db
     .insert(prArticlesTable)
@@ -197,7 +212,7 @@ export async function generateAndPost(biz: typeof businessesTable.$inferSelect):
     email: FIXED_CONTACT.email,
     url: siteUrl,
     category,
-    companyname: FIXED_CONTACT.companyname,
+    companyname: biz.name.slice(0, 30),
     title: article.title,
     subtitle: article.subtitle,
     content: article.content,
@@ -206,21 +221,108 @@ export async function generateAndPost(biz: typeof businessesTable.$inferSelect):
   if (result.success) {
     await db
       .update(prArticlesTable)
-      .set({ status: "posted", postedAt: new Date(), updatedAt: new Date() })
+      .set({
+        status: "submitted",
+        submittedAt: new Date(),
+        submissionMessage: result.message,
+        lastCheckedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(prArticlesTable.id, savedArticle.id));
     logger.info(
       { bizId, bizName: biz.name, articleId: savedArticle.id, message: result.message },
-      "pr-free: posted successfully via Playwright",
+      "pr-free: submission accepted via Playwright; awaiting review",
     );
   } else {
     await db
       .update(prArticlesTable)
-      .set({ status: "failed", updatedAt: new Date() } as any)
+      .set({ status: "failed", submissionMessage: result.message, updatedAt: new Date() })
       .where(eq(prArticlesTable.id, savedArticle.id));
     logger.warn(
       { bizId, bizName: biz.name, message: result.message },
       "pr-free: post failed via Playwright",
     );
+  }
+}
+
+type PrFreeSearchResult = { title?: string; url?: string };
+
+export async function checkPrFreePublication(articleId: number) {
+  const [article] = await db.select().from(prArticlesTable).where(eq(prArticlesTable.id, articleId));
+  if (!article) throw new Error("記事が見つかりません");
+  if (!["submitted", "unknown", "posted"].includes(article.status)) {
+    throw new Error("審査待ちの記事だけ公開確認できます");
+  }
+  const [business] = await db
+    .select({ name: businessesTable.name })
+    .from(businessesTable)
+    .where(eq(businessesTable.id, article.businessId));
+  if (!business) throw new Error("記事に紐づくサービスが見つかりません");
+
+  const checkedAt = new Date();
+  try {
+    const queries = [article.title, business.name];
+    const results: PrFreeSearchResult[] = [];
+    for (const query of queries) {
+      const url = `https://pr-free.jp/wp-json/wp/v2/search?search=${encodeURIComponent(query)}&per_page=100`;
+      const response = await fetch(url, {
+        headers: { "User-Agent": "SIN-JAPAN-PR-Publication-Checker/1.0" },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error(`PR-FREE公開検索 HTTP ${response.status}`);
+      results.push(...await response.json() as PrFreeSearchResult[]);
+    }
+    const match = results.find((item) =>
+      item.url && isPrFreePublicTitleMatch(item.title || "", article.title, business.name)
+    );
+
+    if (match?.url) {
+      await db.update(prArticlesTable).set({
+        status: "published",
+        publicationUrl: match.url,
+        postedAt: checkedAt,
+        lastCheckedAt: checkedAt,
+        updatedAt: checkedAt,
+      }).where(eq(prArticlesTable.id, articleId));
+      return { published: true, publicationUrl: match.url };
+    }
+
+    const submittedAt = article.submittedAt || article.createdAt;
+    const reviewWindowExpired = checkedAt.getTime() - submittedAt.getTime() > 3 * 24 * 60 * 60 * 1000;
+    await db.update(prArticlesTable).set({
+      status: reviewWindowExpired ? "unknown" : "submitted",
+      lastCheckedAt: checkedAt,
+      updatedAt: checkedAt,
+    }).where(eq(prArticlesTable.id, articleId));
+    return { published: false, publicationUrl: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "公開確認に失敗しました";
+    await db.update(prArticlesTable).set({
+      status: "unknown",
+      submissionMessage: article.submissionMessage
+        ? `${article.submissionMessage}\n公開確認: ${message}`
+        : `公開確認: ${message}`,
+      lastCheckedAt: checkedAt,
+      updatedAt: checkedAt,
+    }).where(eq(prArticlesTable.id, articleId));
+    throw error;
+  }
+}
+
+export async function verifyPendingPrFreePublications() {
+  const pending = await db
+    .select({ id: prArticlesTable.id })
+    .from(prArticlesTable)
+    .where(inArray(prArticlesTable.status, ["submitted", "unknown", "posted"]))
+    .orderBy(sql`${prArticlesTable.lastCheckedAt} asc nulls first`, desc(prArticlesTable.createdAt))
+    .limit(10);
+  for (const article of pending) {
+    try {
+      await checkPrFreePublication(article.id);
+    } catch (error) {
+      logger.warn({ articleId: article.id, error }, "pr-free: publication check failed");
+    }
+    await sleep(500);
   }
 }
 
@@ -230,9 +332,9 @@ export async function runPrFreeDailyNow() {
   for (let i = 0; i < businesses.length; i++) {
     const biz = businesses[i];
     try {
-      const alreadyPosted = await hasPostedTodayJST(biz.id);
-      if (alreadyPosted) {
-        logger.info({ bizId: biz.id, bizName: biz.name }, "pr-free: already posted today, skip");
+      const shouldSkip = await shouldSkipAutomaticPost(biz.id);
+      if (shouldSkip) {
+        logger.info({ bizId: biz.id, bizName: biz.name }, "pr-free: recent attempt or accepted submission exists, skip");
         continue;
       }
       await generateAndPost(biz);
@@ -253,9 +355,9 @@ export function startPrFreeScheduler() {
     for (let i = 0; i < businesses.length; i++) {
       const biz = businesses[i];
       try {
-        const alreadyPosted = await hasPostedTodayJST(biz.id);
-        if (alreadyPosted) {
-          logger.info({ bizId: biz.id, bizName: biz.name }, "pr-free: already posted today, skip");
+        const shouldSkip = await shouldSkipAutomaticPost(biz.id);
+        if (shouldSkip) {
+          logger.info({ bizId: biz.id, bizName: biz.name }, "pr-free: recent attempt or accepted submission exists, skip");
           continue;
         }
         await generateAndPost(biz);
@@ -267,5 +369,10 @@ export function startPrFreeScheduler() {
     logger.info("pr-free: daily scheduler finished");
   }, { timezone: "UTC" });
 
-  logger.info("pr-free: scheduler registered (毎日9:00 JST開始、Playwright投稿、45分間隔)");
+  cron.schedule("10 * * * *", async () => {
+    logger.info("pr-free: scheduled publication verification started");
+    await verifyPendingPrFreePublications();
+  }, { timezone: "UTC" });
+
+  logger.info("pr-free: scheduler registered (毎日9:00 JST開始、Playwright投稿、45分間隔、公開確認は毎時10分)");
 }
