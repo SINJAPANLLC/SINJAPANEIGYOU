@@ -17,7 +17,6 @@ import SchedulePage from "@/pages/schedule";
 import AuditPage from "@/pages/audit";
 import LpManagerPage from "@/pages/lp-manager";
 import PublicLpPage from "@/pages/public-lp";
-import LandingPage from "@/pages/landing";
 import SnsPage from "@/pages/sns";
 import PrFreePage from "@/pages/pr-free";
 import JimotyPage from "@/pages/jimoty";
@@ -32,16 +31,18 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   if (!isLoaded) return null;
   if (!isSignedIn) return <Redirect to="/sign-in" />;
   return (
-    <SidebarLayout>
-      <Component />
-    </SidebarLayout>
+    <BusinessProvider>
+      <SidebarLayout>
+        <Component />
+      </SidebarLayout>
+    </BusinessProvider>
   );
 }
 
 function AppRoutes() {
   return (
     <Switch>
-      <Route path="/" component={LandingPage} />
+      <Route path="/" component={SignInPage} />
       <Route path="/sign-in" component={SignInPage} />
       <Route path="/lp/:slug" component={PublicLpPage} />
 
@@ -72,9 +73,7 @@ function App() {
         <WouterRouter>
           <QueryClientProvider client={queryClient}>
             <AuthProvider>
-              <BusinessProvider>
-                <AppRoutes />
-              </BusinessProvider>
+              <AppRoutes />
             </AuthProvider>
           </QueryClientProvider>
         </WouterRouter>
