@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import crypto from "crypto";
+import { TwitterApi } from "twitter-api-v2";
 import { and, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import {
   assistantMemoriesTable,
@@ -21,9 +22,9 @@ import {
   sinJapanDailyReportsTable,
   sinJapanEscalationsTable,
   sinJapanResourcesTable,
+  xAccountsTable,
 } from "@workspace/db";
 import { logger } from "./logger";
-import { searchGoogle } from "./search";
 import { isLineConfigured, safePushLineText } from "./line-client";
 import { searchAirtable, type AirtableSearchOptions } from "./airtable-client";
 
@@ -883,19 +884,71 @@ async function applyAssistantActions(userId: string, actions: AssistantAction[])
 type ResearchItem = { topic: string; title: string; url: string; snippet: string };
 type ResearchBundle = { items: ResearchItem[]; errors: string[] };
 
-async function gatherResearch(topics: string[]): Promise<ResearchBundle> {
+function describeXResearchError(error: unknown): { message: string; terminal: boolean; code?: number } {
+  const apiError = error as { code?: number; data?: { detail?: string; title?: string } };
+  const code = apiError?.code;
+  const detail = apiError?.data?.detail?.toLowerCase() || "";
+  if (code === 402 || detail.includes("credits depleted")) {
+    return { message: "X APIクレジット残高不足", terminal: true, code };
+  }
+  if (code === 401) return { message: "X APIの認証に失敗しました", terminal: true, code };
+  if (code === 403) return { message: "X APIに投稿検索の権限がありません", terminal: true, code };
+  if (code === 429) return { message: "X APIの利用上限に達しました", terminal: true, code };
+  return {
+    message: error instanceof Error ? error.message : "X検索に失敗しました",
+    terminal: false,
+    code,
+  };
+}
+
+async function gatherResearch(userId: string, topics: string[]): Promise<ResearchBundle> {
   const items: ResearchItem[] = [];
   const errors: string[] = [];
+  const [account] = await db.select().from(xAccountsTable).where(and(
+    eq(xAccountsTable.userId, userId),
+    eq(xAccountsTable.isConnected, true),
+  )).orderBy(desc(xAccountsTable.updatedAt)).limit(1);
+  if (!account?.apiKey || !account.apiSecret || !account.accessToken || !account.accessTokenSecret) {
+    return { items, errors: ["X未接続：接続済みのXアカウントがありません"] };
+  }
+
+  let client: TwitterApi;
+  try {
+    client = new TwitterApi({
+      appKey: account.apiKey,
+      appSecret: account.apiSecret,
+      accessToken: account.accessToken,
+      accessSecret: account.accessTokenSecret,
+    });
+  } catch (error) {
+    logger.warn({ err: error }, "assistant X client initialization failed");
+    return { items, errors: ["X検索失敗：X APIクライアントを初期化できませんでした"] };
+  }
+
   for (const topic of topics.slice(0, 5)) {
     try {
-      const results = await searchGoogle(topic, 3);
-      for (const result of results) {
-        items.push({ topic, title: result.title || topic, url: result.url, snippet: result.snippet || "" });
+      const results = await client.v2.search(topic, {
+        max_results: 10,
+        "tweet.fields": ["author_id", "created_at"],
+        expansions: ["author_id"],
+        "user.fields": ["name", "username"],
+      });
+      const users = new Map((results.data.includes?.users || []).map((user) => [user.id, user]));
+      for (const post of results.data.data || []) {
+        const author = post.author_id ? users.get(post.author_id) : undefined;
+        const authorLabel = author?.username ? `@${author.username}` : "Xユーザー";
+        items.push({
+          topic,
+          title: `${authorLabel}の投稿`,
+          url: `https://x.com/${author?.username || "i/web"}/status/${post.id}`,
+          snippet: post.text,
+        });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Google検索に失敗しました";
-      errors.push(`${topic}: ${message}`);
-      logger.warn({ err: error, topic }, "assistant Google research failed");
+      const failure = describeXResearchError(error);
+      errors.push(`${topic}: ${failure.message}`);
+      logger.warn({ code: failure.code, message: failure.message, topic }, "assistant X research failed");
+      if (failure.terminal) break;
     }
   }
   return { items, errors };
@@ -908,10 +961,10 @@ function buildResearchLines(research: ResearchItem[], researchErrors: string[], 
     return item ? `・${label}｜${item.title}\n  ${item.url}` : `・${label}｜`;
   };
   const status = researchErrors.length
-    ? `・Google検索：${researchErrors.join(" / ")}`
+    ? `・X検索：${researchErrors.join(" / ")}`
     : research.length
-      ? "・Google検索：記事を取得済み（タイトル・概要・元記事リンクを反映）"
-      : "・Google検索：該当する記事は見つかりませんでした";
+      ? "・X検索：投稿を取得済み（本文・投稿者・元投稿リンクを反映）"
+      : "・X検索：該当する投稿は見つかりませんでした";
   return [status, ...patterns.map(([label, pattern]) => newsLine(label, [pattern]))].join("\n");
 }
 
@@ -1186,13 +1239,13 @@ export async function generateDailyReport(
     }
     report = reserved;
   }
-  const researchBundle = await gatherResearch(topics.length ? topics : DEFAULT_TOPICS);
+    const researchBundle = await gatherResearch(userId, topics.length ? topics : DEFAULT_TOPICS);
   const research = researchBundle.items;
   const researchErrors = researchBundle.errors;
   try {
     const sourceSummary = [
       ...research.map((item) => `${item.topic}: ${item.title} — ${item.snippet} (${item.url})`),
-      ...researchErrors.map((error) => `Google検索状態: ${error}`),
+      ...researchErrors.map((error) => `X検索状態: ${error}`),
     ].join("\n");
     const client = getOpenAIClient();
     let content = slot === "evening"
@@ -1208,7 +1261,7 @@ export async function generateDailyReport(
 ${template}`,
         }, {
           role: "user",
-          content: `日付: ${reportDate}\nレポート種別: ${slot === "evening" ? "夜の振り返り" : "朝の計画"}\n未完了TODO: ${JSON.stringify(context.todos)}\n今日完了したTODO: ${JSON.stringify(context.completedTodos)}\n当日の会話: ${JSON.stringify(context.messages)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary || "Google検索結果はありません"}`,
+          content: `日付: ${reportDate}\nレポート種別: ${slot === "evening" ? "夜の振り返り" : "朝の計画"}\n未完了TODO: ${JSON.stringify(context.todos)}\n今日完了したTODO: ${JSON.stringify(context.completedTodos)}\n当日の会話: ${JSON.stringify(context.messages)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary || "X検索結果はありません"}`,
         }],
       });
       content = result.choices[0]?.message?.content?.trim() || content;
@@ -1216,7 +1269,13 @@ ${template}`,
     content = formatAssistantReply(content);
     if (researchErrors.length) {
       const unavailable = researchErrors.some((error) => error.includes("未接続"));
-      content = `${content}\n\n【Google検索の状態】\n・${unavailable ? "未接続" : "取得失敗"}：Google Custom Search APIの設定をご確認ください。`;
+      const depleted = researchErrors.some((error) => error.includes("クレジット残高不足"));
+      const statusLine = unavailable
+        ? "未接続：接続済みのXアカウントをご確認ください。"
+        : depleted
+          ? "取得停止：X APIのクレジット残高が不足しています。"
+          : "取得失敗：X APIの接続と投稿検索権限をご確認ください。";
+      content = `${content}\n\n【X検索の状態】\n・${statusLine}`;
     }
     const generationToken = report.generationToken;
     const completed = generationToken
