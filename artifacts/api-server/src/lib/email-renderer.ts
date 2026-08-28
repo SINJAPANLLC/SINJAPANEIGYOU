@@ -1,3 +1,5 @@
+import { hasUnsupportedEmailClaims } from "./email-content-policy";
+
 export type EmailRenderValues = {
   companyName: string;
   serviceName: string;
@@ -6,12 +8,6 @@ export type EmailRenderValues = {
 };
 
 export type EmailAudit = { valid: boolean; errors: string[] };
-
-const dangerousClaims = [
-  /導入実績|利用実績|導入社数|顧客数|満足度|No\.?\s*1/i,
-  /無料(?!.*(?:場合|相談|お試し))|最安|必ず|絶対|確実|保証/,
-  /提携(?:先|済|しています)|パートナー(?:企業|提携)/,
-];
 
 /** Replaces every supported placeholder in both subject and HTML. */
 export function renderEmail(
@@ -55,7 +51,7 @@ export function auditEmail(subject: string, html: string): EmailAudit {
   if (/{{\s*[^}]+\s*}}/.test(combined)) errors.push("未置換のテンプレート変数があります");
   if (!/https?:\/\/[^\s"'<>]+/i.test(combined)) errors.push("本文にURLがありません");
   if (!/https?:\/\/[^\s"'<>]+\/api\/unsubscribe\//i.test(html)) errors.push("配信停止URLがありません");
-  if (dangerousClaims.some((pattern) => pattern.test(combined))) {
+  if (hasUnsupportedEmailClaims([combined])) {
     errors.push("未確認の実績・料金・提携等につながる危険な表現があります");
   }
   return { valid: errors.length === 0, errors };

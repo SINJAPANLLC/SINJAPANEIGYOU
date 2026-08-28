@@ -2,7 +2,7 @@ import cron from "node-cron";
 import { eq, and, lt } from "drizzle-orm";
 import { db, cronJobsTable, businessesTable, leadsTable, templatesTable, emailLogsTable, unsubscribesTable } from "@workspace/db";
 import { searchAndCrawlLeads, detectPersona, type PersonaType } from "./search";
-import { sendEmail } from "./mailer";
+import { getSmtpReadiness, sendEmail } from "./mailer";
 import { logger } from "./logger";
 import { v4 as uuidv4 } from "uuid";
 import { nextCronRun } from "./cron-utils";
@@ -17,7 +17,7 @@ const DAILY_EMAIL_LIMIT = parseInt(process.env.DAILY_EMAIL_LIMIT || "100");
 let dailyEmailsSent = 0;
 let dailyResetDate = new Date().toDateString();
 
-function checkAndIncrementDailyLimit(): boolean {
+function hasDailyCapacity(): boolean {
   const today = new Date().toDateString();
   if (today !== dailyResetDate) {
     dailyEmailsSent = 0;
@@ -28,9 +28,9 @@ function checkAndIncrementDailyLimit(): boolean {
     logger.warn({ dailyEmailsSent, DAILY_EMAIL_LIMIT }, "cron: daily email limit reached, skipping send");
     return false;
   }
-  dailyEmailsSent++;
   return true;
 }
+function recordSuccessfulSend() { dailyEmailsSent++; }
 
 // 同時に実行できるリード検索ジョブは1つだけ（Yahoo Japan への並列リクエストを防ぐ）
 let searchLock = false;
@@ -134,6 +134,11 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
       logger.warn({ jobId }, "cron:email_send no template found");
       return;
     }
+    const smtp = await getSmtpReadiness();
+    if (!smtp.ready) {
+      logger.warn({ jobId }, "cron:email_send paused — SMTP unavailable");
+      return;
+    }
 
     const leads = await db.select().from(leadsTable).where(
       and(eq(leadsTable.businessId, businessId), eq(leadsTable.status, "unsent"))
@@ -158,13 +163,18 @@ async function runEmailSend(jobId: number, businessId: number, config: Record<st
         + (withSite.includes(unsubUrl) ? "" : fallbackUnsubLink)
         + (business.signatureHtml || "");
 
-      if (!checkAndIncrementDailyLimit()) break;
+      const audit = auditEmail(subject, html);
+      if (!audit.valid) {
+        await db.insert(emailLogsTable).values({ leadId: lead.id, subject, html, status: "failed", error: audit.errors.join(" / "), toEmail: lead.email, fromEmail, fromName, templateId: template.id, attempt: 1 });
+        continue;
+      }
+      if (!hasDailyCapacity()) break;
       const claimed = await db.update(leadsTable).set({ status: "sending" }).where(and(eq(leadsTable.id, lead.id), eq(leadsTable.status, "unsent"))).returning();
       if (!claimed.length) continue;
-      const audit = auditEmail(subject, html);
-      const result = audit.valid ? await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html }) : { success: false, error: audit.errors.join(" / ") };
+      const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });
       if (result.success) {
         sent++;
+        recordSuccessfulSend();
         await db.update(leadsTable).set({ status: "sent" }).where(eq(leadsTable.id, lead.id));
         await db.insert(emailLogsTable).values({ leadId: lead.id, subject, html, status: "sent", sentAt: new Date(), toEmail: lead.email, fromEmail, fromName, templateId: template.id, providerMessageId: result.messageId, attempt: 1 });
         await new Promise(r => setTimeout(r, 3000));
@@ -244,6 +254,11 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
     logger.warn({ jobId }, "cron:lead_search_and_send no template, skipping email");
     return;
   }
+  const smtp = await getSmtpReadiness();
+  if (!smtp.ready) {
+    logger.warn({ jobId }, "cron:lead_search_and_send email phase paused — SMTP unavailable");
+    return;
+  }
 
   const leadsWithEmail = newLeads.filter(l => l.email).slice(0, maxPerRun);
   const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
@@ -271,12 +286,13 @@ async function runLeadSearchAndSend(jobId: number, businessId: number, config: R
       await db.insert(emailLogsTable).values({ leadId: lead.id, subject, html, status: "failed", error, toEmail: lead.email, fromEmail, fromName, templateId: template.id, attempt: 1 });
       continue;
     }
-    if (!checkAndIncrementDailyLimit()) break;
+    if (!hasDailyCapacity()) break;
     const claimed = await db.update(leadsTable).set({ status: "sending" }).where(and(eq(leadsTable.id, lead.id), eq(leadsTable.status, "unsent"))).returning();
     if (!claimed.length) continue;
     const result = await sendEmail({ from: `"${fromName}" <${fromEmail}>`, to: lead.email!, subject, html });
     if (result.success) {
       sent++;
+      recordSuccessfulSend();
       await db.update(leadsTable).set({ status: "sent" }).where(eq(leadsTable.id, lead.id));
       await db.insert(emailLogsTable).values({ leadId: lead.id, subject, html, status: "sent", sentAt: new Date(), toEmail: lead.email, fromEmail, fromName, templateId: template.id, providerMessageId: result.messageId, attempt: 1 });
       await new Promise(r => setTimeout(r, 3000));

@@ -1,6 +1,9 @@
 import nodemailer from "nodemailer";
 import { logger } from "./logger";
 
+type SmtpReadiness = { ready: boolean; checkedAt: string; error?: string };
+let smtpReadinessCache: { value: SmtpReadiness; expiresAt: number } | null = null;
+
 export function createTransporter() {
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST || "smtp.hostinger.com",
@@ -41,6 +44,20 @@ export async function verifySmtpConnection(): Promise<{ success: boolean; error?
     logger.error({ err }, "SMTP verification failed");
     return { success: false, error: err?.message || "SMTP verification failed" };
   }
+}
+
+export async function getSmtpReadiness(force = false): Promise<SmtpReadiness> {
+  if (!force && smtpReadinessCache && smtpReadinessCache.expiresAt > Date.now()) {
+    return smtpReadinessCache.value;
+  }
+  const result = await verifySmtpConnection();
+  const value: SmtpReadiness = {
+    ready: result.success,
+    checkedAt: new Date().toISOString(),
+    ...(result.success ? {} : { error: "SMTPが利用できないため送信を停止しています" }),
+  };
+  smtpReadinessCache = { value, expiresAt: Date.now() + 5 * 60 * 1000 };
+  return value;
 }
 
 export function sleep(ms: number): Promise<void> {

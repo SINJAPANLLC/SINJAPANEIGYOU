@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useBusiness } from "@/contexts/BusinessContext";
-import { ShieldCheck, AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, Mail } from "lucide-react";
+import { ShieldCheck, AlertCircle, AlertTriangle, CheckCircle2, ChevronRight, Mail, Search, Server } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
@@ -18,6 +18,15 @@ type AuditData = {
   }>;
   sampleLead: { id: number; companyName: string; email: string } | null;
   schedules: any[];
+  readiness: {
+    collection: boolean;
+    sending: boolean;
+    smtp: { ready: boolean; checkedAt: string; error?: string };
+    leadCount: number;
+    emailCount: number;
+    unsentEmailCount: number;
+    profile: { keyword: string; persona: string } | null;
+  };
 };
 
 export default function AuditPage() {
@@ -96,7 +105,7 @@ export default function AuditPage() {
         <div className="p-6 max-w-5xl mx-auto space-y-8">
           
           {/* Summary Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-px bg-border border border-border">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-px bg-border border border-border">
             <div className="bg-card p-6">
               <div className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mb-4">総評</div>
               <div className="flex items-center gap-3">
@@ -118,24 +127,38 @@ export default function AuditPage() {
               </div>
             </div>
             <div className="bg-card p-6">
-              <div className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mb-4">サンプルリード</div>
-              {data.sampleLead ? (
-                <div>
-                  <div className="font-bold text-sm">{data.sampleLead.companyName}</div>
-                  <div className="text-xs text-muted-foreground mt-1 truncate">{data.sampleLead.email}</div>
-                </div>
-              ) : (
-                <div className="text-sm text-muted-foreground">リードが登録されていません</div>
-              )}
+              <div className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mb-4">リスト収集</div>
+              <div className="flex items-center gap-2">
+                <Search className={`w-5 h-5 ${data.readiness.collection ? "text-green-500" : "text-destructive"}`} />
+                <div className="font-bold text-sm">{data.readiness.collection ? "準備完了" : "設定不足"}</div>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">{data.readiness.leadCount}件 / メールあり {data.readiness.emailCount}件</div>
             </div>
             <div className="bg-card p-6">
-              <div className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mb-4">スケジュール</div>
-              <div className="font-bold text-sm">{data.schedules.length} 件のジョブ</div>
-              <div className="text-xs text-muted-foreground mt-1">
-                有効: {data.schedules.filter(s => s.isActive).length} 件
+              <div className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mb-4">メール送信</div>
+              <div className="flex items-center gap-2">
+                <Mail className={`w-5 h-5 ${data.readiness.sending ? "text-green-500" : "text-yellow-500"}`} />
+                <div className="font-bold text-sm">{data.readiness.sending ? "送信可能" : "安全停止中"}</div>
               </div>
+              <div className="text-xs text-muted-foreground mt-2">未送信 {data.readiness.unsentEmailCount}件</div>
+            </div>
+            <div className="bg-card p-6">
+              <div className="text-[10px] font-mono text-muted-foreground tracking-widest uppercase mb-4">SMTP</div>
+              <div className="flex items-center gap-2">
+                <Server className={`w-5 h-5 ${data.readiness.smtp.ready ? "text-green-500" : "text-destructive"}`} />
+                <div className="font-bold text-sm">{data.readiness.smtp.ready ? "接続済み" : "接続不可"}</div>
+              </div>
+              <div className="text-xs text-muted-foreground mt-2">{new Date(data.readiness.smtp.checkedAt).toLocaleString("ja-JP")}</div>
             </div>
           </div>
+
+          {data.readiness.profile && (
+            <div className="border border-border bg-card p-4">
+              <div className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest mb-2">法人向け収集条件</div>
+              <div className="text-sm font-medium">{data.readiness.profile.keyword}</div>
+              <div className="text-xs text-muted-foreground mt-1">個人向けフリーメールを除外し、公開された法人窓口のみを保存します。</div>
+            </div>
+          )}
 
           {/* Issues List */}
           {data.checks.length > 0 && (

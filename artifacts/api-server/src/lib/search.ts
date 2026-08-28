@@ -65,6 +65,13 @@ export type PersonaType =
   | "freight_carrier"         // 一般貨物協力会社獲得（運送業者を探す）
   | "staffing_client"         // 人材案件獲得（採用企業を探す）
   | "staffing_agency"         // 人材協力会社獲得（派遣会社を探す）
+  | "driver_recruiting_partner"
+  | "livechat_agency"
+  | "logistics_training"
+  | "logistics_software"
+  | "business_software"
+  | "advertiser"
+  | "sales_partner"
   | "default";
 
 export function detectPersona(keyword: string, businessName?: string): PersonaType {
@@ -161,6 +168,62 @@ function buildPersonaQueries(keyword: string, location: string | null, persona: 
         `ITエンジニア 紹介${loc} 会社 メール`,
         `業務委託 エージェント${loc} 中小企業 問い合わせ`,
         `エンジニア 派遣${loc} 会社概要 お問い合わせ`,
+      ];
+
+    case "driver_recruiting_partner":
+      return [
+        `軽貨物 運送会社${loc} ドライバー採用 お問い合わせ`,
+        `配送会社${loc} 求人 採用 会社概要`,
+        `宅配 物流会社${loc} 採用担当 問い合わせ`,
+        `軽貨物 法人${loc} ドライバー募集 連絡先`,
+      ];
+
+    case "livechat_agency":
+      return [
+        `ライブ配信 プロダクション${loc} 法人 お問い合わせ`,
+        `ライバー 事務所${loc} 株式会社 会社概要`,
+        `配信者 マネジメント${loc} 企業 問い合わせ`,
+        `芸能 プロダクション${loc} 業務提携 法人`,
+      ];
+
+    case "logistics_training":
+      return [
+        `軽貨物 運送会社${loc} 研修 お問い合わせ`,
+        `物流会社${loc} ドライバー教育 会社概要`,
+        `配送会社${loc} 安全教育 採用担当`,
+        `運送事業者${loc} 人材育成 問い合わせ`,
+      ];
+
+    case "logistics_software":
+      return [
+        `物流会社${loc} 配車 業務効率化 お問い合わせ`,
+        `運送会社${loc} 配送管理 会社概要`,
+        `軽貨物 法人${loc} 配車管理 問い合わせ`,
+        `物流 DX${loc} 中小企業 連絡先`,
+      ];
+
+    case "business_software":
+      return [
+        `中小企業${loc} 営業DX お問い合わせ`,
+        `営業代行会社${loc} AI導入 会社概要`,
+        `企業${loc} 業務効率化 システム 問い合わせ`,
+        `法人${loc} Web制作 AI活用 連絡先`,
+      ];
+
+    case "advertiser":
+      return [
+        `EC ブランド${loc} TikTok 広告 お問い合わせ`,
+        `通販会社${loc} SNS広告 会社概要`,
+        `化粧品 ブランド${loc} 広告担当 問い合わせ`,
+        `D2C 企業${loc} マーケティング 連絡先`,
+      ];
+
+    case "sales_partner":
+      return [
+        `営業代行会社${loc} 会社概要 お問い合わせ`,
+        `販売代理店${loc} 法人 連絡先`,
+        `セールス アウトソーシング${loc} 株式会社`,
+        `業務委託 営業${loc} 法人 問い合わせ`,
       ];
 
     default:
@@ -399,9 +462,13 @@ export async function searchAndCrawlLeads(
     const batchLeads = await crawlBatch(candidates, crawlSeen, candidates.length, 4);
 
     for (const lead of batchLeads) {
+      const freeMailDomains = /@(gmail\.com|yahoo\.(?:co\.jp|com)|icloud\.com|outlook\.(?:com|jp)|hotmail\.com|aol\.com)$/i;
+      const businessLead = lead.email && freeMailDomains.test(lead.email)
+        ? { ...lead, email: null }
+        : lead;
       // Avoid duplicates from previous rounds
-      if (!allLeads.some(l => l.websiteUrl === lead.websiteUrl)) {
-        allLeads.push(lead);
+      if (!allLeads.some(l => l.websiteUrl === businessLead.websiteUrl)) {
+        allLeads.push(businessLead);
       }
     }
 

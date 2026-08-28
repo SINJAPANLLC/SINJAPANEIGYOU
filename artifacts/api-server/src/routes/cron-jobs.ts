@@ -4,7 +4,7 @@ import { db, cronJobsTable, businessesTable } from "@workspace/db";
 import { requireAuth, getUserId } from "../lib/auth";
 import { runJobById } from "../lib/cron-runner";
 import { isValidCronExpression, nextCronRun } from "../lib/cron-utils";
-import { verifySmtpConnection } from "../lib/mailer";
+import { getSmtpReadiness, verifySmtpConnection } from "../lib/mailer";
 
 const router: IRouter = Router();
 
@@ -14,6 +14,10 @@ router.post("/smtp/verify", requireAuth, async (_req, res): Promise<void> => {
   const result = await verifySmtpConnection();
   if (result.success) { res.json({ success: true }); return; }
   res.status(502).json({ success: false, error: "SMTP authentication or connection failed" });
+});
+
+router.get("/smtp/status", requireAuth, async (_req, res): Promise<void> => {
+  res.json(await getSmtpReadiness());
 });
 
 async function ownsBusiness(userId: string, businessId: number) {
