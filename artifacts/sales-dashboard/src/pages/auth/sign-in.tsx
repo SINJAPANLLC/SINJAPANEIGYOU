@@ -45,25 +45,8 @@ export default function SignInPage() {
     }}>
       <div style={{ width: "100%", maxWidth: 360, padding: "0 32px" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: 40,
-            height: 40,
-            background: "#fff",
-            borderRadius: 4,
-            marginBottom: 20,
-          }}>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <rect x="0" y="0" width="8" height="8" fill="black" />
-              <rect x="10" y="0" width="8" height="8" fill="black" />
-              <rect x="0" y="10" width="8" height="8" fill="black" />
-              <rect x="10" y="10" width="8" height="8" fill="black" opacity="0.3" />
-            </svg>
-          </div>
           <h1 style={{ color: "#fff", fontSize: 16, fontWeight: 500, margin: 0 }}>
-            営業自動化ダッシュボード
+            SIN JAPAN Sales
           </h1>
         </div>
 

@@ -39,7 +39,7 @@ export default function LandingPage() {
       <header className="border-b border-border/40 py-4 px-6 flex justify-between items-center z-10 relative bg-background/80 backdrop-blur-sm">
         <div className="font-mono text-sm tracking-tighter uppercase font-bold flex items-center gap-2">
           <Terminal className="w-4 h-4" />
-          <span>営業自動化ダッシュボード</span>
+           <span>SIN JAPAN Sales</span>
         </div>
         <div className="flex gap-4">
           {isLoaded && isSignedIn ? (
@@ -183,7 +183,7 @@ export default function LandingPage() {
       </main>
 
       <footer className="py-8 text-center text-xs font-mono text-muted-foreground border-t border-border/40 z-10 relative">
-        © {new Date().getFullYear()} 営業自動化ダッシュボード. システム稼働中.
+        © {new Date().getFullYear()} SIN JAPAN Sales. システム稼働中.
       </footer>
     </div>
   );
