@@ -3,3 +3,4 @@
 - [SIN JAPAN unlinked groups](sin-japan-unlinked-groups.md) — Preserve and classify unlinked group speech for one designated admin without replying in the group.
 - [PR-FREE publication verification](pr-free-publication-verification.md) — Form acceptance is not approval; confirm publication against the public WordPress search result.
 - [Runtime database source](runtime-database-source.md) — Operational data lives in the app-selected Neon connection; the standard DB query surface may point elsewhere.
+- [Future content generation](future-content-generation.md) — Keep approved existing copy; apply factuality safeguards to newly generated email and PR content.

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { auditEmail } from "./email-renderer";
 import { renderEmail } from "./email-renderer";
+import { hasUnsupportedEmailClaims } from "./email-content-policy";
 import { buildUnsubscribeUrl } from "./unsubscribe-url";
 
 const original = {
@@ -86,4 +87,15 @@ test("スクリプトURLをメールリンクへ差し込まない", () => {
     },
   );
   assert.doesNotMatch(rendered.html, /javascript:/i);
+});
+
+test("将来生成されるメールの未確認実績や保証表現を拒否する", () => {
+  assert.equal(hasUnsupportedEmailClaims([
+    "導入実績100社を突破",
+    "<p>成果を保証します</p>",
+  ]), true);
+  assert.equal(hasUnsupportedEmailClaims([
+    "配送体制についてのご相談",
+    "<p>サービス内容をご案内します。ご関心がございましたらご返信ください。</p>",
+  ]), false);
 });

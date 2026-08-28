@@ -708,7 +708,7 @@ export default function TemplatesPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ description: aiDescription }),
+        body: JSON.stringify({ description: aiDescription, businessId: selectedBusinessId }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "生成失敗");

@@ -79,15 +79,25 @@ router.post("/email/generate", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.post("/ai/generate-template", requireAuth, async (req, res): Promise<void> => {
-  const { description } = req.body;
+  const { description, businessId } = req.body;
   if (!description || typeof description !== "string" || description.trim().length < 5) {
     res.status(400).json({ error: "説明文を入力してください" });
     return;
   }
+  const business = await ownsBusiness(getUserId(req), Number(businessId));
+  if (!business) {
+    res.status(400).json({ error: "ビジネスを選択してください" });
+    return;
+  }
 
-  const result = await generateEmailTemplate({ description: description.trim() });
+  const result = await generateEmailTemplate({
+    description: description.trim(),
+    businessName: business.name,
+    companyName: business.companyName || "合同会社SIN JAPAN",
+    serviceUrl: business.serviceUrl || "",
+  });
   if (!result) {
-    res.status(500).json({ error: "AI生成に失敗しました。しばらくしてから再試行してください。" });
+    res.status(422).json({ error: "登録情報にない表現を含まないメールを生成できませんでした。説明文を事実ベースで見直してください。" });
     return;
   }
 
