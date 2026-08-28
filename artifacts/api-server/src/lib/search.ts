@@ -72,6 +72,7 @@ export type PersonaType =
   | "business_software"
   | "advertiser"
   | "sales_partner"
+  | "investor_company"
   | "default";
 
 export function detectPersona(keyword: string, businessName?: string): PersonaType {
@@ -224,6 +225,14 @@ function buildPersonaQueries(keyword: string, location: string | null, persona: 
         `販売代理店${loc} 法人 連絡先`,
         `セールス アウトソーシング${loc} 株式会社`,
         `業務委託 営業${loc} 法人 問い合わせ`,
+      ];
+
+    case "investor_company":
+      return [
+        `ベンチャーキャピタル${loc} 投資会社 お問い合わせ`,
+        `スタートアップ 投資法人${loc} 会社概要`,
+        `事業会社 CVC${loc} 投資窓口`,
+        `投資会社${loc} 事業提携 お問い合わせ`,
       ];
 
     default:

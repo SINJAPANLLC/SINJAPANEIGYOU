@@ -26,6 +26,7 @@ const profiles: Record<string, SalesProfile> = {
   "KEI SCHOOL": { keyword: "軽貨物 運送会社 研修 ドライバー教育", persona: "logistics_training", serviceUrl: "https://line.me/ti/g2/E0Bi9Suu125cqm9d2U-Nq3tU3BUO-cXhhYbwzg" },
   "CHAT LOGI": { keyword: "物流会社 配車 業務効率化", persona: "logistics_software", serviceUrl: "https://chat-logi.com/lp" },
   "Chat VAN": { keyword: "軽貨物 運送会社 配車 管理", persona: "logistics_software", serviceUrl: "https://chat-van.com/lp" },
+  "エンジェル投資家募集": { keyword: "ベンチャーキャピタル 投資会社 事業提携", persona: "investor_company", serviceUrl: "https://sinjapan.work/" },
 };
 
 export function getSalesProfile(businessName: string): SalesProfile | null {

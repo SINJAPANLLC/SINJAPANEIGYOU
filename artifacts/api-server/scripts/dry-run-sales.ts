@@ -16,7 +16,7 @@ const jobs = await db.select().from(cronJobsTable).where(eq(cronJobsTable.isActi
 const failures: string[] = [];
 let messagesChecked = 0;
 
-if (businesses.length !== 17) failures.push(`ビジネス数が17件ではありません: ${businesses.length}`);
+if (businesses.length !== 18) failures.push(`ビジネス数が18件ではありません: ${businesses.length}`);
 
 for (const business of businesses) {
   const profile = getSalesProfile(business.name);
