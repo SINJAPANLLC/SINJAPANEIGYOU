@@ -10,6 +10,9 @@ import { logger } from "./lib/logger";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app: Express = express();
+// Replit's managed proxy is the single trusted hop. Express derives req.ip from
+// that hop instead of trusting arbitrary client-supplied forwarding headers.
+app.set("trust proxy", 1);
 
 app.use(
   pinoHttp({

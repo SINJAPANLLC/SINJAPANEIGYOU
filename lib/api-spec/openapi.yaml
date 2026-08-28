@@ -734,7 +734,7 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: [unsent, sent, replied, ng, unsubscribed]
+          enum: [unsent, sending, failed, sent, replied, ng, unsubscribed]
         score:
           type: ["integer", "null"]
         createdAt:
@@ -767,7 +767,7 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: [unsent, sent, replied, ng, unsubscribed]
+          enum: [unsent, sending, failed, sent, replied, ng, unsubscribed]
         score:
           type: ["integer", "null"]
       required:
@@ -790,7 +790,7 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: [unsent, sent, replied, ng, unsubscribed]
+          enum: [unsent, sending, failed, sent, replied, ng, unsubscribed]
         score:
           type: ["integer", "null"]
 

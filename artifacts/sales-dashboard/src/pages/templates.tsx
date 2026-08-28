@@ -671,7 +671,7 @@ export default function TemplatesPage() {
     const updated = ((templates || []) as any[]).map((t: any) =>
       t.id === selectedTemplate.id ? { ...t, htmlTemplate: newHtml } : t
     );
-    queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
+    queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId ?? undefined }), updated);
     setSfBaseHtml(newHtml);
     return newHtml;
   }
@@ -860,10 +860,10 @@ export default function TemplatesPage() {
                     >
                       <iframe
                         srcDoc={s.htmlTemplate}
+                        sandbox=""
                         title={s.label}
                         className="w-full h-full border-0 scale-75 origin-top-left"
                         style={{ width: "133%", height: "133%", transform: "scale(0.75)", transformOrigin: "top left" }}
-                        sandbox="allow-same-origin"
                       />
                     </div>
                   </button>
@@ -1039,7 +1039,7 @@ export default function TemplatesPage() {
                   value={selectedTemplate.name}
                   onChange={e => {
                     const updated = (templates || []).map(t => t.id === selectedTemplate.id ? { ...t, name: e.target.value } : t);
-                    queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
+                    queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId ?? undefined }), updated);
                   }}
                   className="rounded-none border-border font-bold text-lg h-12"
                 />
@@ -1051,7 +1051,7 @@ export default function TemplatesPage() {
                   value={selectedTemplate.subjectTemplate}
                   onChange={e => {
                     const updated = (templates || []).map(t => t.id === selectedTemplate.id ? { ...t, subjectTemplate: e.target.value } : t);
-                    queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
+                    queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId ?? undefined }), updated);
                   }}
                   className="rounded-none border-border"
                 />
@@ -1143,9 +1143,9 @@ export default function TemplatesPage() {
                     <div className="w-1/2 border-l border-border bg-white overflow-hidden">
                       <iframe
                         srcDoc={sfPreviewHtml || selectedTemplate.htmlTemplate}
+                        sandbox=""
                         title="メールプレビュー"
                         className="w-full h-full border-0"
-                        sandbox="allow-same-origin"
                       />
                     </div>
                   </div>
@@ -1159,7 +1159,7 @@ export default function TemplatesPage() {
                         value={selectedTemplate.htmlTemplate}
                         onChange={e => {
                           const updated = (templates || []).map(t => t.id === selectedTemplate.id ? { ...t, htmlTemplate: e.target.value } : t);
-                          queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId }), updated);
+                          queryClient.setQueryData(getListTemplatesQueryKey({ businessId: selectedBusinessId ?? undefined }), updated);
                         }}
                         className={`resize-none rounded-none border-0 font-mono text-xs p-4 shadow-none focus-visible:ring-0 leading-relaxed bg-muted/10 ${previewMode === "split" ? "w-1/2" : "flex-1"}`}
                       />
@@ -1168,9 +1168,9 @@ export default function TemplatesPage() {
                       <div className={`${previewMode === "split" ? "w-1/2 border-l border-border" : "flex-1"} bg-white overflow-hidden`}>
                         <iframe
                           srcDoc={selectedTemplate.htmlTemplate || "<p style='color:#999;font-family:sans-serif;padding:16px'>HTMLを入力するとここにプレビューが表示されます</p>"}
+                          sandbox=""
                           title="メールプレビュー"
                           className="w-full h-full border-0"
-                          sandbox="allow-same-origin"
                         />
                       </div>
                     )}

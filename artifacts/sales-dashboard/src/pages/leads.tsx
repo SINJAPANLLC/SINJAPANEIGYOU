@@ -29,6 +29,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 const STATUS_LABELS: Record<string, string> = {
   unsent: "未送信",
+  sending: "送信処理中",
+  failed: "送信失敗",
   sent: "送信済",
   replied: "返信あり",
   ng: "NG",
@@ -37,6 +39,8 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STATUS_STYLES: Record<string, CSSProperties> = {
   unsent:      { background: "#3f3f46", color: "#e4e4e7", border: "1px solid #71717a" },
+  sending:     { background: "#422006", color: "#fde68a", border: "1px solid #d97706" },
+  failed:      { background: "#450a0a", color: "#fecaca", border: "1px solid #dc2626" },
   sent:        { background: "#1e3a5f", color: "#93c5fd", border: "1px solid #3b82f6" },
   replied:     { background: "#14532d", color: "#86efac", border: "1px solid #22c55e" },
   ng:          { background: "#450a0a", color: "#fca5a5", border: "1px solid #ef4444" },
@@ -82,7 +86,7 @@ export default function LeadsPage() {
 
   const { data: templates } = useListTemplates(
     { businessId: selectedBusinessId ?? undefined },
-    { query: { enabled: !!selectedBusinessId } }
+    { query: { enabled: !!selectedBusinessId, queryKey: ["templates", selectedBusinessId] } }
   );
   const selectedTemplate = templates?.find(t => t.id === selectedTemplateId);
 
@@ -703,10 +707,10 @@ export default function LeadsPage() {
                       {emailBody ? (
                         <iframe
                           srcDoc={emailBody}
+                          sandbox=""
                           title="メールプレビュー"
                           className="w-full border-0 block"
                           style={{ minHeight: 500 }}
-                          sandbox="allow-same-origin"
                           onLoad={(e) => {
                             const iframe = e.currentTarget;
                             const doc = iframe.contentDocument;

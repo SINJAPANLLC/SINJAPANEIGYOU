@@ -52,7 +52,7 @@ router.get("/auth/me", (req, res) => {
   const cookie = req.cookies?.[COOKIE_NAME] as string | undefined;
   const userId = verifySessionCookie(cookie);
   if (!userId) {
-    res.status(401).json({ error: "Unauthorized" });
+    res.sendStatus(204);
     return;
   }
   res.json({ userId, email: ADMIN_EMAIL });

@@ -14,6 +14,10 @@ import LeadsPage from "@/pages/leads";
 import TemplatesPage from "@/pages/templates";
 import EmailLogsPage from "@/pages/email-logs";
 import SchedulePage from "@/pages/schedule";
+import AuditPage from "@/pages/audit";
+import LpManagerPage from "@/pages/lp-manager";
+import PublicLpPage from "@/pages/public-lp";
+import LandingPage from "@/pages/landing";
 import SnsPage from "@/pages/sns";
 import PrFreePage from "@/pages/pr-free";
 import JimotyPage from "@/pages/jimoty";
@@ -22,12 +26,6 @@ import AiTeleapoPage from "@/pages/ai-teleapo";
 import OfficialLinePage from "@/pages/official-line";
 import SinJapanLinePage from "@/pages/sin-japan-line";
 import NotFound from "@/pages/not-found";
-
-function HomeRedirect() {
-  const { isSignedIn, isLoaded } = useAuth();
-  if (!isLoaded) return null;
-  return isSignedIn ? <Redirect to="/businesses" /> : <Redirect to="/sign-in" />;
-}
 
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { isSignedIn, isLoaded } = useAuth();
@@ -43,10 +41,13 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
 function AppRoutes() {
   return (
     <Switch>
-      <Route path="/" component={HomeRedirect} />
+      <Route path="/" component={LandingPage} />
       <Route path="/sign-in" component={SignInPage} />
+      <Route path="/lp/:slug" component={PublicLpPage} />
 
       <Route path="/businesses"><ProtectedRoute component={BusinessesPage} /></Route>
+      <Route path="/audit"><ProtectedRoute component={AuditPage} /></Route>
+      <Route path="/lp-manager"><ProtectedRoute component={LpManagerPage} /></Route>
       <Route path="/leads"><ProtectedRoute component={LeadsPage} /></Route>
       <Route path="/templates"><ProtectedRoute component={TemplatesPage} /></Route>
       <Route path="/email-logs"><ProtectedRoute component={EmailLogsPage} /></Route>

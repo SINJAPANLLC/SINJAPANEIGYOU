@@ -3,8 +3,18 @@ import { eq, and } from "drizzle-orm";
 import { db, cronJobsTable, businessesTable } from "@workspace/db";
 import { requireAuth, getUserId } from "../lib/auth";
 import { runJobById } from "../lib/cron-runner";
+import { isValidCronExpression, nextCronRun } from "../lib/cron-utils";
+import { verifySmtpConnection } from "../lib/mailer";
 
 const router: IRouter = Router();
+
+// Authentication is required; credentials and transporter configuration are
+// never included in this response.
+router.post("/smtp/verify", requireAuth, async (_req, res): Promise<void> => {
+  const result = await verifySmtpConnection();
+  if (result.success) { res.json({ success: true }); return; }
+  res.status(502).json({ success: false, error: "SMTP authentication or connection failed" });
+});
 
 async function ownsBusiness(userId: string, businessId: number) {
   const [b] = await db.select().from(businessesTable).where(
@@ -29,6 +39,7 @@ router.post("/cron-jobs", requireAuth, async (req, res): Promise<void> => {
   if (!businessId || !name || !type || !cronExpression) {
     res.status(400).json({ error: "Missing required fields" }); return;
   }
+  if (!isValidCronExpression(cronExpression)) { res.status(400).json({ error: "Invalid 5-field cron expression" }); return; }
   if (!(await ownsBusiness(userId, Number(businessId)))) { res.status(403).json({ error: "Forbidden" }); return; }
 
   const [job] = await db.insert(cronJobsTable).values({
@@ -38,6 +49,7 @@ router.post("/cron-jobs", requireAuth, async (req, res): Promise<void> => {
     cronExpression,
     config: JSON.stringify(config ?? {}),
     isActive: isActive !== false,
+    nextRunAt: nextCronRun(cronExpression),
   }).returning();
   res.status(201).json(job);
 });
@@ -52,7 +64,11 @@ router.patch("/cron-jobs/:id", requireAuth, async (req, res): Promise<void> => {
 
   const updates: Partial<typeof cronJobsTable.$inferInsert> = {};
   if (req.body.name !== undefined) updates.name = req.body.name;
-  if (req.body.cronExpression !== undefined) updates.cronExpression = req.body.cronExpression;
+  if (req.body.cronExpression !== undefined) {
+    if (!isValidCronExpression(req.body.cronExpression)) { res.status(400).json({ error: "Invalid 5-field cron expression" }); return; }
+    updates.cronExpression = req.body.cronExpression;
+    updates.nextRunAt = nextCronRun(req.body.cronExpression);
+  }
   if (req.body.type !== undefined) updates.type = req.body.type;
   if (req.body.config !== undefined) updates.config = JSON.stringify(req.body.config);
   if (req.body.isActive !== undefined) updates.isActive = req.body.isActive;

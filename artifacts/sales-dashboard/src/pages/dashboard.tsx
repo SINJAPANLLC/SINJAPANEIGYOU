@@ -9,19 +9,25 @@ import { ja } from "date-fns/locale";
 export default function DashboardPage() {
   const { selectedBusinessId } = useBusiness();
 
-  const { data: stats, isLoading: statsLoading } = useGetDashboardStats({
-    query: {
-      enabled: !!selectedBusinessId,
-      queryKey: getGetDashboardStatsQueryKey({ businessId: selectedBusinessId ?? undefined })
+  const { data: stats, isLoading: statsLoading } = useGetDashboardStats(
+    { businessId: selectedBusinessId ?? undefined },
+    {
+      query: {
+        enabled: !!selectedBusinessId,
+        queryKey: getGetDashboardStatsQueryKey({ businessId: selectedBusinessId ?? undefined })
+      }
     }
-  }, { businessId: selectedBusinessId ?? undefined });
+  );
 
-  const { data: activity, isLoading: activityLoading } = useGetRecentActivity({
-    query: {
-      enabled: !!selectedBusinessId,
-      queryKey: getGetRecentActivityQueryKey({ businessId: selectedBusinessId ?? undefined, limit: 10 })
+  const { data: activity, isLoading: activityLoading } = useGetRecentActivity(
+    { businessId: selectedBusinessId ?? undefined, limit: 10 },
+    {
+      query: {
+        enabled: !!selectedBusinessId,
+        queryKey: getGetRecentActivityQueryKey({ businessId: selectedBusinessId ?? undefined, limit: 10 })
+      }
     }
-  }, { businessId: selectedBusinessId ?? undefined, limit: 10 });
+  );
 
   if (!selectedBusinessId) {
     return (

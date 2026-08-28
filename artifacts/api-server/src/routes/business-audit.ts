@@ -1,0 +1,66 @@
+import { Router, type IRouter } from "express";
+import { eq, inArray } from "drizzle-orm";
+import { db, businessesTable, templatesTable, leadsTable, cronJobsTable } from "@workspace/db";
+import { getUserId, requireAuth } from "../lib/auth";
+
+const router: IRouter = Router();
+const PLACEHOLDER = /{{\s*([^}]+)\s*}}/g;
+const ALLOWED = new Set(["company_name", "service_name", "service_url", "unsubscribe_url"]);
+const RISKY = /70%|97%|初月無料|無料トライアル|導入企業|業界最安|実績\d|提携|限定特典|VIP限定|営業効率3倍|ROI|24時間サポート|無制限利用/;
+
+function auditTemplate(template: typeof templatesTable.$inferSelect, business: typeof businessesTable.$inferSelect, companyName: string) {
+  const issues: Array<{ level: "error" | "warning"; message: string }> = [];
+  const source = `${template.subjectTemplate}\n${template.htmlTemplate}`;
+  const placeholders = [...source.matchAll(PLACEHOLDER)].map((m) => m[1].trim());
+  const unknown = [...new Set(placeholders.filter((p) => !ALLOWED.has(p)))];
+  if (unknown.length) issues.push({ level: "error", message: `未対応の変数: ${unknown.join(", ")}` });
+  if (!template.htmlTemplate.includes("{{unsubscribe_url}}") && !template.htmlTemplate.includes("#unsubscribe")) {
+    issues.push({ level: "warning", message: "配信停止リンクの指定がありません" });
+  }
+  if (!business.serviceUrl && source.includes("{{service_url}}")) issues.push({ level: "error", message: "サービスURLが未設定です" });
+  if (RISKY.test(source)) issues.push({ level: "error", message: "確認できない実績・料金・限定表現が含まれる可能性があります" });
+  const replace = (value: string) => value
+    .replace(/{{company_name}}/g, companyName)
+    .replace(/{{service_name}}/g, business.name)
+    .replace(/{{service_url}}/g, business.serviceUrl || "【URL未設定】")
+    .replace(/{{unsubscribe_url}}/g, "https://example.invalid/unsubscribe-preview");
+  return { issues, preview: { subject: replace(template.subjectTemplate), html: replace(template.htmlTemplate) } };
+}
+
+router.get("/business-audit", requireAuth, async (req, res): Promise<void> => {
+  const userId = getUserId(req);
+  const businesses = await db.select().from(businessesTable).where(eq(businessesTable.userId, userId));
+  const ids = businesses.map((b) => b.id);
+  if (!ids.length) { res.json([]); return; }
+  const [templates, leads, jobs] = await Promise.all([
+    db.select().from(templatesTable).where(inArray(templatesTable.businessId, ids)),
+    db.select().from(leadsTable).where(inArray(leadsTable.businessId, ids)),
+    db.select().from(cronJobsTable).where(inArray(cronJobsTable.businessId, ids)),
+  ]);
+  res.json(businesses.map((business) => {
+    const businessTemplates = templates.filter((t) => t.businessId === business.id);
+    const sampleLead = leads.find((l) => l.businessId === business.id && l.companyName);
+    const checks: Array<{ level: "error" | "warning"; message: string }> = [];
+    if (!business.companyName) checks.push({ level: "warning", message: "正式な会社名が未設定です" });
+    if (!business.serviceUrl) checks.push({ level: "error", message: "サービスURLが未設定です" });
+    if (!business.senderName) checks.push({ level: "error", message: "送信者名が未設定です" });
+    if (!business.senderEmail) checks.push({ level: "error", message: "送信者メールが未設定です" });
+    if (!business.signatureHtml) checks.push({ level: "warning", message: "メール署名が未設定です" });
+    if (!businessTemplates.length) checks.push({ level: "error", message: "テンプレートがありません" });
+    const auditedTemplates = businessTemplates.map((template) => ({
+      ...template,
+      ...auditTemplate(template, business, sampleLead?.companyName || "サンプル株式会社"),
+    }));
+    checks.push(...auditedTemplates.flatMap((t) => t.issues));
+    return {
+      business,
+      checks,
+      status: checks.some((c) => c.level === "error") ? "blocked" : checks.length ? "review" : "ready",
+      templates: auditedTemplates,
+      sampleLead: sampleLead ? { id: sampleLead.id, companyName: sampleLead.companyName, email: sampleLead.email } : null,
+      schedules: jobs.filter((j) => j.businessId === business.id),
+    };
+  }));
+});
+
+export default router;

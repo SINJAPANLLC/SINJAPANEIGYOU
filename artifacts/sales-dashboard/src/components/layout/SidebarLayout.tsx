@@ -16,6 +16,8 @@ import {
   Music2,
   Phone,
   MessageCircle,
+  ShieldCheck,
+  LayoutTemplate,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,6 +37,8 @@ import {
 
 const navigation = [
   { name: "ビジネス", href: "/businesses", icon: Building2 },
+  { name: "監査", href: "/audit", icon: ShieldCheck },
+  { name: "LP管理", href: "/lp-manager", icon: LayoutTemplate },
   { name: "リスト", href: "/leads", icon: Users },
   { name: "テンプレート", href: "/templates", icon: FileText },
   { name: "送信ログ", href: "/email-logs", icon: History },

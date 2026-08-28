@@ -116,7 +116,15 @@ export const ListLeadsResponseItem = zod.object({
   contactUrl: zod.string().nullish(),
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
-  status: zod.enum(["unsent", "sent", "replied", "ng", "unsubscribed"]),
+  status: zod.enum([
+    "unsent",
+    "sending",
+    "failed",
+    "sent",
+    "replied",
+    "ng",
+    "unsubscribed",
+  ]),
   score: zod.number().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -135,7 +143,15 @@ export const CreateLeadBody = zod.object({
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
   status: zod
-    .enum(["unsent", "sent", "replied", "ng", "unsubscribed"])
+    .enum([
+      "unsent",
+      "sending",
+      "failed",
+      "sent",
+      "replied",
+      "ng",
+      "unsubscribed",
+    ])
     .optional(),
   score: zod.number().nullish(),
 });
@@ -156,7 +172,15 @@ export const GetLeadResponse = zod.object({
   contactUrl: zod.string().nullish(),
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
-  status: zod.enum(["unsent", "sent", "replied", "ng", "unsubscribed"]),
+  status: zod.enum([
+    "unsent",
+    "sending",
+    "failed",
+    "sent",
+    "replied",
+    "ng",
+    "unsubscribed",
+  ]),
   score: zod.number().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -177,7 +201,15 @@ export const UpdateLeadBody = zod.object({
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
   status: zod
-    .enum(["unsent", "sent", "replied", "ng", "unsubscribed"])
+    .enum([
+      "unsent",
+      "sending",
+      "failed",
+      "sent",
+      "replied",
+      "ng",
+      "unsubscribed",
+    ])
     .optional(),
   score: zod.number().nullish(),
 });
@@ -191,7 +223,15 @@ export const UpdateLeadResponse = zod.object({
   contactUrl: zod.string().nullish(),
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
-  status: zod.enum(["unsent", "sent", "replied", "ng", "unsubscribed"]),
+  status: zod.enum([
+    "unsent",
+    "sending",
+    "failed",
+    "sent",
+    "replied",
+    "ng",
+    "unsubscribed",
+  ]),
   score: zod.number().nullish(),
   createdAt: zod.string(),
   updatedAt: zod.string(),
@@ -468,7 +508,15 @@ export const SearchLeadsResponse = zod.object({
       contactUrl: zod.string().nullish(),
       phone: zod.string().nullish(),
       address: zod.string().nullish(),
-      status: zod.enum(["unsent", "sent", "replied", "ng", "unsubscribed"]),
+      status: zod.enum([
+        "unsent",
+        "sending",
+        "failed",
+        "sent",
+        "replied",
+        "ng",
+        "unsubscribed",
+      ]),
       score: zod.number().nullish(),
       createdAt: zod.string(),
       updatedAt: zod.string(),

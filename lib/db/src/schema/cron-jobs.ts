@@ -13,10 +13,16 @@ export const cronJobsTable = pgTable("cron_jobs", {
   isActive: boolean("is_active").notNull().default(true),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  runStatus: text("run_status").notNull().default("idle"),
+  lastResult: text("last_result"),
+  lastError: text("last_error"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  attemptCount: integer("attempt_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
-export const insertCronJobSchema = createInsertSchema(cronJobsTable).omit({ id: true, createdAt: true, updatedAt: true, lastRunAt: true, nextRunAt: true });
+export const insertCronJobSchema = createInsertSchema(cronJobsTable).omit({ id: true, createdAt: true, updatedAt: true, lastRunAt: true, nextRunAt: true, runStatus: true, lastResult: true, lastError: true, startedAt: true, finishedAt: true, attemptCount: true });
 export type InsertCronJob = z.infer<typeof insertCronJobSchema>;
 export type CronJob = typeof cronJobsTable.$inferSelect;

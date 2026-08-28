@@ -16,6 +16,8 @@ import {
 import { sendEmail, sleep } from "../lib/mailer";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "../lib/logger";
+import { renderEmail, auditEmail } from "../lib/email-renderer";
+import { buildUnsubscribeUrl } from "../lib/unsubscribe-url";
 
 const router: IRouter = Router();
 
@@ -33,12 +35,6 @@ async function ownsCampaign(userId: string, campaignId: number) {
     .innerJoin(businessesTable, eq(campaignsTable.businessId, businessesTable.id))
     .where(and(eq(campaignsTable.id, campaignId), eq(businessesTable.userId, userId)));
   return row;
-}
-
-function buildUnsubscribeLink(token: string): string {
-  const domain = process.env.REPLIT_DOMAINS?.split(",")[0];
-  if (domain) return `https://${domain}/api/unsubscribe/${token}`;
-  return `/api/unsubscribe/${token}`;
 }
 
 router.get("/campaigns", requireAuth, async (req, res): Promise<void> => {
@@ -164,6 +160,10 @@ router.post("/campaigns/:id/send", requireAuth, async (req, res): Promise<void> 
     res.status(400).json({ error: "Template not found" });
     return;
   }
+  if (template.businessId !== campaign.businessId) {
+    res.status(400).json({ error: "Template does not belong to campaign business" });
+    return;
+  }
 
   // Get unsent leads for this business that have emails
   const leads = await db
@@ -175,35 +175,50 @@ router.post("/campaigns/:id/send", requireAuth, async (req, res): Promise<void> 
 
   let sent = 0;
   let failed = 0;
-  const skipped = leads.length - leadsWithEmail.length;
+  let skipped = leads.length - leadsWithEmail.length;
   const errors: string[] = [];
 
-  // Update campaign status
-  await db.update(campaignsTable).set({ status: "running" }).where(eq(campaignsTable.id, campaign.id));
+  // Claim the campaign atomically so concurrent requests cannot start it twice.
+  const claimedCampaign = await db.update(campaignsTable).set({ status: "running" })
+    .where(and(eq(campaignsTable.id, campaign.id), eq(campaignsTable.status, "draft"))).returning();
+  if (!claimedCampaign.length) {
+    res.status(409).json({ error: "Campaign is already running or has already been sent" });
+    return;
+  }
 
+  try {
   for (const lead of leadsWithEmail) {
     // Create unsubscribe token
     const token = uuidv4();
     await db.insert(unsubscribesTable).values({ leadId: lead.id, token }).onConflictDoNothing();
 
-    const unsubscribeLink = buildUnsubscribeLink(token);
+    const unsubscribeLink = buildUnsubscribeUrl(token);
 
-    const subject = template.subjectTemplate
-      .replace("{{company_name}}", lead.companyName || "御社")
-      .replace("{{service_name}}", business.name)
-      .replace("{{service_url}}", business.serviceUrl || "");
-
-    const unsubscribeHtml = `<p style="font-size:12px;color:#999;margin-top:20px;">このメールの配信を停止するには<a href="${unsubscribeLink}">こちら</a>をクリックしてください。</p>`;
-    const html = template.htmlTemplate
-      .replace(/{{company_name}}/g, lead.companyName || "御社")
-      .replace(/{{service_name}}/g, business.name)
-      .replace(/{{service_url}}/g, business.serviceUrl || "")
-      + unsubscribeHtml
+    const rendered = renderEmail(template.subjectTemplate, template.htmlTemplate, {
+      companyName: lead.companyName || "御社", serviceName: business.name,
+      serviceUrl: business.serviceUrl || "", unsubscribeUrl: unsubscribeLink,
+    });
+    const subject = rendered.subject;
+    const html = rendered.html
+      + (rendered.html.includes(unsubscribeLink) ? "" : `<p style="font-size:12px;color:#999;margin-top:20px;">このメールの配信を停止するには<a href="${unsubscribeLink}">こちら</a>をクリックしてください。</p>`)
       + (business.signatureHtml || "");
 
     const fromEmail = business.senderEmail || process.env.SMTP_USER || "";
     const fromName = business.senderName || business.name;
 
+    const audit = auditEmail(subject, html);
+    if (!audit.valid) {
+      failed++;
+      const error = audit.errors.join(" / ");
+      errors.push(`${lead.email}: ${error}`);
+      await db.update(leadsTable).set({ status: "failed" }).where(eq(leadsTable.id, lead.id));
+      await db.insert(emailLogsTable).values({ leadId: lead.id, campaignId: campaign.id, subject, html, status: "failed", error, toEmail: lead.email, fromEmail, fromName, templateId: template.id, attempt: 1 });
+      continue;
+    }
+    // Claim only after all deterministic pre-send work has succeeded.
+    const claimedLead = await db.update(leadsTable).set({ status: "sending" })
+      .where(and(eq(leadsTable.id, lead.id), eq(leadsTable.status, "unsent"))).returning();
+    if (!claimedLead.length) { skipped++; continue; }
     const result = await sendEmail({
       from: `"${fromName}" <${fromEmail}>`,
       to: lead.email!,
@@ -220,7 +235,7 @@ router.post("/campaigns/:id/send", requireAuth, async (req, res): Promise<void> 
         subject,
         html,
         status: "sent",
-        sentAt: new Date(),
+        sentAt: new Date(), toEmail: lead.email, fromEmail, fromName, templateId: template.id, providerMessageId: result.messageId, attempt: 1,
       });
     } else {
       failed++;
@@ -232,7 +247,9 @@ router.post("/campaigns/:id/send", requireAuth, async (req, res): Promise<void> 
         html,
         status: "failed",
         error: result.error,
+        toEmail: lead.email, fromEmail, fromName, templateId: template.id, attempt: 1,
       });
+      await db.update(leadsTable).set({ status: "failed" }).where(eq(leadsTable.id, lead.id));
     }
 
     // Anti-spam delay
@@ -242,6 +259,12 @@ router.post("/campaigns/:id/send", requireAuth, async (req, res): Promise<void> 
   }
 
   await db.update(campaignsTable).set({ status: "completed" }).where(eq(campaignsTable.id, campaign.id));
+  } catch (err: any) {
+    logger.error({ err, campaignId: campaign.id }, "Campaign send failed");
+    await db.update(campaignsTable).set({ status: "failed" }).where(eq(campaignsTable.id, campaign.id));
+    res.status(500).json({ error: err?.message || "Campaign delivery failed" });
+    return;
+  }
 
   res.json({ sent, failed, skipped, errors });
 });
@@ -271,22 +294,33 @@ router.post("/campaigns/:id/send-test", requireAuth, async (req, res): Promise<v
     res.status(400).json({ error: "Template not found" });
     return;
   }
+  if (template.businessId !== campaign.businessId) { res.status(400).json({ error: "Template does not belong to campaign business" }); return; }
 
   let lead = null;
   if (body.data.leadId) {
     const rows = await db.select().from(leadsTable).where(eq(leadsTable.id, body.data.leadId));
     lead = rows[0] || null;
+    if (lead && lead.businessId !== campaign.businessId) { res.status(403).json({ error: "Lead does not belong to campaign business" }); return; }
   }
 
-  const companyName = lead?.companyName || "テスト企業";
-  const subject = template.subjectTemplate
-    .replace("{{company_name}}", companyName)
-    .replace("{{service_name}}", business.name)
-    .replace("{{service_url}}", business.serviceUrl || "");
-  const html = template.htmlTemplate
-    .replace(/{{company_name}}/g, companyName)
-    .replace(/{{service_name}}/g, business.name)
-    .replace(/{{service_url}}/g, business.serviceUrl || "");
+  if (!lead) {
+    res.status(400).json({ error: "有効な配信停止リンクを作成するため、同一ビジネスのleadIdが必要です" });
+    return;
+  }
+  const token = uuidv4();
+  await db.insert(unsubscribesTable).values({ leadId: lead.id, token }).onConflictDoNothing();
+  const companyName = lead.companyName || "テスト企業";
+  const rendered = renderEmail(template.subjectTemplate, template.htmlTemplate, {
+    companyName, serviceName: business.name, serviceUrl: business.serviceUrl || "",
+    unsubscribeUrl: buildUnsubscribeUrl(token),
+  });
+  const subject = rendered.subject;
+  const html = rendered.html;
+  const audit = auditEmail(subject, html);
+  if (!audit.valid) {
+    res.status(422).json({ error: "安全確認に失敗したため送信しません", details: audit.errors });
+    return;
+  }
 
   const fromEmail = business.senderEmail || process.env.SMTP_USER || "";
   const fromName = business.senderName || business.name;

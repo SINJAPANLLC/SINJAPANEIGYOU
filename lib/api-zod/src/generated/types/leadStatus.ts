@@ -10,6 +10,8 @@ export type LeadStatus = (typeof LeadStatus)[keyof typeof LeadStatus];
 
 export const LeadStatus = {
   unsent: "unsent",
+  sending: "sending",
+  failed: "failed",
   sent: "sent",
   replied: "replied",
   ng: "ng",

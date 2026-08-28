@@ -11,6 +11,8 @@ export type UpdateLeadBodyStatus =
 
 export const UpdateLeadBodyStatus = {
   unsent: "unsent",
+  sending: "sending",
+  failed: "failed",
   sent: "sent",
   replied: "replied",
   ng: "ng",

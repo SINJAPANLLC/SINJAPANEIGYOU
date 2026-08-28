@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 interface BusinessContextType {
   selectedBusinessId: number | null;
   setSelectedBusinessId: (id: number | null) => void;
-  businesses: ReturnType<typeof useListBusinesses>["data"];
+  businesses: Array<{ id: number; name: string }> | undefined;
   isLoading: boolean;
 }
 

@@ -47,6 +47,7 @@ export default function EmailLogsPage() {
     {
       query: {
         enabled: !!selectedBusinessId,
+        queryKey: ["leads", selectedBusinessId]
       }
     }
   );

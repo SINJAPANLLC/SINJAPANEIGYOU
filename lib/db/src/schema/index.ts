@@ -13,3 +13,4 @@ export * from "./jimoty-settings";
 export * from "./tiktok-dm";
 export * from "./teleapo";
 export * from "./assistant";
+export * from "./business-pages";

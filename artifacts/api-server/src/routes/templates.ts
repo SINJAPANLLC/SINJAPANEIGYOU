@@ -37,6 +37,7 @@ router.post("/email/generate", requireAuth, async (req, res): Promise<void> => {
 
   const [lead] = await db.select().from(leadsTable).where(eq(leadsTable.id, Number(leadId)));
   if (!lead) { res.status(404).json({ error: "Lead not found" }); return; }
+  if (lead.businessId !== business.id) { res.status(403).json({ error: "Lead does not belong to this business" }); return; }
 
   const companyName = lead.companyName || "御社";
   const OpenAI = (await import("openai")).default;
@@ -226,6 +227,10 @@ router.post("/templates/:id/generate-ai", requireAuth, async (req, res): Promise
   const [leadRow] = await db.select().from(leadsTable).where(eq(leadsTable.id, body.data.leadId));
   if (!leadRow) {
     res.status(404).json({ error: "Lead not found" });
+    return;
+  }
+  if (leadRow.businessId !== templateRow.template.businessId) {
+    res.status(403).json({ error: "Lead does not belong to this template business" });
     return;
   }
 

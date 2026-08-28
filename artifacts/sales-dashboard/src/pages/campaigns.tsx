@@ -56,7 +56,8 @@ export default function CampaignsPage() {
     { businessId: selectedBusinessId ?? undefined },
     {
       query: {
-        enabled: !!selectedBusinessId
+        enabled: !!selectedBusinessId,
+        queryKey: ["templates", selectedBusinessId]
       }
     }
   );

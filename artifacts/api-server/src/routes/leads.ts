@@ -12,11 +12,8 @@ import {
 } from "@workspace/api-zod";
 import { sendEmail } from "../lib/mailer";
 import { v4 as uuidv4 } from "uuid";
-
-function buildUnsubscribeLink(token: string) {
-  const base = process.env.APP_URL || `https://${process.env.REPLIT_DEV_DOMAIN || "localhost"}`;
-  return `${base}/api/unsubscribe/${token}`;
-}
+import { renderEmail, auditEmail } from "../lib/email-renderer";
+import { buildUnsubscribeUrl } from "../lib/unsubscribe-url";
 
 const router: IRouter = Router();
 
@@ -146,25 +143,31 @@ router.post("/leads/bulk-send", requireAuth, async (req, res): Promise<void> => 
 
   for (const { lead, business } of rows) {
     if (!lead.email) { skipped++; continue; }
-
     const company = lead.companyName || "御社";
-    const finalSubject = subject.replace(/{{company_name}}/g, company).replace(/{{service_name}}/g, business.name).replace(/{{service_url}}/g, business.serviceUrl || "");
     const token = uuidv4();
     await db.insert(unsubscribesTable).values({ leadId: lead.id, token }).onConflictDoNothing();
-    const unsubUrl = buildUnsubscribeLink(token);
+    const unsubUrl = buildUnsubscribeUrl(token);
     const fallbackUnsubLink = `<p style="font-size:12px;color:#999;margin-top:20px;">配信停止は<a href="${unsubUrl}">こちら</a></p>`;
-    const replaced = html
-      .replace(/{{company_name}}/g, company)
-      .replace(/{{service_name}}/g, business.name)
-      .replace(/{{service_url}}/g, business.serviceUrl || "")
-      .replace(/{{unsubscribe_url}}/g, unsubUrl);
-    const finalHtml = replaced
-      + (replaced.includes(unsubUrl) ? "" : fallbackUnsubLink)
+    const rendered = renderEmail(subject, html, { companyName: company, serviceName: business.name, serviceUrl: business.serviceUrl || "", unsubscribeUrl: unsubUrl });
+    const finalSubject = rendered.subject;
+    const finalHtml = rendered.html
+      + (rendered.html.includes(unsubUrl) ? "" : fallbackUnsubLink)
       + (business.signatureHtml || "");
 
     const fromEmail = process.env.SMTP_USER || business.senderEmail || "";
     const fromName = business.senderName || business.name;
 
+    const audit = auditEmail(finalSubject, finalHtml);
+    if (!audit.valid) {
+      failed++;
+      const error = audit.errors.join(" / ");
+      await db.update(leadsTable).set({ status: "failed" }).where(eq(leadsTable.id, lead.id));
+      await db.insert(emailLogsTable).values({ leadId: lead.id, subject: finalSubject, html: finalHtml, status: "failed", error, toEmail: lead.email, fromEmail, fromName, attempt: 1 });
+      continue;
+    }
+    const claimed = await db.update(leadsTable).set({ status: "sending" })
+      .where(and(eq(leadsTable.id, lead.id), eq(leadsTable.status, "unsent"))).returning();
+    if (!claimed.length) { skipped++; continue; }
     const result = await sendEmail({
       from: `"${fromName}" <${fromEmail}>`,
       to: lead.email,
@@ -175,10 +178,11 @@ router.post("/leads/bulk-send", requireAuth, async (req, res): Promise<void> => 
     if (result.success) {
       sent++;
       await db.update(leadsTable).set({ status: "sent" }).where(eq(leadsTable.id, lead.id));
-      await db.insert(emailLogsTable).values({ leadId: lead.id, subject: finalSubject, html: finalHtml, status: "sent", sentAt: new Date() });
+      await db.insert(emailLogsTable).values({ leadId: lead.id, subject: finalSubject, html: finalHtml, status: "sent", sentAt: new Date(), toEmail: lead.email, fromEmail, fromName, providerMessageId: result.messageId, attempt: 1 });
     } else {
       failed++;
-      await db.insert(emailLogsTable).values({ leadId: lead.id, subject: finalSubject, html: finalHtml, status: "failed", error: result.error });
+      await db.update(leadsTable).set({ status: "failed" }).where(eq(leadsTable.id, lead.id));
+      await db.insert(emailLogsTable).values({ leadId: lead.id, subject: finalSubject, html: finalHtml, status: "failed", error: result.error, toEmail: lead.email, fromEmail, fromName, attempt: 1 });
     }
   }
 

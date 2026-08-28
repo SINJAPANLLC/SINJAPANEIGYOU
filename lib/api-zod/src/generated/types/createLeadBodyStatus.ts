@@ -11,6 +11,8 @@ export type CreateLeadBodyStatus =
 
 export const CreateLeadBodyStatus = {
   unsent: "unsent",
+  sending: "sending",
+  failed: "failed",
   sent: "sent",
   replied: "replied",
   ng: "ng",

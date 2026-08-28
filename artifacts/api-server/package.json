@@ -7,7 +7,8 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:email-safety": "esbuild src/lib/email-safety.test.ts --bundle --platform=node --format=esm --outfile=/tmp/email-safety.test.mjs && node --test /tmp/email-safety.test.mjs"
   },
   "dependencies": {
     "@clerk/express": "^2.0.11",

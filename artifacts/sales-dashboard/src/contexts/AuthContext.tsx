@@ -22,7 +22,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchMe = useCallback(async () => {
     try {
       const res = await fetch("/api/auth/me", { credentials: "include" });
-      if (res.ok) {
+      if (res.status === 204) {
+        setUser(null);
+      } else if (res.ok) {
         const data = await res.json() as AuthUser;
         setUser(data);
       } else {
