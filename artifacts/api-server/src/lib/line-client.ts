@@ -43,6 +43,20 @@ async function lineRequest(path: string, body: unknown, token = process.env.LINE
   }
 }
 
+async function lineGetJson<T>(path: string, token: string | undefined, timeoutMs = 1500): Promise<T> {
+  if (!token) throw new Error("LINE channel access token is not configured");
+  const response = await fetch(`${LINE_API}${path}`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`LINE API ${response.status}: ${detail.slice(0, 400)}`);
+  }
+  return await response.json() as T;
+}
+
 function splitMessage(text: string, maxLength = 4500) {
   if (text.length <= maxLength) return [text];
   const parts: string[] = [];
@@ -107,5 +121,17 @@ export async function safePushSinJapanLineText(targetId: string, text: string) {
   } catch (error) {
     logger.error({ err: error }, "SIN JAPAN LINE push failed");
     return { ok: false as const, error: error instanceof Error ? error.message : "SIN JAPAN LINE送信に失敗しました" };
+  }
+}
+
+export async function getSinJapanGroupSummary(groupId: string) {
+  try {
+    return await lineGetJson<{ groupId: string; groupName: string; pictureUrl?: string }>(
+      `/group/${encodeURIComponent(groupId)}/summary`,
+      process.env.SIN_JAPAN_LINE_CHANNEL_ACCESS_TOKEN,
+    );
+  } catch (error) {
+    logger.warn({ err: error, groupId }, "SIN JAPAN LINE group summary unavailable");
+    return null;
   }
 }

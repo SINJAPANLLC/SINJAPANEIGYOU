@@ -22,6 +22,7 @@ import {
 import { ADMIN_USER_ID, getUserId, requireAuth } from "../lib/auth";
 import { buildSinJapanDailyReport, buildSinJapanOnboardingGuide, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, ensureSinJapanDefaultResources, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, notifySinJapanManagerConfirmation, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, recordSinJapanUnlinkedGroupReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
 import { isLineConfigured, isSinJapanLineConfigured, replyLineText, replySinJapanLineText, safePushLineText, safePushSinJapanLineText, verifyLineSignature, verifySinJapanLineSignature } from "../lib/line-client";
+import { sinJapanUnlinkedGroupLabel } from "../lib/sin-japan-notification-format";
 import { getAirtableDriverDetails, getAirtableStatus, searchAirtableLookupCandidates } from "../lib/airtable-client";
 
 const router: IRouter = Router();
@@ -474,7 +475,10 @@ router.get("/assistant/sin-japan-line/unlinked-group-reports", requireAuth, asyn
     .where(eq(sinJapanUnlinkedGroupReportsTable.adminUserId, getUserId(req)))
     .orderBy(desc(sinJapanUnlinkedGroupReportsTable.createdAt))
     .limit(100);
-  res.json(reports);
+  res.json(reports.map((report) => ({
+    ...report,
+    groupLabel: sinJapanUnlinkedGroupLabel(report.groupId, report.groupName),
+  })));
 });
 
 router.get("/assistant/sin-japan-line/escalations", requireAuth, async (req, res): Promise<void> => {
