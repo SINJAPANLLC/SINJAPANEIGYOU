@@ -23,7 +23,7 @@ import {
   sinJapanResourcesTable,
 } from "@workspace/db";
 import { logger } from "./logger";
-import { searchYahooJapan } from "./search";
+import { searchGoogle } from "./search";
 import { isLineConfigured, safePushLineText } from "./line-client";
 import { searchAirtable, type AirtableSearchOptions } from "./airtable-client";
 
@@ -33,7 +33,7 @@ const DEFAULT_TOPICS = [
   "物流・人材業界の最新ニュース",
   "中小企業と営業活動に影響するニュース",
 ];
-const DAILY_REPORT_HOUR = 9;
+const DAILY_REPORT_SCHEDULE = { morning: 9, evening: 19 } as const;
 const SIN_JAPAN_MANAGER_REPORT_HOURS = [9, 12, 17] as const;
 const DAILY_REPORT_TEMPLATE = [
   "おはようございます。",
@@ -103,6 +103,37 @@ const DAILY_REPORT_TEMPLATE = [
   "",
   "以上が本日の状況です。",
   "仕事・生活・学びを積み上げながら、今日の最優先から進めていきましょう。",
+].join("\n");
+const EVENING_REPORT_TEMPLATE = [
+  "こんばんは。",
+  "本日の振り返りと、明日の準備を共有します。",
+  "",
+  "【今日できたこと】",
+  "・",
+  "",
+  "【未完了TODO】",
+  "・",
+  "",
+  "【問題・確認事項】",
+  "・",
+  "",
+  "【今日の学び】",
+  "・",
+  "",
+  "【明日の最優先】",
+  "・",
+  "",
+  "【明日のTODO】",
+  "・",
+  "",
+  "【今日の情報】",
+  "・海外｜",
+  "・日本｜",
+  "・経済｜",
+  "・ビジネス｜",
+  "・話題｜",
+  "",
+  "今日もお疲れさまでした。明日は最優先の一つから始めましょう。",
 ].join("\n");
 const MAX_CONTEXT_ITEMS = 20;
 
@@ -236,9 +267,10 @@ function cryptoRandomCode() {
 
 export async function buildAssistantContext(userId: string) {
   const profile = await getOrCreateAssistantProfile(userId);
-  const [memories, todos, messages, notes, businesses] = await Promise.all([
+  const [memories, todos, completedTodos, messages, notes, businesses] = await Promise.all([
     db.select().from(assistantMemoriesTable).where(and(eq(assistantMemoriesTable.userId, userId), eq(assistantMemoriesTable.isActive, true))).orderBy(desc(assistantMemoriesTable.updatedAt)).limit(MAX_CONTEXT_ITEMS),
     db.select().from(assistantTodosTable).where(and(eq(assistantTodosTable.userId, userId), eq(assistantTodosTable.status, "open"))).orderBy(desc(assistantTodosTable.createdAt)).limit(MAX_CONTEXT_ITEMS),
+    db.select().from(assistantTodosTable).where(and(eq(assistantTodosTable.userId, userId), eq(assistantTodosTable.status, "completed"))).orderBy(desc(assistantTodosTable.completedAt)).limit(MAX_CONTEXT_ITEMS),
     db.select().from(assistantMessagesTable).where(eq(assistantMessagesTable.userId, userId)).orderBy(desc(assistantMessagesTable.createdAt)).limit(12),
     db.select().from(assistantNotesTable).where(and(eq(assistantNotesTable.userId, userId), eq(assistantNotesTable.isArchived, false))).orderBy(desc(assistantNotesTable.updatedAt)).limit(MAX_CONTEXT_ITEMS),
     db.select().from(businessesTable).where(eq(businessesTable.userId, userId)),
@@ -253,7 +285,7 @@ export async function buildAssistantContext(userId: string) {
     ]);
     sales = { leads: Number(leadCount[0]?.count || 0), sentEmails: Number(emailCount[0]?.count || 0), activeSchedules: Number(scheduleCount[0]?.count || 0) };
   }
-  return { profile, memories, todos, notes, messages: messages.reverse(), sales };
+  return { profile, memories, todos, completedTodos, notes, messages: messages.reverse(), sales };
 }
 
 type AssistantAction =
@@ -848,22 +880,47 @@ async function applyAssistantActions(userId: string, actions: AssistantAction[])
   }
 }
 
-async function gatherResearch(topics: string[]) {
-  const items: Array<{ topic: string; title: string; url: string; snippet: string }> = [];
+type ResearchItem = { topic: string; title: string; url: string; snippet: string };
+type ResearchBundle = { items: ResearchItem[]; errors: string[] };
+
+async function gatherResearch(topics: string[]): Promise<ResearchBundle> {
+  const items: ResearchItem[] = [];
+  const errors: string[] = [];
   for (const topic of topics.slice(0, 5)) {
     try {
-      const results = await searchYahooJapan(topic, 3);
+      const results = await searchGoogle(topic, 3);
       for (const result of results) {
         items.push({ topic, title: result.title || topic, url: result.url, snippet: result.snippet || "" });
       }
     } catch (error) {
-      logger.warn({ err: error, topic }, "assistant research failed");
+      const message = error instanceof Error ? error.message : "Google検索に失敗しました";
+      errors.push(`${topic}: ${message}`);
+      logger.warn({ err: error, topic }, "assistant Google research failed");
     }
   }
-  return items;
+  return { items, errors };
 }
 
-function buildDailyReportDraft(timezone: string, context: Awaited<ReturnType<typeof buildAssistantContext>>, research: Array<{ topic: string; title: string; url: string; snippet: string }>) {
+function buildResearchLines(research: ResearchItem[], researchErrors: string[], patterns: Array<[string, RegExp]>) {
+  const newsFor = (matchers: RegExp[]) => research.find((item) => matchers.some((pattern) => pattern.test(`${item.topic} ${item.title}`)));
+  const newsLine = (label: string, matchers: RegExp[]) => {
+    const item = newsFor(matchers);
+    return item ? `・${label}｜${item.title}\n  ${item.url}` : `・${label}｜`;
+  };
+  const status = researchErrors.length
+    ? `・Google検索：${researchErrors.join(" / ")}`
+    : research.length
+      ? "・Google検索：記事を取得済み（タイトル・概要・元記事リンクを反映）"
+      : "・Google検索：該当する記事は見つかりませんでした";
+  return [status, ...patterns.map(([label, pattern]) => newsLine(label, [pattern]))].join("\n");
+}
+
+function buildDailyReportDraft(
+  timezone: string,
+  context: Awaited<ReturnType<typeof buildAssistantContext>>,
+  research: ResearchItem[],
+  researchErrors: string[],
+) {
   const topTodos = context.todos.slice(0, 3);
   const goals = context.memories.filter((memory) => memory.category === "goal").slice(0, 2);
   const organizationNotes = context.notes.filter((note) => ["idea", "decision", "person_company", "reference"].includes(note.category)).slice(0, 4);
@@ -876,11 +933,6 @@ function buildDailyReportDraft(timezone: string, context: Awaited<ReturnType<typ
     "秘書より対応事項を取得",
     ...organizationNotes.map((note) => `${note.title}: ${note.content}`),
   ];
-  const newsFor = (patterns: RegExp[]) => research.find((item) => patterns.some((pattern) => pattern.test(`${item.topic} ${item.title}`)));
-  const newsLine = (label: string, patterns: RegExp[]) => {
-    const item = newsFor(patterns);
-    return item ? `・${label}｜${item.title}\n  ${item.url}` : `・${label}｜`;
-  };
   return formatAssistantReply(`おはようございます。
 本日の目標・タスク・状況を共有します。（${date}）
 
@@ -939,81 +991,274 @@ ${bullets(organizationItems, "秘書より対応事項を取得")}
 ・今週：
 
 【今日の情報】
-${newsLine("海外", [/海外|世界|global|international/iu])}
-${newsLine("日本", [/日本|国内|japan/iu])}
-${newsLine("経済", [/経済|金融|市場|economy|finance/iu])}
-${newsLine("ビジネス", [/ビジネス|企業|営業|business/iu])}
-${newsLine("話題", [/話題|トレンド|ニュース|trend/iu])}
+${buildResearchLines(research, researchErrors, [
+  ["海外", /海外|世界|global|international/iu],
+  ["日本", /日本|国内|japan/iu],
+  ["経済", /経済|金融|市場|economy|finance/iu],
+  ["ビジネス", /ビジネス|企業|営業|business/iu],
+  ["話題", /話題|トレンド|ニュース|trend/iu],
+])}
 
 以上が本日の状況です。
 仕事・生活・学びを積み上げながら、今日の最優先から進めていきましょう。`);
 }
 
-export async function generateDailyReport(userId: string, options: { deliver?: boolean; force?: boolean } = {}) {
-  const context = await buildAssistantContext(userId);
+function buildEveningReportDraft(
+  timezone: string,
+  context: Awaited<ReturnType<typeof buildAssistantContext>>,
+  research: ResearchItem[],
+  researchErrors: string[],
+) {
+  const reportDate = localDate(timezone);
+  const completedToday = context.completedTodos
+    .filter((todo) => todo.completedAt && localDate(timezone, todo.completedAt) === reportDate)
+    .slice(0, 8);
+  const todayMessages = context.messages
+    .filter((message) => localDate(timezone, message.createdAt) === reportDate && message.role === "user")
+    .slice(-6);
+  const todayNotes = context.notes
+    .filter((note) => localDate(timezone, note.createdAt) === reportDate)
+    .slice(0, 6);
+  const completed = completedToday.map((todo) => todo.title);
+  const learning = todayNotes.filter((note) => note.category === "reference" || note.category === "idea").map((note) => `${note.title}: ${note.content}`);
+  const issues = todayNotes.filter((note) => note.category === "temporary" || note.category === "decision").map((note) => `${note.title}: ${note.content}`);
+  const messages = todayMessages.map((message) => message.content);
+  const openTodos = context.todos.slice(0, 8).map((todo) => `${todo.title}${todo.priority === "high" ? "（重要）" : ""}`);
+  const nextPriority = context.todos[0]?.title || "";
+  const bullets = (items: string[], empty: string) => items.length ? items.map((item) => `・${item}`).join("\n") : `・${empty}`;
+  return formatAssistantReply(`こんばんは。
+本日の振り返りと、明日の準備を共有します。（${reportDateLabel(timezone)}）
+
+【今日できたこと】
+${bullets(completed, "完了として記録されたTODOはありません")}
+
+【未完了TODO】
+${bullets(openTodos, "未完了のTODOはありません")}
+
+【問題・確認事項】
+${bullets(issues.length ? issues : messages.slice(0, 3), "現時点で記録された問題・確認事項はありません")}
+
+【今日の学び】
+${bullets(learning, "今日の学びとして保存された内容はありません")}
+
+【明日の最優先】
+・${nextPriority}
+
+【明日のTODO】
+${bullets(openTodos, "明日のTODOはありません")}
+
+【今日の情報】
+${buildResearchLines(research, researchErrors, [
+  ["海外", /海外|世界|global|international/iu],
+  ["日本", /日本|国内|japan/iu],
+  ["経済", /経済|金融|市場|economy|finance/iu],
+  ["ビジネス", /ビジネス|企業|営業|business/iu],
+  ["話題", /話題|トレンド|ニュース|trend/iu],
+])}
+
+今日もお疲れさまでした。明日は最優先の一つから始めましょう。`);
+}
+
+export type AssistantReportSlot = keyof typeof DAILY_REPORT_SCHEDULE;
+
+async function loadEveningEvidence(userId: string, timezone: string, reportDate: string) {
+  const [completedTodos, messages, notes] = await Promise.all([
+    db.select().from(assistantTodosTable).where(and(
+      eq(assistantTodosTable.userId, userId),
+      eq(assistantTodosTable.status, "completed"),
+      sql`(${assistantTodosTable.completedAt} AT TIME ZONE ${timezone})::date = ${reportDate}::date`,
+    )).orderBy(desc(assistantTodosTable.completedAt)).limit(100),
+    db.select().from(assistantMessagesTable).where(and(
+      eq(assistantMessagesTable.userId, userId),
+      sql`(${assistantMessagesTable.createdAt} AT TIME ZONE ${timezone})::date = ${reportDate}::date`,
+    )).orderBy(assistantMessagesTable.createdAt).limit(100),
+    db.select().from(assistantNotesTable).where(and(
+      eq(assistantNotesTable.userId, userId),
+      eq(assistantNotesTable.isArchived, false),
+      sql`(${assistantNotesTable.createdAt} AT TIME ZONE ${timezone})::date = ${reportDate}::date`,
+    )).orderBy(desc(assistantNotesTable.createdAt)).limit(100),
+  ]);
+  return { completedTodos, messages, notes };
+}
+
+async function deliverAssistantReport(
+  report: typeof assistantReportsTable.$inferSelect,
+  lineUserId: string,
+) {
+  if (!isLineConfigured()) {
+    const [failed] = await db.update(assistantReportsTable)
+      .set({ status: "failed", error: "LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN が未設定です" })
+      .where(and(eq(assistantReportsTable.id, report.id), eq(assistantReportsTable.status, "completed")))
+      .returning();
+    return { report: failed || report, delivered: false };
+  }
+  const [reserved] = await db.update(assistantReportsTable)
+    .set({ status: "sending", error: null })
+    .where(and(
+      eq(assistantReportsTable.id, report.id),
+      eq(assistantReportsTable.status, "completed"),
+      isNull(assistantReportsTable.deliveredAt),
+    ))
+    .returning();
+  if (!reserved) {
+    const [current] = await db.select().from(assistantReportsTable).where(eq(assistantReportsTable.id, report.id));
+    return { report: current || report, delivered: current?.status === "delivered" };
+  }
+  const sent = await safePushLineText(lineUserId, reserved.content || "");
+  if (!sent.ok) {
+    const definitelyRejected = (reserved.content?.length || 0) <= 4500 && /^LINE API 4\d\d:/u.test(sent.error);
+    const [failed] = await db.update(assistantReportsTable)
+      .set({
+        status: definitelyRejected ? "failed" : "delivery_unknown",
+        error: definitelyRejected ? sent.error : `送信結果を確認できません。重複防止のため自動再送を停止しました。${sent.error}`,
+      })
+      .where(and(eq(assistantReportsTable.id, reserved.id), eq(assistantReportsTable.status, "sending")))
+      .returning();
+    return { report: failed || reserved, delivered: false };
+  }
+  const [delivered] = await db.update(assistantReportsTable)
+    .set({ status: "delivered", deliveredAt: new Date(), error: null })
+    .where(and(eq(assistantReportsTable.id, reserved.id), eq(assistantReportsTable.status, "sending")))
+    .returning();
+  return { report: delivered || reserved, delivered: Boolean(delivered) };
+}
+
+export async function generateDailyReport(
+  userId: string,
+  options: { deliver?: boolean; force?: boolean; slot?: AssistantReportSlot } = {},
+) {
+  const slot: AssistantReportSlot = options.slot === "evening" ? "evening" : "morning";
+  let context = await buildAssistantContext(userId);
   const topics = parseTopics(context.profile.reportTopics);
-  const research = await gatherResearch(topics.length ? topics : DEFAULT_TOPICS);
   const reportDate = localDate(context.profile.timezone);
-  let [report] = await db.select().from(assistantReportsTable).where(and(eq(assistantReportsTable.userId, userId), eq(assistantReportsTable.reportDate, reportDate)));
-  if (report?.status === "running") return { report, delivered: false };
+  if (slot === "evening") {
+    const evidence = await loadEveningEvidence(userId, context.profile.timezone, reportDate);
+    context = { ...context, ...evidence };
+  }
+  let [report] = await db.select().from(assistantReportsTable).where(and(
+    eq(assistantReportsTable.userId, userId),
+    eq(assistantReportsTable.reportDate, reportDate),
+    eq(assistantReportsTable.reportSlot, slot),
+  ));
+  const generationLeaseExpiredAt = new Date(Date.now() - 10 * 60 * 1000);
+  if (report?.status === "sending") return { report, delivered: false };
+  if (report?.status === "delivery_unknown") return { report, delivered: false };
+  if (report?.status === "running" && report.updatedAt >= generationLeaseExpiredAt) return { report, delivered: false };
   if (report?.status === "delivered" && !options.force) return { report, delivered: true };
   if (report?.status === "completed" && report.content && !options.force) {
     if (options.deliver && context.profile.lineUserId) {
-      const sent = await safePushLineText(context.profile.lineUserId, report.content);
-      if (!sent.ok) {
-        const [failed] = await db.update(assistantReportsTable).set({ status: "failed", error: sent.error }).where(eq(assistantReportsTable.id, report.id)).returning();
-        return { report: failed, delivered: false };
-      }
-      const [delivered] = await db.update(assistantReportsTable).set({ status: "delivered", deliveredAt: new Date(), error: null }).where(eq(assistantReportsTable.id, report.id)).returning();
-      return { report: delivered, delivered: true };
+      return deliverAssistantReport(report, context.profile.lineUserId);
     }
     return { report, delivered: false };
   }
   if (!report) {
-    const created = await db.insert(assistantReportsTable).values({ userId, reportDate, status: "running", attemptCount: 1, startedAt: new Date() }).onConflictDoNothing().returning();
+    const generationToken = crypto.randomUUID();
+    const created = await db.insert(assistantReportsTable).values({ userId, reportDate, reportSlot: slot, generationToken, status: "running", attemptCount: 1, startedAt: new Date() }).onConflictDoNothing().returning();
     if (!created.length) {
-      const [existing] = await db.select().from(assistantReportsTable).where(and(eq(assistantReportsTable.userId, userId), eq(assistantReportsTable.reportDate, reportDate)));
+      const [existing] = await db.select().from(assistantReportsTable).where(and(
+        eq(assistantReportsTable.userId, userId),
+        eq(assistantReportsTable.reportDate, reportDate),
+        eq(assistantReportsTable.reportSlot, slot),
+      ));
       return { report: existing!, delivered: Boolean(existing?.deliveredAt) };
     }
     report = created[0]!;
   } else {
-    [report] = await db.update(assistantReportsTable).set({ status: "running", attemptCount: report.attemptCount + 1, startedAt: new Date(), error: null }).where(eq(assistantReportsTable.id, report.id)).returning();
+    const eligibleStatus = options.force
+      ? or(
+        eq(assistantReportsTable.status, "failed"),
+        eq(assistantReportsTable.status, "completed"),
+        eq(assistantReportsTable.status, "delivered"),
+        and(eq(assistantReportsTable.status, "running"), lt(assistantReportsTable.updatedAt, generationLeaseExpiredAt)),
+      )
+      : or(
+        eq(assistantReportsTable.status, "failed"),
+        and(eq(assistantReportsTable.status, "running"), lt(assistantReportsTable.updatedAt, generationLeaseExpiredAt)),
+      );
+    const generationToken = crypto.randomUUID();
+    const [reserved] = await db.update(assistantReportsTable)
+      .set({ status: "running", generationToken, attemptCount: report.attemptCount + 1, startedAt: new Date(), error: null })
+      .where(and(eq(assistantReportsTable.id, report.id), eligibleStatus))
+      .returning();
+    if (!reserved) {
+      const [current] = await db.select().from(assistantReportsTable).where(eq(assistantReportsTable.id, report.id));
+      return { report: current || report, delivered: current?.status === "delivered" };
+    }
+    report = reserved;
   }
+  const researchBundle = await gatherResearch(topics.length ? topics : DEFAULT_TOPICS);
+  const research = researchBundle.items;
+  const researchErrors = researchBundle.errors;
   try {
-    const sourceSummary = research.map((item) => `${item.topic}: ${item.title} (${item.url})`).join("\n");
+    const sourceSummary = [
+      ...research.map((item) => `${item.topic}: ${item.title} — ${item.snippet} (${item.url})`),
+      ...researchErrors.map((error) => `Google検索状態: ${error}`),
+    ].join("\n");
     const client = getOpenAIClient();
-    let content = buildDailyReportDraft(context.profile.timezone, context, research);
+    let content = slot === "evening"
+      ? buildEveningReportDraft(context.profile.timezone, context, research, researchErrors)
+      : buildDailyReportDraft(context.profile.timezone, context, research, researchErrors);
     if (client) {
+      const template = slot === "evening" ? EVENING_REPORT_TEMPLATE : DAILY_REPORT_TEMPLATE;
       const result = await client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [{
           role: "system",
-          content: `あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字は使わず、親しみやすく仕事で読みやすい文章にしてください。情報がない項目も削除せず、空欄のまま残してください。確認できない数字・予定・健康・家族情報は推測しないでください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。情報源URLは改変しないでください。
-${DAILY_REPORT_TEMPLATE}`,
+          content: `あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字は使わず、親しみやすく仕事で読みやすい文章にしてください。情報がない項目も削除せず、空欄のまま残してください。確認できない数字・予定・健康・家族情報は推測しないでください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。収集情報のタイトル・概要・元記事URLは改変せず、検索失敗は「未接続」または「取得失敗」と明示してください。
+${template}`,
         }, {
           role: "user",
-          content: `日付: ${reportDate}\n未完了TODO: ${JSON.stringify(context.todos)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary}`,
+          content: `日付: ${reportDate}\nレポート種別: ${slot === "evening" ? "夜の振り返り" : "朝の計画"}\n未完了TODO: ${JSON.stringify(context.todos)}\n今日完了したTODO: ${JSON.stringify(context.completedTodos)}\n当日の会話: ${JSON.stringify(context.messages)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary || "Google検索結果はありません"}`,
         }],
       });
       content = result.choices[0]?.message?.content?.trim() || content;
     }
     content = formatAssistantReply(content);
-    await db.delete(assistantResearchItemsTable).where(eq(assistantResearchItemsTable.reportId, report.id));
-    if (research.length) await db.insert(assistantResearchItemsTable).values(research.map((item) => ({ reportId: report.id, ...item })));
-    const [completed] = await db.update(assistantReportsTable).set({ status: "completed", content, sourceSummary, completedAt: new Date(), deliveredAt: null, error: null }).where(eq(assistantReportsTable.id, report.id)).returning();
+    if (researchErrors.length) {
+      const unavailable = researchErrors.some((error) => error.includes("未接続"));
+      content = `${content}\n\n【Google検索の状態】\n・${unavailable ? "未接続" : "取得失敗"}：Google Custom Search APIの設定をご確認ください。`;
+    }
+    const generationToken = report.generationToken;
+    const completed = generationToken
+      ? await db.transaction(async (tx) => {
+        const [reserved] = await tx.update(assistantReportsTable)
+          .set({ status: "completed", content, sourceSummary, completedAt: new Date(), deliveredAt: null, error: null })
+          .where(and(
+            eq(assistantReportsTable.id, report.id),
+            eq(assistantReportsTable.status, "running"),
+            eq(assistantReportsTable.generationToken, generationToken),
+          ))
+          .returning();
+        if (!reserved) return null;
+        await tx.delete(assistantResearchItemsTable).where(eq(assistantResearchItemsTable.reportId, report.id));
+        if (research.length) await tx.insert(assistantResearchItemsTable).values(research.map((item) => ({ reportId: report.id, ...item })));
+        return reserved;
+      })
+      : null;
+    if (!completed) {
+      const [current] = await db.select().from(assistantReportsTable).where(eq(assistantReportsTable.id, report.id));
+      return { report: current || report, delivered: current?.status === "delivered" };
+    }
     if (options.deliver && context.profile.lineUserId) {
-      if (!isLineConfigured()) throw new Error("LINE_CHANNEL_SECRET / LINE_CHANNEL_ACCESS_TOKEN が未設定です");
-      const result = await safePushLineText(context.profile.lineUserId, content);
-      if (!result.ok) throw new Error(result.error);
-      const [delivered] = await db.update(assistantReportsTable).set({ status: "delivered", deliveredAt: new Date() }).where(eq(assistantReportsTable.id, report.id)).returning();
-      return { report: delivered, delivered: true };
+      return deliverAssistantReport(completed, context.profile.lineUserId);
     }
     return { report: completed, delivered: Boolean(completed.deliveredAt) };
   } catch (error) {
     const message = error instanceof Error ? error.message : "レポート生成に失敗しました";
-    const [failed] = await db.update(assistantReportsTable).set({ status: "failed", error: message, completedAt: new Date() }).where(eq(assistantReportsTable.id, report.id)).returning();
+    const [failed] = report.generationToken
+      ? await db.update(assistantReportsTable)
+        .set({ status: "failed", error: message, completedAt: new Date() })
+        .where(and(
+          eq(assistantReportsTable.id, report.id),
+          eq(assistantReportsTable.status, "running"),
+          eq(assistantReportsTable.generationToken, report.generationToken),
+        ))
+        .returning()
+      : [];
     logger.error({ err: error, userId }, "daily assistant report failed");
-    return { report: failed, delivered: false };
+    if (failed) return { report: failed, delivered: false };
+    const [current] = await db.select().from(assistantReportsTable).where(eq(assistantReportsTable.id, report.id));
+    return { report: current || report, delivered: current?.status === "delivered" };
   }
 }
 
@@ -1021,10 +1266,19 @@ export async function runAssistantScheduler() {
   const profiles = await db.select().from(assistantProfilesTable).where(and(eq(assistantProfilesTable.reportsEnabled, true), sql`${assistantProfilesTable.lineUserId} is not null`));
   for (const profile of profiles) {
     const clock = localClock("Asia/Tokyo");
-    if (clock.hour !== DAILY_REPORT_HOUR || clock.minute !== 0) continue;
+    const slot = clock.hour === DAILY_REPORT_SCHEDULE.morning
+      ? "morning"
+      : clock.hour === DAILY_REPORT_SCHEDULE.evening
+        ? "evening"
+        : null;
+    if (!slot || clock.minute !== 0) continue;
     const date = localDate(profile.timezone);
-    const [existing] = await db.select().from(assistantReportsTable).where(and(eq(assistantReportsTable.userId, profile.userId), eq(assistantReportsTable.reportDate, date)));
+    const [existing] = await db.select().from(assistantReportsTable).where(and(
+      eq(assistantReportsTable.userId, profile.userId),
+      eq(assistantReportsTable.reportDate, date),
+      eq(assistantReportsTable.reportSlot, slot),
+    ));
     if (existing && (existing.status === "delivered" || existing.attemptCount >= 3)) continue;
-    await generateDailyReport(profile.userId, { deliver: true });
+    await generateDailyReport(profile.userId, { deliver: true, slot });
   }
 }

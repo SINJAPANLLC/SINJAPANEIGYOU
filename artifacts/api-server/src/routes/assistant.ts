@@ -568,7 +568,7 @@ router.post("/assistant/line/claim", requireAuth, async (req, res): Promise<void
 router.post("/assistant/line/test", requireAuth, async (req, res): Promise<void> => {
   const profile = await getOrCreateAssistantProfile(getUserId(req));
   if (!profile.lineUserId) { res.status(400).json({ error: "LINEユーザーがまだ連携されていません" }); return; }
-  const result = await safePushLineText(profile.lineUserId, "AI秘書の接続テストです。これから毎朝9:00にレポートをお届けします。");
+  const result = await safePushLineText(profile.lineUserId, "AI秘書の接続テストです。これから毎日9:00に朝の計画、19:00に夕方の振り返りをお届けします。");
   if (!result.ok) { res.status(502).json({ error: result.error }); return; }
   res.json({ ok: true });
 });
@@ -591,13 +591,19 @@ router.get("/assistant/reports/:id", requireAuth, async (req, res): Promise<void
 });
 
 router.post("/assistant/reports/preview", requireAuth, async (req, res): Promise<void> => {
-  const result = await generateDailyReport(getUserId(req), { deliver: false, force: false });
+  const slot = req.body.slot === "evening" ? "evening" : "morning";
+  const result = await generateDailyReport(getUserId(req), { deliver: false, force: req.body.force === true, slot });
   res.json({ report: result.report, delivered: false });
 });
 
 router.post("/assistant/reports/run", requireAuth, async (req, res): Promise<void> => {
-  const result = await generateDailyReport(getUserId(req), { deliver: req.body.deliver !== false, force: false });
+  const slot = req.body.slot === "evening" ? "evening" : "morning";
+  const result = await generateDailyReport(getUserId(req), { deliver: req.body.deliver !== false, force: false, slot });
   if (result.report.status === "failed") { res.status(502).json(result); return; }
+  if (result.report.status === "sending" || result.report.status === "delivery_unknown") {
+    res.status(202).json(result);
+    return;
+  }
   res.json(result);
 });
 

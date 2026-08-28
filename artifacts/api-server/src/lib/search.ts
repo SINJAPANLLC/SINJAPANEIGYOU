@@ -13,10 +13,44 @@ export type LeadResult = {
   score: number;
 };
 
-interface SearchResult {
+export interface SearchResult {
   url: string;
   title?: string;
   snippet?: string;
+}
+
+export async function searchGoogle(query: string, count = 5): Promise<SearchResult[]> {
+  const apiKey = process.env.GOOGLE_API_KEY?.trim();
+  const searchEngineId = process.env.GOOGLE_SEARCH_ENGINE_ID?.trim();
+  if (!apiKey || !searchEngineId) {
+    throw new Error("Google検索の設定が未接続です");
+  }
+
+  try {
+    const response = await axios.get("https://www.googleapis.com/customsearch/v1", {
+      params: {
+        key: apiKey,
+        cx: searchEngineId,
+        q: query,
+        num: Math.min(Math.max(count, 1), 10),
+        hl: "ja",
+        gl: "jp",
+      },
+      timeout: 18000,
+    });
+    const items = Array.isArray(response.data?.items) ? response.data.items : [];
+    return items
+      .map((item: any) => ({
+        url: typeof item.link === "string" ? item.link : "",
+        title: typeof item.title === "string" ? item.title.trim() : "",
+        snippet: typeof item.snippet === "string" ? item.snippet.trim() : "",
+      }))
+      .filter((item: SearchResult) => /^https?:\/\//iu.test(item.url) && Boolean(item.title))
+      .slice(0, count);
+  } catch (error: any) {
+    logger.error({ err: error?.message, query }, "Google search failed");
+    throw new Error("Google検索に失敗しました");
+  }
 }
 
 // =============================================

@@ -22,13 +22,21 @@ type Profile = {
 type Todo = { id: number; title: string; priority: string; status: string; createdAt: string };
 type Memory = { id: number; content: string; category: string; createdAt: string };
 type Note = { id: number; title: string; content: string; category: string; createdAt: string };
-type Report = { id: number; reportDate: string; status: string; content: string | null; deliveredAt: string | null; error: string | null; createdAt: string };
+type ReportSlot = "morning" | "evening";
+type ReportSource = { id: number; topic: string; title: string; url: string; snippet: string | null };
+type Report = { id: number; reportDate: string; reportSlot: ReportSlot; status: string; content: string | null; deliveredAt: string | null; error: string | null; createdAt: string; sources?: ReportSource[] };
 type SinJapanStatus = { managerLineConfigured: boolean; lineConfigured: boolean };
 type SinJapanEscalation = { id: number; status: string };
 
 const formatTime = (value: string | null) => value ? new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
 const DEFAULT_REPORT_TOPICS = ["日本と世界の経済ニュース", "SNSで話題のニュースとトレンド", "物流・人材業界の最新ニュース", "中小企業と営業活動に影響するニュース"];
 const NOTE_CATEGORIES: Record<string, string> = { todo: "TODO候補", idea: "アイデア", decision: "判断", person_company: "人・会社", sales: "営業メモ", reference: "参考情報", temporary: "一時メモ" };
+const reportSlotLabel = (slot: ReportSlot) => slot === "evening" ? "夕方 19:00" : "朝 9:00";
+const renderLinkedText = (content: string) => content.split(/(https?:\/\/[^\s]+)/gu).map((part, index) => (
+  /^https?:\/\//iu.test(part)
+    ? <a key={`${part}-${index}`} href={part} target="_blank" rel="noreferrer" className="text-emerald-400 underline underline-offset-4 break-all">{part}</a>
+    : <span key={index}>{part}</span>
+));
 
 export default function OfficialLinePage() {
   const { toast } = useToast();
@@ -86,6 +94,18 @@ export default function OfficialLinePage() {
   };
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (!activeReport || activeReport.sources) return;
+    let cancelled = false;
+    void fetch(`/api/assistant/reports/${activeReport.id}`, { credentials: "include" })
+      .then(async (res) => res.ok ? await res.json() : null)
+      .then((report: Report | null) => {
+        if (!report || cancelled) return;
+        setActiveReport(report);
+        setReports((items) => items.map((item) => item.id === report.id ? report : item));
+      });
+    return () => { cancelled = true; };
+  }, [activeReport]);
 
   const saveProfile = async (updates: Partial<Profile>) => {
     if (!profile) return;
@@ -179,16 +199,24 @@ export default function OfficialLinePage() {
     } finally { setBusy(null); }
   };
 
-  const runReport = async (deliver: boolean) => {
-    setBusy(deliver ? "deliver" : "preview");
+  const runReport = async (slot: ReportSlot, deliver: boolean) => {
+    setBusy(`${slot}-${deliver ? "deliver" : "preview"}`);
     try {
       const path = deliver ? "/api/assistant/reports/run" : "/api/assistant/reports/preview";
-      const res = await fetch(path, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deliver }) });
+      const res = await fetch(path, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deliver, slot }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.report?.error || data.error || "レポートを作成できませんでした");
       setActiveReport(data.report);
       setReports((items) => [data.report, ...items.filter((item) => item.id !== data.report.id)]);
-      toast({ title: deliver ? "LINEへレポートを送信しました" : "レポートのプレビューを作成しました" });
+      if (deliver && data.delivered !== true) {
+        toast({
+          title: data.report?.status === "delivery_unknown" ? "LINEの送信結果を確認できません" : "LINEへの送信を処理中です",
+          description: data.report?.error || "重複送信を防ぐため、自動再送は行いません。LINE側の受信状況をご確認ください。",
+          variant: data.report?.status === "delivery_unknown" ? "destructive" : "default",
+        });
+      } else {
+        toast({ title: deliver ? `LINEへ${reportSlotLabel(slot)}のレポートを送信しました` : `${reportSlotLabel(slot)}のプレビューを作成しました` });
+      }
     } catch (error) {
       toast({ title: "レポート作成に失敗しました", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
     } finally { setBusy(null); }
@@ -227,7 +255,8 @@ export default function OfficialLinePage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" className="rounded-none" onClick={() => void load()}><RefreshCw className="w-3.5 h-3.5 mr-2" />更新</Button>
-          <Button size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-500" onClick={() => void runReport(true)} disabled={busy !== null || !profile.linked}><Send className="w-3.5 h-3.5 mr-2" />今すぐLINEへ報告</Button>
+          <Button size="sm" className="rounded-none bg-emerald-600 hover:bg-emerald-500" onClick={() => void runReport("morning", true)} disabled={busy !== null || !profile.linked}><Send className="w-3.5 h-3.5 mr-2" />朝レポートを送信</Button>
+          <Button size="sm" variant="outline" className="rounded-none" onClick={() => void runReport("evening", true)} disabled={busy !== null || !profile.linked}><Send className="w-3.5 h-3.5 mr-2" />夜レポートを送信</Button>
         </div>
       </header>
 
@@ -235,12 +264,13 @@ export default function OfficialLinePage() {
         <section className="grid lg:grid-cols-3 gap-4">
           <div className="border border-border bg-card p-5 lg:col-span-2">
             <div className="flex items-start justify-between gap-4 mb-4">
-              <div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Daily briefing</p><h2 className="font-semibold mt-1">毎日の報告（本人用）</h2><p className="text-sm text-muted-foreground mt-1">KGI、数字、最優先、TODO、仕事・生活・学び、今日の情報を毎朝まとめます。</p></div>
+               <div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Daily briefing</p><h2 className="font-semibold mt-1">毎日の報告（本人用）</h2><p className="text-sm text-muted-foreground mt-1">朝は計画、夕方は実績・未完了・学び・明日の最優先を、Googleの記事情報と一緒にまとめます。</p></div>
               <Switch checked={profile.reportsEnabled} onCheckedChange={(checked) => void saveProfile({ reportsEnabled: checked })} />
             </div>
             <div className="flex flex-wrap items-end gap-3">
-              <div className="border border-emerald-500/30 bg-emerald-500/5 px-4 py-2"><p className="text-[10px] uppercase tracking-widest text-muted-foreground">配信時刻</p><p className="font-mono text-emerald-300 mt-1">毎日 9:00</p></div>
-              <Button variant="outline" size="sm" className="rounded-none h-9" disabled={busy !== null} onClick={() => void runReport(false)}><BookOpen className="w-3.5 h-3.5 mr-2" />プレビュー</Button>
+               <div className="border border-emerald-500/30 bg-emerald-500/5 px-4 py-2"><p className="text-[10px] uppercase tracking-widest text-muted-foreground">配信時刻</p><p className="font-mono text-emerald-300 mt-1">毎日 9:00 / 19:00</p></div>
+               <Button variant="outline" size="sm" className="rounded-none h-9" disabled={busy !== null} onClick={() => void runReport("morning", false)}><BookOpen className="w-3.5 h-3.5 mr-2" />朝をプレビュー</Button>
+               <Button variant="outline" size="sm" className="rounded-none h-9" disabled={busy !== null} onClick={() => void runReport("evening", false)}><BookOpen className="w-3.5 h-3.5 mr-2" />夜をプレビュー</Button>
             </div>
           </div>
           <div className="border border-border bg-card p-5">
@@ -284,7 +314,7 @@ export default function OfficialLinePage() {
 
             <div className="border border-border bg-card">
               <div className="p-5 border-b border-border flex items-center gap-2"><BellRing className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">調査テーマ</h2></div>
-              <div className="p-5"><div className="flex gap-2"><Input value={topicText} onChange={(e) => setTopicText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTopic()} placeholder="例: 物流2026年問題のニュース" className="rounded-none" /><Button onClick={addTopic} className="rounded-none"><Plus className="w-4 h-4" /></Button></div><div className="flex flex-wrap gap-2 mt-3">{profile.reportTopics.length ? profile.reportTopics.map((topic) => <button key={topic} onClick={() => void saveProfile({ reportTopics: profile.reportTopics.filter((item) => item !== topic) })} className="border border-border px-2 py-1 text-xs hover:border-destructive hover:text-destructive">{topic} ×</button>) : <>{DEFAULT_REPORT_TOPICS.map((topic) => <span key={topic} className="border border-emerald-500/30 bg-emerald-500/5 text-emerald-300 px-2 py-1 text-xs">{topic}</span>)}<p className="basis-full text-xs text-muted-foreground mt-1">未設定の場合は、この4テーマを毎朝自動で収集します。</p></>}</div></div>
+               <div className="p-5"><div className="flex gap-2"><Input value={topicText} onChange={(e) => setTopicText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addTopic()} placeholder="例: 物流2026年問題のニュース" className="rounded-none" /><Button onClick={addTopic} className="rounded-none"><Plus className="w-4 h-4" /></Button></div><div className="flex flex-wrap gap-2 mt-3">{profile.reportTopics.length ? profile.reportTopics.map((topic) => <button key={topic} onClick={() => void saveProfile({ reportTopics: profile.reportTopics.filter((item) => item !== topic) })} className="border border-border px-2 py-1 text-xs hover:border-destructive hover:text-destructive">{topic} ×</button>) : <>{DEFAULT_REPORT_TOPICS.map((topic) => <span key={topic} className="border border-emerald-500/30 bg-emerald-500/5 text-emerald-300 px-2 py-1 text-xs">{topic}</span>)}<p className="basis-full text-xs text-muted-foreground mt-1">未設定の場合は、この4テーマを朝夕にGoogle検索し、元記事リンクと概要を保存します。</p></>}</div></div>
             </div>
 
             <div className="border border-border bg-card">
@@ -311,8 +341,8 @@ export default function OfficialLinePage() {
         </section>
 
         <section className="grid lg:grid-cols-[0.8fr_1.2fr] gap-6">
-          <div className="border border-border bg-card"><div className="p-5 border-b border-border flex items-center gap-2"><Clock3 className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">配信履歴</h2></div><div className="divide-y divide-border">{reports.length ? reports.map((report) => <button key={report.id} onClick={() => setActiveReport(report)} className={`w-full text-left p-4 hover:bg-muted/30 ${activeReport?.id === report.id ? "bg-emerald-500/5" : ""}`}><div className="flex justify-between gap-2 text-sm"><span>{report.reportDate}</span><span className={report.status === "delivered" ? "text-emerald-400" : report.status === "failed" ? "text-destructive" : "text-muted-foreground"}>{report.status === "delivered" ? "配信済み" : report.status === "failed" ? "失敗" : "作成済み"}</span></div><p className="text-xs text-muted-foreground mt-1">{formatTime(report.createdAt)}</p></button>) : <p className="p-5 text-sm text-muted-foreground">まだレポートはありません。</p>}</div></div>
-          <div className="border border-border bg-card"><div className="p-5 border-b border-border flex items-center justify-between"><div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Report preview</p><h2 className="font-semibold mt-1">{activeReport ? `${activeReport.reportDate} のレポート` : "レポートを作成してください"}</h2></div>{activeReport?.deliveredAt && <span className="text-xs text-emerald-400">LINE配信済み</span>}</div><div className="p-5 whitespace-pre-wrap leading-7 text-sm text-foreground/90 min-h-64">{activeReport?.content || activeReport?.error || "「プレビュー」を押すと、朝9時に届く内容を確認できます。"}</div></div>
+           <div className="border border-border bg-card"><div className="p-5 border-b border-border flex items-center gap-2"><Clock3 className="w-4 h-4 text-emerald-400" /><h2 className="font-semibold">朝夕の配信履歴</h2></div><div className="divide-y divide-border">{reports.length ? reports.map((report) => <button key={report.id} onClick={() => setActiveReport(report)} className={`w-full text-left p-4 hover:bg-muted/30 ${activeReport?.id === report.id ? "bg-emerald-500/5" : ""}`}><div className="flex justify-between gap-2 text-sm"><span>{report.reportDate} <span className="text-xs text-emerald-400 ml-1">{reportSlotLabel(report.reportSlot || "morning")}</span></span><span className={report.status === "delivered" ? "text-emerald-400" : report.status === "failed" || report.status === "delivery_unknown" ? "text-destructive" : "text-muted-foreground"}>{report.status === "delivered" ? "配信済み" : report.status === "failed" ? "失敗" : report.status === "delivery_unknown" ? "送信結果要確認" : report.status === "sending" ? "送信中" : "作成済み"}</span></div><p className="text-xs text-muted-foreground mt-1">{formatTime(report.createdAt)}</p></button>) : <p className="p-5 text-sm text-muted-foreground">まだレポートはありません。</p>}</div></div>
+           <div className="border border-border bg-card"><div className="p-5 border-b border-border flex items-center justify-between"><div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Report preview</p><h2 className="font-semibold mt-1">{activeReport ? `${activeReport.reportDate} ${reportSlotLabel(activeReport.reportSlot || "morning")}のレポート` : "レポートを作成してください"}</h2></div>{activeReport?.deliveredAt && <span className="text-xs text-emerald-400">LINE配信済み</span>}</div>{activeReport && (activeReport.status === "sending" || activeReport.status === "delivery_unknown") && <div className="mx-5 mt-5 border border-amber-500/40 bg-amber-500/10 p-3 text-sm"><p className="font-medium text-amber-300">{activeReport.status === "delivery_unknown" ? "LINEの送信結果を確認できません" : "LINEへ送信中です"}</p><p className="text-muted-foreground mt-1">{activeReport.error || "重複送信を防ぐため、自動再送は行いません。LINE側の受信状況をご確認ください。"}</p></div>}<div className="p-5 whitespace-pre-wrap leading-7 text-sm text-foreground/90 min-h-64">{activeReport?.content ? renderLinkedText(activeReport.content) : activeReport?.error || "朝または夜の「プレビュー」を押すと、LINEに届く内容を確認できます。"}</div>{activeReport?.sources && activeReport.sources.length > 0 && <div className="border-t border-border p-5"><p className="text-xs font-mono uppercase tracking-widest text-emerald-400 mb-3">Google source articles</p><div className="space-y-3">{activeReport.sources.map((source) => <a key={source.id} href={source.url} target="_blank" rel="noreferrer" className="block border border-border p-3 hover:border-emerald-500/50"><p className="text-[10px] uppercase tracking-wider text-muted-foreground">{source.topic}</p><p className="font-medium mt-1 text-sm">{source.title}</p>{source.snippet && <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{source.snippet}</p>}<p className="text-xs text-emerald-400 mt-2 break-all">{source.url}</p></a>)}</div></div>}</div>
         </section>
       </main>
     </div>

@@ -220,6 +220,8 @@ export const assistantReportsTable = pgTable(
     id: serial("id").primaryKey(),
     userId: text("user_id").notNull(),
     reportDate: text("report_date").notNull(),
+    reportSlot: text("report_slot").notNull().default("morning"),
+    generationToken: text("generation_token"),
     status: text("status").notNull().default("running"),
     content: text("content"),
     sourceSummary: text("source_summary"),
@@ -232,7 +234,7 @@ export const assistantReportsTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   },
   (table) => ({
-    userDateUnique: uniqueIndex("assistant_reports_user_date_idx").on(table.userId, table.reportDate),
+    userDateSlotUnique: uniqueIndex("assistant_reports_user_date_slot_idx").on(table.userId, table.reportDate, table.reportSlot),
   }),
 );
 
