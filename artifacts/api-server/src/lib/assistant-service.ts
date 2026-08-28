@@ -33,6 +33,77 @@ const DEFAULT_TOPICS = [
   "物流・人材業界の最新ニュース",
   "中小企業と営業活動に影響するニュース",
 ];
+const DAILY_REPORT_HOUR = 9;
+const SIN_JAPAN_MANAGER_REPORT_HOURS = [9, 12, 17] as const;
+const DAILY_REPORT_TEMPLATE = [
+  "おはようございます。",
+  "本日の目標・タスク・状況を共有します。",
+  "",
+  "【KGI】",
+  "・キャッシュ1,000万円｜エンジェル投資",
+  "・月商1,000万円｜＋500万円",
+  "・ストック月100万円｜自社車両30台",
+  "",
+  "【数字】",
+  "・キャッシュ｜現在： ／ 目標：1,000万円",
+  "・売上｜現在： ／ 目標：1,000万円",
+  "・自社車両｜現在： ／ 目標：30台",
+  "",
+  "【今日の最優先】",
+  "・",
+  "",
+  "【今日のTODO】",
+  "・月末処理",
+  "・営業アプリの開発",
+  "",
+  "【営業｜人が欲しいものを提供】",
+  "・金｜営業アプリ",
+  "・案件｜営業アプリ → オプチャ → Chat LOGI",
+  "・人｜営業アプリ → オプチャ → KEI SAIYOU",
+  "・車｜営業アプリ → オプチャ → Chat VAN",
+  "",
+  "【組織】",
+  "・秘書より対応事項を取得",
+  "",
+  "【連絡・確認】",
+  "・LINE：",
+  "・電話：",
+  "・メール：",
+  "・メモ：",
+  "",
+  "【家・家族】",
+  "・今日やること：",
+  "・確認事項：",
+  "",
+  "【体】",
+  "・睡眠：",
+  "・体調：",
+  "・食事：",
+  "・運動：",
+  "",
+  "【人】",
+  "・今日会う人：",
+  "・連絡する人：",
+  "",
+  "【勉強】",
+  "・今日学ぶこと：",
+  "・学んだこと：",
+  "・仕事・生活への活用：",
+  "",
+  "【楽しみ】",
+  "・今日：",
+  "・今週：",
+  "",
+  "【今日の情報】",
+  "・海外｜",
+  "・日本｜",
+  "・経済｜",
+  "・ビジネス｜",
+  "・話題｜",
+  "",
+  "以上が本日の状況です。",
+  "仕事・生活・学びを積み上げながら、今日の最優先から進めていきましょう。",
+].join("\n");
 const MAX_CONTEXT_ITEMS = 20;
 
 function sinJapanPublicBaseUrl() {
@@ -713,9 +784,14 @@ export async function sendSinJapanDailyReport(ownerUserId: string) {
 }
 
 export async function runSinJapanDailyReporter() {
-  const { hour } = localClock("Asia/Tokyo");
-  if (hour < 19 || !isLineConfigured()) return;
-  const reportDate = localDate("Asia/Tokyo");
+  const timezone = "Asia/Tokyo";
+  const { hour, minute } = localClock(timezone);
+  if (
+    minute !== 0
+    || !SIN_JAPAN_MANAGER_REPORT_HOURS.includes(hour as (typeof SIN_JAPAN_MANAGER_REPORT_HOURS)[number])
+    || !isLineConfigured()
+  ) return;
+  const reportDate = `${localDate(timezone)}-${String(hour).padStart(2, "0")}:00`;
   const profiles = await db.select().from(assistantProfilesTable).where(isNotNull(assistantProfilesTable.lineUserId));
   for (const profile of profiles) {
     const [existing] = await db.select().from(sinJapanDailyReportsTable).where(and(eq(sinJapanDailyReportsTable.ownerUserId, profile.userId), eq(sinJapanDailyReportsTable.reportDate, reportDate)));
@@ -789,12 +865,88 @@ async function gatherResearch(topics: string[]) {
 
 function buildDailyReportDraft(timezone: string, context: Awaited<ReturnType<typeof buildAssistantContext>>, research: Array<{ topic: string; title: string; url: string; snippet: string }>) {
   const topTodos = context.todos.slice(0, 3);
-  const oldTodos = context.todos.filter((todo) => todo.createdAt.getTime() < Date.now() - 24 * 60 * 60 * 1000).slice(0, 4);
   const goals = context.memories.filter((memory) => memory.category === "goal").slice(0, 2);
   const organizationNotes = context.notes.filter((note) => ["idea", "decision", "person_company", "reference"].includes(note.category)).slice(0, 4);
   const date = reportDateLabel(timezone);
   const bullets = (items: string[], empty: string) => items.length ? items.map((item) => `・${item}`).join("\n") : `・${empty}`;
-  return `おはようございます（${date}）\n\n【今日の目的】\n${bullets(goals.map((goal) => goal.content), "今日の最優先タスクを1つ決めて、着手する")}\n\n【TODO】\n${bullets(topTodos.map((todo) => `${todo.title}${todo.priority === "high" ? "（重要）" : ""}`), "未完了のTODOはありません")}\n\n【売上タスク】\n${bullets([`営業リード ${context.sales.leads}件`, `送信済みメール ${context.sales.sentEmails}件`, `有効な営業スケジュール ${context.sales.activeSchedules}件`], "営業タスクはありません")}\n\n【組織タスク】\n${bullets(organizationNotes.map((note) => `${note.title}: ${note.content}`), "整理中の組織タスクはありません")}\n\n【電話確認】\n・電話連携は未接続です\n\n【メール確認】\n・個人メールは未接続です\n・営業メールの送信状況を確認してください（送信済み ${context.sales.sentEmails}件）\n\n【LINE確認】\n・AI秘書のLINE連携：${context.profile.lineUserId ? "連携済み" : "未連携"}\n\n【メモ・注意事項】\n${bullets(oldTodos.map((todo) => `未処理の可能性：${todo.title}`), "特にありません")}\n\n【注意すべきリスク】\n・期限が近いTODOと返信待ちの案件を確認してください\n\n【次のチェック】\n・11:00に進捗確認\n\n【今日の情報】\n${bullets(research.slice(0, 5).map((item) => `${item.title}\\n  ${item.url}`), "新しい情報はありません")}`;
+  const todoItems = topTodos.length
+    ? topTodos.map((todo) => `${todo.title}${todo.priority === "high" ? "（重要）" : ""}`)
+    : ["月末処理", "営業アプリの開発"];
+  const organizationItems = [
+    "秘書より対応事項を取得",
+    ...organizationNotes.map((note) => `${note.title}: ${note.content}`),
+  ];
+  const newsFor = (patterns: RegExp[]) => research.find((item) => patterns.some((pattern) => pattern.test(`${item.topic} ${item.title}`)));
+  const newsLine = (label: string, patterns: RegExp[]) => {
+    const item = newsFor(patterns);
+    return item ? `・${label}｜${item.title}\n  ${item.url}` : `・${label}｜`;
+  };
+  return formatAssistantReply(`おはようございます。
+本日の目標・タスク・状況を共有します。（${date}）
+
+【KGI】
+・キャッシュ1,000万円｜エンジェル投資
+・月商1,000万円｜＋500万円
+・ストック月100万円｜自社車両30台
+
+【数字】
+・キャッシュ｜現在： ／ 目標：1,000万円
+・売上｜現在： ／ 目標：1,000万円
+・自社車両｜現在： ／ 目標：30台
+
+【今日の最優先】
+${bullets(goals.slice(0, 1).map((goal) => goal.content), "")}
+
+【今日のTODO】
+${bullets(todoItems, "未完了のTODOはありません")}
+
+【営業｜人が欲しいものを提供】
+・金｜営業アプリ
+・案件｜営業アプリ → オプチャ → Chat LOGI
+・人｜営業アプリ → オプチャ → KEI SAIYOU
+・車｜営業アプリ → オプチャ → Chat VAN
+
+【組織】
+${bullets(organizationItems, "秘書より対応事項を取得")}
+
+【連絡・確認】
+・LINE：
+・電話：
+・メール：
+・メモ：
+
+【家・家族】
+・今日やること：
+・確認事項：
+
+【体】
+・睡眠：
+・体調：
+・食事：
+・運動：
+
+【人】
+・今日会う人：
+・連絡する人：
+
+【勉強】
+・今日学ぶこと：
+・学んだこと：
+・仕事・生活への活用：
+
+【楽しみ】
+・今日：
+・今週：
+
+【今日の情報】
+${newsLine("海外", [/海外|世界|global|international/iu])}
+${newsLine("日本", [/日本|国内|japan/iu])}
+${newsLine("経済", [/経済|金融|市場|economy|finance/iu])}
+${newsLine("ビジネス", [/ビジネス|企業|営業|business/iu])}
+${newsLine("話題", [/話題|トレンド|ニュース|trend/iu])}
+
+以上が本日の状況です。
+仕事・生活・学びを積み上げながら、今日の最優先から進めていきましょう。`);
 }
 
 export async function generateDailyReport(userId: string, options: { deliver?: boolean; force?: boolean } = {}) {
@@ -836,7 +988,8 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
         model: "gpt-4o-mini",
         messages: [{
           role: "system",
-          content: "あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字は使わず、親しみやすく仕事で読みやすい文章にしてください。情報がない項目も削除せず「ありません」「未接続」と明記してください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。情報源URLは改変しないでください。\nおはようございます（M/D 曜日）\n【今日の目的】\n【TODO】\n【売上タスク】\n【組織タスク】\n【電話確認】\n【メール確認】\n【LINE確認】\n【メモ・注意事項】\n【注意すべきリスク】\n【次のチェック】\n【今日の情報】",
+          content: `あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字は使わず、親しみやすく仕事で読みやすい文章にしてください。情報がない項目も削除せず、空欄のまま残してください。確認できない数字・予定・健康・家族情報は推測しないでください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。情報源URLは改変しないでください。
+${DAILY_REPORT_TEMPLATE}`,
         }, {
           role: "user",
           content: `日付: ${reportDate}\n未完了TODO: ${JSON.stringify(context.todos)}\n営業状況: ${JSON.stringify(context.sales)}\n整理メモ: ${JSON.stringify(context.notes)}\n記憶: ${JSON.stringify(context.memories)}\n収集情報: ${sourceSummary}`,
@@ -867,8 +1020,8 @@ export async function generateDailyReport(userId: string, options: { deliver?: b
 export async function runAssistantScheduler() {
   const profiles = await db.select().from(assistantProfilesTable).where(and(eq(assistantProfilesTable.reportsEnabled, true), sql`${assistantProfilesTable.lineUserId} is not null`));
   for (const profile of profiles) {
-    const clock = localClock(profile.timezone);
-    if (clock.hour !== profile.reportHour || clock.minute !== profile.reportMinute) continue;
+    const clock = localClock("Asia/Tokyo");
+    if (clock.hour !== DAILY_REPORT_HOUR || clock.minute !== 0) continue;
     const date = localDate(profile.timezone);
     const [existing] = await db.select().from(assistantReportsTable).where(and(eq(assistantReportsTable.userId, profile.userId), eq(assistantReportsTable.reportDate, date)));
     if (existing && (existing.status === "delivered" || existing.attemptCount >= 3)) continue;

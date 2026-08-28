@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  BellRing, BookOpen, CheckCircle2, Circle, Clock3, ExternalLink, Link2,
+  BellRing, BookOpen, CheckCircle2, Circle, Clock3, Link2,
   FileText, Loader2, MessageCircle, Plus, RefreshCw, Search, Send, Sparkles, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 
@@ -24,6 +23,8 @@ type Todo = { id: number; title: string; priority: string; status: string; creat
 type Memory = { id: number; content: string; category: string; createdAt: string };
 type Note = { id: number; title: string; content: string; category: string; createdAt: string };
 type Report = { id: number; reportDate: string; status: string; content: string | null; deliveredAt: string | null; error: string | null; createdAt: string };
+type SinJapanStatus = { managerLineConfigured: boolean; lineConfigured: boolean };
+type SinJapanEscalation = { id: number; status: string };
 
 const formatTime = (value: string | null) => value ? new Intl.DateTimeFormat("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
 const DEFAULT_REPORT_TOPICS = ["日本と世界の経済ニュース", "SNSで話題のニュースとトレンド", "物流・人材業界の最新ニュース", "中小企業と営業活動に影響するニュース"];
@@ -36,6 +37,9 @@ export default function OfficialLinePage() {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [sinJapanStatus, setSinJapanStatus] = useState<SinJapanStatus | null>(null);
+  const [sinJapanEscalations, setSinJapanEscalations] = useState<SinJapanEscalation[]>([]);
+  const [sinJapanManagerReport, setSinJapanManagerReport] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [todoTitle, setTodoTitle] = useState("");
@@ -63,6 +67,17 @@ export default function OfficialLinePage() {
       setNotes(data.notes ?? []);
       setReports(data.reports);
       setActiveReport(data.reports[0] ?? null);
+      const [statusRes, escalationsRes, managerReportRes] = await Promise.all([
+        fetch("/api/assistant/sin-japan-line/status", { credentials: "include" }),
+        fetch("/api/assistant/sin-japan-line/escalations", { credentials: "include" }),
+        fetch("/api/assistant/sin-japan-line/daily-report", { credentials: "include" }),
+      ]);
+      if (statusRes.ok) setSinJapanStatus(await statusRes.json());
+      if (escalationsRes.ok) setSinJapanEscalations(await escalationsRes.json());
+      if (managerReportRes.ok) {
+        const managerReport = await managerReportRes.json();
+        setSinJapanManagerReport(managerReport.content || "");
+      }
     } catch (error) {
       toast({ title: "読み込みに失敗しました", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
     } finally {
@@ -220,18 +235,38 @@ export default function OfficialLinePage() {
         <section className="grid lg:grid-cols-3 gap-4">
           <div className="border border-border bg-card p-5 lg:col-span-2">
             <div className="flex items-start justify-between gap-4 mb-4">
-              <div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Daily briefing</p><h2 className="font-semibold mt-1">毎朝の秘書レポート</h2><p className="text-sm text-muted-foreground mt-1">今日の目的、TODO、売上・組織タスク、確認事項、ニュースを日本時間で通知します。</p></div>
+              <div><p className="text-xs font-mono text-emerald-400 uppercase tracking-widest">Daily briefing</p><h2 className="font-semibold mt-1">毎日の報告（本人用）</h2><p className="text-sm text-muted-foreground mt-1">KGI、数字、最優先、TODO、仕事・生活・学び、今日の情報を毎朝まとめます。</p></div>
               <Switch checked={profile.reportsEnabled} onCheckedChange={(checked) => void saveProfile({ reportsEnabled: checked })} />
             </div>
             <div className="flex flex-wrap items-end gap-3">
-              <div><Label className="text-xs text-muted-foreground">配信時刻（日本時間）</Label><div className="flex items-center gap-1 mt-1"><Input type="number" min="0" max="23" value={profile.reportHour} onChange={(e) => setProfile({ ...profile, reportHour: Number(e.target.value) })} className="w-16 h-9 rounded-none" /><span className="text-muted-foreground">:</span><Input type="number" min="0" max="59" value={String(profile.reportMinute).padStart(2, "0")} onChange={(e) => setProfile({ ...profile, reportMinute: Number(e.target.value) })} className="w-16 h-9 rounded-none" /></div></div>
-              <Button variant="outline" size="sm" className="rounded-none h-9" disabled={busy === "settings"} onClick={() => void saveProfile({ reportHour: profile.reportHour, reportMinute: profile.reportMinute })}>時刻を保存</Button>
+              <div className="border border-emerald-500/30 bg-emerald-500/5 px-4 py-2"><p className="text-[10px] uppercase tracking-widest text-muted-foreground">配信時刻</p><p className="font-mono text-emerald-300 mt-1">毎日 9:00</p></div>
               <Button variant="outline" size="sm" className="rounded-none h-9" disabled={busy !== null} onClick={() => void runReport(false)}><BookOpen className="w-3.5 h-3.5 mr-2" />プレビュー</Button>
             </div>
           </div>
           <div className="border border-border bg-card p-5">
             <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground">秘書の現在地</p>
             <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between"><span className="text-muted-foreground">LINE連携</span><span className={profile.linked ? "text-emerald-400" : "text-amber-400"}>{profile.linked ? "連携済み" : "未連携"}</span></div><div className="flex justify-between"><span className="text-muted-foreground">未完了TODO</span><span>{openTodos.length}件</span></div><div className="flex justify-between"><span className="text-muted-foreground">保存した記憶</span><span>{memories.length}件</span></div></div>
+          </div>
+        </section>
+
+        <section className="grid xl:grid-cols-[0.75fr_1.25fr] gap-4">
+          <div className="border border-border bg-card p-5">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 border border-amber-500/30 bg-amber-500/10 flex items-center justify-center shrink-0"><BellRing className="w-5 h-5 text-amber-300" /></div>
+              <div><p className="text-xs font-mono text-amber-300 uppercase tracking-widest">SIN JAPAN operations</p><h2 className="font-semibold mt-1">管理者報告</h2><p className="text-sm text-muted-foreground mt-1">ドライバーの稼働・未報告・事故・欠勤・確認事項を、この公式LINEへ送信します。</p></div>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-2 mt-5">
+              {["9:00", "12:00", "17:00"].map((time) => <div key={time} className="border border-border bg-background px-3 py-2 text-center font-mono text-sm">{time}</div>)}
+            </div>
+            <div className="mt-4 space-y-2 text-sm">
+              <div className="flex justify-between gap-3"><span className="text-muted-foreground">管理者LINE</span><span className={sinJapanStatus?.managerLineConfigured ? "text-emerald-400" : "text-amber-300"}>{sinJapanStatus?.managerLineConfigured ? "送信可能" : "連携待ち"}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-muted-foreground">未確認の管理者報告</span><span>{sinJapanEscalations.length}件</span></div>
+            </div>
+            <Button asChild variant="outline" className="rounded-none w-full mt-5"><a href="/sin-japan-line">SIN JAPAN LINEの報告を管理</a></Button>
+          </div>
+          <div className="border border-border bg-card">
+            <div className="p-5 border-b border-border flex items-center justify-between gap-3"><div><p className="text-xs font-mono text-amber-300 uppercase tracking-widest">Manager report preview</p><h2 className="font-semibold mt-1">次回送信される管理者報告</h2></div><span className="text-xs text-muted-foreground">9時・12時・17時</span></div>
+            <pre className="p-5 whitespace-pre-wrap text-sm leading-7 font-sans max-h-[320px] overflow-y-auto min-h-48">{sinJapanManagerReport || "SIN JAPAN LINEのドライバー登録後に、管理者報告の内容が表示されます。"}</pre>
           </div>
         </section>
 
