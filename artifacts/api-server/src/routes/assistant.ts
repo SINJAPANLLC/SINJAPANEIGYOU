@@ -17,9 +17,10 @@ import {
   sinJapanDriversTable,
   sinJapanEscalationsTable,
   sinJapanResourcesTable,
+  sinJapanUnlinkedGroupReportsTable,
 } from "@workspace/db";
-import { getUserId, requireAuth } from "../lib/auth";
-import { buildSinJapanDailyReport, buildSinJapanOnboardingGuide, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, ensureSinJapanDefaultResources, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, notifySinJapanManagerConfirmation, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
+import { ADMIN_USER_ID, getUserId, requireAuth } from "../lib/auth";
+import { buildSinJapanDailyReport, buildSinJapanOnboardingGuide, containsDriverCredential, createSinJapanDriverLinkCode, driverCredentialSafetyReply, ensureSinJapanDefaultResources, generateDailyReport, getAssistantDate, getOrCreateAssistantProfile, getSinJapanDriverGroup, linkSinJapanDriverGroup, notifySinJapanManager, notifySinJapanManagerConfirmation, processAssistantMessage, processSinJapanDriverMessage, recordSinJapanDriverReport, recordSinJapanUnlinkedGroupReport, searchAssistantKnowledge, sendSinJapanDailyReport } from "../lib/assistant-service";
 import { isLineConfigured, isSinJapanLineConfigured, replyLineText, replySinJapanLineText, safePushLineText, safePushSinJapanLineText, verifyLineSignature, verifySinJapanLineSignature } from "../lib/line-client";
 import { getAirtableDriverDetails, getAirtableStatus, searchAirtableLookupCandidates } from "../lib/airtable-client";
 
@@ -124,13 +125,22 @@ router.post("/assistant/sin-japan-line/webhook", async (req, res): Promise<void>
           if (group.groupType === "onboarding" && event.replyToken) {
             await replySinJapanLineText(event.replyToken, await buildSinJapanOnboardingGuide(group.ownerUserId, group.driverId));
           }
+          continue;
         } catch (error) {
           req.log?.warn({ err: error, groupId }, "SIN JAPAN group linking failed");
         }
-        continue;
       }
       const relation = await getSinJapanDriverGroup(groupId);
-      if (!relation) continue;
+      if (!relation) {
+        await recordSinJapanUnlinkedGroupReport({
+          adminUserId: ADMIN_USER_ID,
+          groupId,
+          sourceUserId: typeof event.source?.userId === "string" ? event.source.userId : undefined,
+          text,
+          lineMessageId: event.message?.id,
+        });
+        continue;
+      }
       if (containsDriverCredential(text)) {
         if (relation.group.groupType === "onboarding" && event.replyToken) await replySinJapanLineText(event.replyToken, driverCredentialSafetyReply());
         continue;
@@ -456,6 +466,14 @@ router.delete("/assistant/sin-japan-line/resources/:id", requireAuth, async (req
 
 router.get("/assistant/sin-japan-line/reports", requireAuth, async (req, res): Promise<void> => {
   const reports = await db.select().from(sinJapanDriverReportsTable).where(eq(sinJapanDriverReportsTable.ownerUserId, getUserId(req))).orderBy(desc(sinJapanDriverReportsTable.createdAt)).limit(100);
+  res.json(reports);
+});
+
+router.get("/assistant/sin-japan-line/unlinked-group-reports", requireAuth, async (req, res): Promise<void> => {
+  const reports = await db.select().from(sinJapanUnlinkedGroupReportsTable)
+    .where(eq(sinJapanUnlinkedGroupReportsTable.adminUserId, getUserId(req)))
+    .orderBy(desc(sinJapanUnlinkedGroupReportsTable.createdAt))
+    .limit(100);
   res.json(reports);
 });
 

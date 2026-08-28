@@ -117,6 +117,22 @@ export const sinJapanDriverReportsTable = pgTable("sin_japan_driver_reports", {
   lineMessageIdUnique: uniqueIndex("sin_japan_driver_reports_line_message_id_idx").on(table.lineMessageId),
 }));
 
+export const sinJapanUnlinkedGroupReportsTable = pgTable("sin_japan_unlinked_group_reports", {
+  id: serial("id").primaryKey(),
+  adminUserId: text("admin_user_id").notNull(),
+  groupId: text("group_id").notNull(),
+  sourceUserId: text("source_user_id"),
+  lineMessageId: text("line_message_id"),
+  reportType: text("report_type").notNull().default("question"),
+  urgency: text("urgency").notNull().default("normal"),
+  content: text("content").notNull(),
+  status: text("status").notNull().default("pending"),
+  adminNotifiedAt: timestamp("admin_notified_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  lineMessageIdUnique: uniqueIndex("sin_japan_unlinked_group_reports_line_message_id_idx").on(table.lineMessageId),
+}));
+
 export const sinJapanEscalationsTable = pgTable("sin_japan_escalations", {
   id: serial("id").primaryKey(),
   ownerUserId: text("owner_user_id").notNull(),

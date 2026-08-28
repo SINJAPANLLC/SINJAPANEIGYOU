@@ -73,6 +73,16 @@ type Escalation = {
   createdAt: string;
   managerNotifiedAt: string | null;
 };
+type UnlinkedGroupReport = {
+  id: number;
+  groupId: string;
+  reportType: string;
+  urgency: "urgent" | "high" | "normal";
+  content: string;
+  status: string;
+  createdAt: string;
+  adminNotifiedAt: string | null;
+};
 type Resource = { id: number; title: string; url: string; phase: string; description: string | null };
 
 const workflowStages = [
@@ -107,6 +117,7 @@ export default function SinJapanLinePage() {
   const [status, setStatus] = useState<AirtableStatus | null>(null);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const [unlinkedGroupReports, setUnlinkedGroupReports] = useState<UnlinkedGroupReport[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [dailyReport, setDailyReport] = useState("");
   const [loading, setLoading] = useState(true);
@@ -130,16 +141,18 @@ export default function SinJapanLinePage() {
   const [isSending, setIsSending] = useState(false);
 
   const loadDashboard = async () => {
-    const [nextStatus, nextDrivers, nextEscalations, nextResources, report] = await Promise.all([
+    const [nextStatus, nextDrivers, nextEscalations, nextUnlinkedGroupReports, nextResources, report] = await Promise.all([
       requestJson<AirtableStatus>("/api/assistant/sin-japan-line/status"),
       requestJson<Driver[]>("/api/assistant/sin-japan-line/drivers"),
       requestJson<Escalation[]>("/api/assistant/sin-japan-line/escalations"),
+      requestJson<UnlinkedGroupReport[]>("/api/assistant/sin-japan-line/unlinked-group-reports"),
       requestJson<Resource[]>("/api/assistant/sin-japan-line/resources"),
       requestJson<{ content: string }>("/api/assistant/sin-japan-line/daily-report"),
     ]);
     setStatus(nextStatus);
     setDrivers(nextDrivers);
     setEscalations(nextEscalations);
+    setUnlinkedGroupReports(nextUnlinkedGroupReports);
     setResources(nextResources);
     setDailyReport(report.content);
     setSelectedDriverId((current) => current ?? nextDrivers[0]?.id ?? null);
@@ -406,7 +419,7 @@ export default function SinJapanLinePage() {
             <div>
               <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">SIN JAPAN LINE</h1>
               <p className="text-muted-foreground mt-3 max-w-2xl leading-relaxed">
-                採用・面談用グループはドライバー様ごとに案内を送信します。稼働報告用グループは招待・紐付け後も読み取りと記録だけを行い、グループ内へは返信いたしません。重要通知と日次報告は管理者様の公式LINEへお届けします。
+                 採用・面談用グループはドライバー様ごとに案内を送信します。未紐付けグループも発言を整理して管理者へ報告し、稼働報告用グループでは読み取りと記録だけを行います。グループ内へは返信いたしません。
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -435,7 +448,7 @@ export default function SinJapanLinePage() {
               ["01", "ドライバー登録", "Airtable検索キーを登録"],
               ["02", "個別案内を設定", "フォーム・契約・研修・車両準備を確認"],
               ["03", "採用グループ紐付け", "SIN JAPAN LINEを招待して認証"],
-              ["04", "稼働グループを記録", "招待・認証後もグループへ返信しない"],
+               ["04", "稼働グループを記録", "未紐付け時も管理者へ報告・グループへ返信しない"],
             ].map(([number, title, detail]) => (
               <div key={number} className="p-4">
                 <span className="text-[10px] tracking-widest text-emerald-400 font-mono">{number}</span>
@@ -596,7 +609,7 @@ export default function SinJapanLinePage() {
                         <div className="flex items-center justify-between gap-3"><h4 className="font-medium">{label}</h4>{group ? <span className="text-xs text-emerald-300 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" />紐付け済み</span> : <span className="text-xs text-amber-300">未紐付け</span>}</div>
                         <p className="text-xs text-muted-foreground mt-2">{isOnboarding
                           ? group ? "SIN JAPAN LINEから初回案内が届きます。以降の質問にも返答します。" : "SIN JAPAN LINEを招待し、認証コードでこのドライバー様と紐付けます。"
-                          : group ? "受信内容を記録し、事故・欠勤など緊急時だけ管理者LINEへ通知します。グループには一切返信しません。" : "SIN JAPAN LINEを招待し、認証コードで紐付けます。紐付け後もグループ内で発言しません。"}
+                           : group ? "受信内容を記録し、事故・欠勤など緊急時だけ管理者LINEへ通知します。グループには一切返信しません。" : "招待後は未紐付け報告として管理者LINEへ通知します。認証コードで紐付け後もグループ内では発言しません。"}
                         </p>
                         {!group && <Button variant="outline" onClick={() => void issueCode(groupType)} className="rounded-none mt-4 w-full"><Link2 className="w-4 h-4 mr-2" />{isOnboarding ? "採用グループ" : "稼働グループ"}の認証コードを発行</Button>}
                         {code && !group ? <div className={`mt-4 border p-3 ${isOnboarding ? "border-emerald-500/30 bg-emerald-500/5" : "border-amber-500/30 bg-amber-500/5"}`}><p className="text-xs text-muted-foreground">{isOnboarding ? "採用グループ" : "稼働グループ"}で送信</p><p className={`text-lg font-mono tracking-[0.22em] mt-1 ${isOnboarding ? "text-emerald-300" : "text-amber-300"}`}>登録 {code.code}</p><p className="text-[10px] text-muted-foreground mt-2">{formatDateTime(code.expiresAt)}まで・一回限り</p></div> : null}
@@ -607,6 +620,22 @@ export default function SinJapanLinePage() {
                 </div>
               </div>
             )}
+          </div>
+        </section>
+
+        <section className="border border-border bg-card mb-6">
+          <div className="p-5 border-b border-border flex items-start gap-3">
+            <div className="w-10 h-10 border border-sky-500/30 bg-sky-500/10 flex items-center justify-center shrink-0"><MessageCircle className="w-5 h-5 text-sky-300" /></div>
+            <div><h2 className="font-semibold">未紐付けグループの報告</h2><p className="text-sm text-muted-foreground mt-1">招待済みでドライバー未特定のグループも読み取り、分類して管理者LINEへ通知します。グループ内には返信しません。</p></div>
+          </div>
+          <div className="p-5 space-y-3 max-h-[360px] overflow-y-auto">
+            {unlinkedGroupReports.length === 0 ? <div className="text-sm text-muted-foreground text-center py-8">未紐付けグループからの報告はありません。</div> : unlinkedGroupReports.map((item) => (
+              <div key={item.id} className="border border-border p-4">
+                <div className="flex justify-between gap-3"><p className={`text-[10px] uppercase tracking-widest ${item.urgency === "urgent" ? "text-red-300" : item.urgency === "high" ? "text-amber-300" : "text-sky-300"}`}>{item.urgency === "urgent" ? "緊急" : item.urgency === "high" ? "要確認" : "受信"} · {item.reportType}</p><span className={item.adminNotifiedAt ? "text-[10px] text-emerald-300" : "text-[10px] text-amber-300"}>{item.adminNotifiedAt ? "管理者通知済み" : item.status === "delivery_unknown" ? "送信結果要確認" : item.status === "sending" ? "送信中" : "通知待ち"}</span></div>
+                <p className="text-sm mt-2 whitespace-pre-wrap">{item.content}</p>
+                <p className="text-xs text-muted-foreground mt-3">グループ {item.groupId} · {formatDateTime(item.createdAt)}</p>
+              </div>
+            ))}
           </div>
         </section>
 

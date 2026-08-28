@@ -1,2 +1,3 @@
 - [Driver data isolation](sin-japan-driver-data-isolation.md) — Credential safety, fail-closed individual Airtable views, and read-only operation groups are non-negotiable.
 - [LINE report delivery safety](line-report-delivery-safety.md) — Fence report generation leases and stop automatic retries when LINE delivery is ambiguous.
+- [SIN JAPAN unlinked groups](sin-japan-unlinked-groups.md) — Preserve and classify unlinked group speech for one designated admin without replying in the group.
