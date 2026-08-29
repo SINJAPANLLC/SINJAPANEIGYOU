@@ -636,12 +636,12 @@ export default function SinJapanLinePage() {
         <section className="border border-border bg-card mb-6">
           <div className="p-5 border-b border-border flex items-start gap-3">
             <div className="w-10 h-10 border border-sky-500/30 bg-sky-500/10 flex items-center justify-center shrink-0"><MessageCircle className="w-5 h-5 text-sky-300" /></div>
-            <div><h2 className="font-semibold">未紐付けグループの報告</h2><p className="text-sm text-muted-foreground mt-1">緊急・要確認はすぐに、通常の業務連絡は5分ごとにまとめて管理者LINEへ通知します。グループ内には返信しません。</p></div>
+            <div><h2 className="font-semibold">未紐付けグループの報告</h2><p className="text-sm text-muted-foreground mt-1">緊急・要確認はすぐに、通常の業務連絡はドライバー報告のまとめ時に管理者LINEへ通知します。グループ内には返信しません。</p></div>
           </div>
           <div className="p-5 space-y-3 max-h-[360px] overflow-y-auto">
             {unlinkedGroupReports.length === 0 ? <div className="text-sm text-muted-foreground text-center py-8">未紐付けグループからの報告はありません。</div> : unlinkedGroupReports.map((item) => (
               <div key={item.id} className="border border-border p-4">
-                <div className="flex justify-between gap-3"><p className={`text-[10px] tracking-widest ${item.urgency === "urgent" ? "text-red-300" : item.urgency === "high" ? "text-amber-300" : "text-sky-300"}`}>{item.urgency === "urgent" ? "緊急" : item.urgency === "high" ? "要確認" : "通常"} · {reportTypeLabels[item.reportType] || "業務連絡"}</p><span className={item.adminNotifiedAt ? "text-[10px] text-emerald-300" : "text-[10px] text-amber-300"}>{item.adminNotifiedAt ? "管理者通知済み" : item.status === "delivery_unknown" ? "送信結果要確認" : item.status === "sending" ? "即時通知中" : item.status === "batch_sending" ? "まとめ通知中" : item.urgency === "normal" ? "まとめ通知待ち" : "即時通知待ち"}</span></div>
+                <div className="flex justify-between gap-3"><p className={`text-[10px] tracking-widest ${item.urgency === "urgent" ? "text-red-300" : item.urgency === "high" ? "text-amber-300" : "text-sky-300"}`}>{item.urgency === "urgent" ? "緊急" : item.urgency === "high" ? "要確認" : "通常"} · {reportTypeLabels[item.reportType] || "業務連絡"}</p><span className={item.adminNotifiedAt ? "text-[10px] text-emerald-300" : "text-[10px] text-amber-300"}>{item.adminNotifiedAt ? "管理者通知済み" : item.status === "delivery_unknown" ? "送信結果要確認" : item.status === "sending" ? "即時通知中" : item.status === "batch_sending" ? "まとめ報告中" : item.urgency === "normal" ? "まとめ報告待ち" : "即時通知待ち"}</span></div>
                 <p className="text-sm mt-2 whitespace-pre-wrap">{item.content}</p>
                 <p className="text-xs text-muted-foreground mt-3">{item.groupLabel} · {formatDateTime(item.createdAt)}</p>
               </div>

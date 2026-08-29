@@ -28,7 +28,6 @@ import {
 import { logger } from "./logger";
 import { getSinJapanGroupSummary, isLineConfigured, safePushLineText } from "./line-client";
 import {
-  buildSinJapanUnlinkedDigest,
   buildSinJapanUnlinkedImmediateNotification,
   isSinJapanImmediateUrgency,
   sinJapanReportTypeLabel,
@@ -757,7 +756,7 @@ export async function recordSinJapanUnlinkedGroupReport(params: {
   if (!report) return { report: null, duplicate: true, notified: false };
 
   if (!immediate) {
-    return { report, duplicate: false, notified: false, batched: true };
+    return { report, duplicate: false, notified: false, deferred: true };
   }
   if (!profile.lineUserId) {
     return { report, duplicate: false, notified: false, error: "管理者の公式LINEが連携されていません" };
@@ -881,47 +880,6 @@ export async function retrySinJapanManagerNotifications() {
   }
 }
 
-export async function flushSinJapanUnlinkedGroupDigests() {
-  if (!isLineConfigured()) return;
-  const candidates = await db.select().from(sinJapanUnlinkedGroupReportsTable)
-    .where(and(
-      isNull(sinJapanUnlinkedGroupReportsTable.adminNotifiedAt),
-      eq(sinJapanUnlinkedGroupReportsTable.status, "pending"),
-      eq(sinJapanUnlinkedGroupReportsTable.urgency, "normal"),
-    ))
-    .orderBy(sinJapanUnlinkedGroupReportsTable.createdAt)
-    .limit(100);
-  const adminUserIds = [...new Set(candidates.map((report) => report.adminUserId))];
-  for (const adminUserId of adminUserIds) {
-    const profile = await getOrCreateAssistantProfile(adminUserId);
-    if (!profile.lineUserId) continue;
-    const reportIds = candidates
-      .filter((report) => report.adminUserId === adminUserId)
-      .slice(0, 50)
-      .map((report) => report.id);
-    if (!reportIds.length) continue;
-    const reserved = await db.update(sinJapanUnlinkedGroupReportsTable)
-      .set({ status: "batch_sending", deliveryReservedAt: new Date() })
-      .where(and(
-        inArray(sinJapanUnlinkedGroupReportsTable.id, reportIds),
-        eq(sinJapanUnlinkedGroupReportsTable.status, "pending"),
-        eq(sinJapanUnlinkedGroupReportsTable.urgency, "normal"),
-      ))
-      .returning();
-    if (!reserved.length) continue;
-    const sent = await safePushLineText(profile.lineUserId, buildSinJapanUnlinkedDigest(reserved));
-    if (sent.ok) {
-      await db.update(sinJapanUnlinkedGroupReportsTable)
-        .set({ status: "notified", adminNotifiedAt: new Date(), deliveryReservedAt: null })
-        .where(inArray(sinJapanUnlinkedGroupReportsTable.id, reserved.map((report) => report.id)));
-    } else {
-      await db.update(sinJapanUnlinkedGroupReportsTable)
-        .set({ status: "delivery_unknown" })
-        .where(inArray(sinJapanUnlinkedGroupReportsTable.id, reserved.map((report) => report.id)));
-    }
-  }
-}
-
 function japanDailyStart() {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts();
   const year = Number(parts.find((part) => part.type === "year")?.value);
@@ -936,10 +894,12 @@ export async function buildSinJapanDailyReport(ownerUserId: string) {
   const unlinkedReports = await db.select().from(sinJapanUnlinkedGroupReportsTable)
     .where(and(
       eq(sinJapanUnlinkedGroupReportsTable.adminUserId, ownerUserId),
+      eq(sinJapanUnlinkedGroupReportsTable.status, "pending"),
+      eq(sinJapanUnlinkedGroupReportsTable.urgency, "normal"),
       gte(sinJapanUnlinkedGroupReportsTable.createdAt, japanDailyStart()),
     ))
-    .orderBy(desc(sinJapanUnlinkedGroupReportsTable.createdAt))
-    .limit(20);
+    .orderBy(sinJapanUnlinkedGroupReportsTable.createdAt)
+    .limit(50);
   const reports = driverIds.length
     ? await db.select().from(sinJapanDriverReportsTable).where(and(eq(sinJapanDriverReportsTable.ownerUserId, ownerUserId), inArray(sinJapanDriverReportsTable.driverId, driverIds), gte(sinJapanDriverReportsTable.createdAt, japanDailyStart()))).orderBy(desc(sinJapanDriverReportsTable.createdAt)).limit(100)
     : [];
@@ -948,47 +908,90 @@ export async function buildSinJapanDailyReport(ownerUserId: string) {
     : [];
   const nameOf = (driverId: number) => drivers.find((driver) => driver.id === driverId)?.name || "不明なドライバー";
   const completed = reports.filter((report) => report.reportType === "shift_end").length;
-  const incidents = reports.filter((report) => report.urgency === "urgent");
-  const pending = reports.filter((report) => report.status === "received" && report.reportType !== "question");
+  const routine = reports.filter((report) => report.status === "received" && report.urgency === "normal");
   const operatingDrivers = drivers.filter((driver) => driver.workflowStatus === "operating");
   const reportedDriverIds = new Set(reports.map((report) => report.driverId));
   const missingReports = operatingDrivers.filter((driver) => !reportedDriverIds.has(driver.id));
   const lines = [
-    "【SIN JAPAN｜本日のドライバー報告】",
+    "【SIN JAPAN｜ドライバー報告まとめ】",
     "",
-    `■ 稼働報告：${completed}件`,
-    `■ 受信報告：${reports.length}件`,
-    `■ 未報告：${missingReports.length}名`,
-    `■ 未処理エスカレーション：${escalations.length}件`,
+    "【全体】",
+    `稼働終了：${completed}件`,
+    `受信：${reports.length}件`,
+    `未報告：${missingReports.length}名`,
+    `要確認：${escalations.length}件`,
     "",
-    "■ 要確認",
-    ...(escalations.length ? escalations.slice(0, 8).map((item) => `・${nameOf(item.driverId)}：${item.summary}`) : ["・現在、未処理のエスカレーションはありません"]),
+    "【要確認】",
+    ...(escalations.length ? escalations.slice(0, 8).map((item) => `・${nameOf(item.driverId)}\n  ${item.summary.slice(0, 120)}`) : ["・現在、要確認の報告はありません"]),
     "",
-    "■ 本日の主な報告",
-    ...(pending.length ? pending.slice(0, 8).map((item) => `・${nameOf(item.driverId)}：${item.content.slice(0, 100)}`) : ["・報告はありません"]),
-  ];
-  lines.push(
-    "",
-    "■ 未紐付けグループからの報告",
-    ...(unlinkedReports.length
-      ? unlinkedReports.slice(0, 8).map((item) =>
-        `・${sinJapanUnlinkedGroupLabel(item.groupId, item.groupName)}｜${sinJapanReportTypeLabel(item.reportType)}｜${item.content.slice(0, 100)}`,
+    "【本日の通常報告】",
+    ...(routine.length
+      ? routine.slice(0, 10).map((item) =>
+        `・${nameOf(item.driverId)}｜${sinJapanReportTypeLabel(item.reportType)}\n  ${item.content.slice(0, 120)}`,
       )
-      : ["・未紐付けグループからの報告はありません"]),
-  );
-  if (missingReports.length) lines.push("", "■ 未報告ドライバー", ...missingReports.map((driver) => `・${driver.name}`));
-  if (incidents.length) {
-    lines.push("", "【事故・トラブル】", ...incidents.slice(0, 5).map((item) => `・${nameOf(item.driverId)}：${item.content.slice(0, 100)}`));
+      : ["・通常報告はありません"]),
+  ];
+  lines.push("", "【未紐付けグループの通常報告】");
+  if (unlinkedReports.length) {
+    for (const item of unlinkedReports.slice(0, 10)) {
+      lines.push(
+        `・${sinJapanUnlinkedGroupLabel(item.groupId, item.groupName)}｜${sinJapanReportTypeLabel(item.reportType)}`,
+        `  ${item.content.slice(0, 120)}`,
+      );
+    }
+  } else {
+    lines.push("・通常報告はありません");
   }
-  return { content: formatAssistantReply(lines.join("\n")), reports, escalations };
+  if (missingReports.length) {
+    lines.push("", "【未報告ドライバー】", ...missingReports.map((driver) => `・${driver.name}`));
+  }
+  return { content: formatAssistantReply(lines.join("\n")), reports, escalations, unlinkedReports };
+}
+
+async function reserveSinJapanUnlinkedReportsForSummary(reports: Array<{ id: number }>) {
+  if (!reports.length) return [];
+  return db.update(sinJapanUnlinkedGroupReportsTable)
+    .set({ status: "batch_sending", deliveryReservedAt: new Date() })
+    .where(and(
+      inArray(sinJapanUnlinkedGroupReportsTable.id, reports.map((report) => report.id)),
+      eq(sinJapanUnlinkedGroupReportsTable.status, "pending"),
+      eq(sinJapanUnlinkedGroupReportsTable.urgency, "normal"),
+    ))
+    .returning();
+}
+
+async function markSinJapanUnlinkedReportsNotified(reports: Array<{ id: number }>) {
+  if (!reports.length) return;
+  await db.update(sinJapanUnlinkedGroupReportsTable)
+    .set({ status: "notified", adminNotifiedAt: new Date(), deliveryReservedAt: null })
+    .where(and(
+      inArray(sinJapanUnlinkedGroupReportsTable.id, reports.map((report) => report.id)),
+      eq(sinJapanUnlinkedGroupReportsTable.status, "batch_sending"),
+    ));
+}
+
+async function markSinJapanUnlinkedReportsDeliveryUnknown(reports: Array<{ id: number }>) {
+  if (!reports.length) return;
+  await db.update(sinJapanUnlinkedGroupReportsTable)
+    .set({ status: "delivery_unknown" })
+    .where(and(
+      inArray(sinJapanUnlinkedGroupReportsTable.id, reports.map((report) => report.id)),
+      eq(sinJapanUnlinkedGroupReportsTable.status, "batch_sending"),
+    ));
 }
 
 export async function sendSinJapanDailyReport(ownerUserId: string) {
   const profile = await getOrCreateAssistantProfile(ownerUserId);
   if (!profile.lineUserId) return { ok: false as const, error: "管理者の公式LINEが連携されていません" };
   const report = await buildSinJapanDailyReport(ownerUserId);
+  const reservedUnlinkedReports = await reserveSinJapanUnlinkedReportsForSummary(report.unlinkedReports);
   const sent = await safePushLineText(profile.lineUserId, report.content);
-  return sent.ok ? { ok: true as const, content: report.content } : sent;
+  if (!sent.ok) {
+    await markSinJapanUnlinkedReportsDeliveryUnknown(reservedUnlinkedReports);
+    return sent;
+  }
+  await markSinJapanUnlinkedReportsNotified(reservedUnlinkedReports);
+  return { ok: true as const, content: report.content };
 }
 
 export async function runSinJapanDailyReporter() {
@@ -1017,12 +1020,15 @@ export async function runSinJapanDailyReporter() {
       )).returning()
       : await db.insert(sinJapanDailyReportsTable).values({ ownerUserId: profile.userId, reportDate, content: report.content, status: "sending", attemptCount: 1 }).onConflictDoNothing().returning();
     if (!reserved) continue;
+    const reservedUnlinkedReports = await reserveSinJapanUnlinkedReportsForSummary(report.unlinkedReports);
     const sent = await safePushLineText(profile.lineUserId!, report.content);
     if (sent.ok) {
       await db.update(sinJapanDailyReportsTable).set({ status: "delivered", sentAt: new Date(), error: null }).where(eq(sinJapanDailyReportsTable.id, reserved.id));
+      await markSinJapanUnlinkedReportsNotified(reservedUnlinkedReports);
       logger.info({ ownerUserId: profile.userId, reportDate }, "SIN JAPAN daily report delivered");
     } else {
       await db.update(sinJapanDailyReportsTable).set({ status: "failed", error: sent.error }).where(eq(sinJapanDailyReportsTable.id, reserved.id));
+      await markSinJapanUnlinkedReportsDeliveryUnknown(reservedUnlinkedReports);
       logger.warn({ ownerUserId: profile.userId, error: sent.error }, "SIN JAPAN daily report was not delivered");
     }
   }
