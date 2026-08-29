@@ -5,7 +5,8 @@ set -a
 source /var/www/sinjapan-sales/.env
 set +a
 git pull origin main
-pnpm install --frozen-lockfile
+# .env の NODE_ENV=production 下でも、ビルドに必要な開発依存（tsc/esbuild等）を入れる
+pnpm install --frozen-lockfile --prod=false
 # Playwright Chromiumのインストール（api-server配下のバイナリを使用）
 (cd artifacts/api-server && ./node_modules/.bin/playwright install chromium --with-deps) || true
 (cd lib/db && pnpm exec tsc -p tsconfig.json)

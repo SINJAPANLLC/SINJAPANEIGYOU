@@ -88,7 +88,8 @@ echo ""
 echo "============================================"
 echo "  依存関係インストール"
 echo "============================================"
-pnpm install --frozen-lockfile
+# .env の NODE_ENV=production 下でも、ビルドに必要な開発依存（tsc/esbuild等）を入れる
+pnpm install --frozen-lockfile --prod=false
 
 echo ""
 echo "============================================"
