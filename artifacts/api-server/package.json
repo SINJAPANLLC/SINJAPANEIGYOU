@@ -9,7 +9,8 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:email-safety": "esbuild src/lib/email-safety.test.ts --bundle --platform=node --format=esm --outfile=/tmp/email-safety.test.mjs && node --test /tmp/email-safety.test.mjs",
-    "test:sin-japan-notifications": "esbuild src/lib/sin-japan-notification-format.test.ts --bundle --platform=node --format=esm --outfile=/tmp/sin-japan-notification-format.test.mjs && node --test /tmp/sin-japan-notification-format.test.mjs"
+    "test:sin-japan-notifications": "esbuild src/lib/sin-japan-notification-format.test.ts --bundle --platform=node --format=esm --outfile=/tmp/sin-japan-notification-format.test.mjs && node --test /tmp/sin-japan-notification-format.test.mjs",
+    "test:x-research-error": "esbuild src/lib/x-research-error.test.ts --bundle --platform=node --format=esm --outfile=/tmp/x-research-error.test.mjs && node --test /tmp/x-research-error.test.mjs"
   },
   "dependencies": {
     "@clerk/express": "^2.0.11",

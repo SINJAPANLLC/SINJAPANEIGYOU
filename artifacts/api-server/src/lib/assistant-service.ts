@@ -35,6 +35,7 @@ import {
   sinJapanUnlinkedGroupLabel,
 } from "./sin-japan-notification-format";
 import { searchAirtable, type AirtableSearchOptions } from "./airtable-client";
+import { describeXResearchError } from "./x-research-error";
 
 const DEFAULT_TOPICS = [
   "日本と世界の経済ニュース 今日",
@@ -1058,23 +1059,6 @@ async function applyAssistantActions(userId: string, actions: AssistantAction[])
 type ResearchItem = { topic: string; title: string; url: string; snippet: string };
 type ResearchBundle = { items: ResearchItem[]; errors: string[] };
 
-function describeXResearchError(error: unknown): { message: string; terminal: boolean; code?: number } {
-  const apiError = error as { code?: number; data?: { detail?: string; title?: string } };
-  const code = apiError?.code;
-  const detail = apiError?.data?.detail?.toLowerCase() || "";
-  if (code === 402 || detail.includes("credits depleted")) {
-    return { message: "X APIクレジット残高不足", terminal: true, code };
-  }
-  if (code === 401) return { message: "X APIの認証に失敗しました", terminal: true, code };
-  if (code === 403) return { message: "X APIに投稿検索の権限がありません", terminal: true, code };
-  if (code === 429) return { message: "X APIの利用上限に達しました", terminal: true, code };
-  return {
-    message: error instanceof Error ? error.message : "X検索に失敗しました",
-    terminal: false,
-    code,
-  };
-}
-
 async function gatherResearch(userId: string, topics: string[]): Promise<ResearchBundle> {
   const items: ResearchItem[] = [];
   const errors: string[] = [];
@@ -1121,7 +1105,12 @@ async function gatherResearch(userId: string, topics: string[]): Promise<Researc
     } catch (error) {
       const failure = describeXResearchError(error);
       errors.push(`${topic}: ${failure.message}`);
-      logger.warn({ code: failure.code, message: failure.message, topic }, "assistant X research failed");
+      logger.warn({
+        code: failure.code,
+        message: failure.message,
+        detail: failure.detail?.slice(0, 300),
+        topic,
+      }, "assistant X research failed");
       if (failure.terminal) break;
     }
   }
@@ -1132,7 +1121,9 @@ function buildResearchLines(research: ResearchItem[], researchErrors: string[], 
   const newsFor = (matchers: RegExp[]) => research.find((item) => matchers.some((pattern) => pattern.test(`${item.topic} ${item.title}`)));
   const newsLine = (label: string, matchers: RegExp[]) => {
     const item = newsFor(matchers);
-    return item ? `・${label}｜${item.title}\n  ${item.url}` : `・${label}｜`;
+    return item
+      ? `・${label}｜${item.title}\n  ${item.url}`
+      : `・${label}｜${researchErrors.length ? "未取得" : "該当なし"}`;
   };
   const status = researchErrors.length
     ? `・X検索：${researchErrors.join(" / ")}`
@@ -1431,7 +1422,7 @@ export async function generateDailyReport(
         model: "gpt-4o-mini",
         messages: [{
           role: "system",
-          content: `あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字は使わず、親しみやすく仕事で読みやすい文章にしてください。情報がない項目も削除せず、空欄のまま残してください。確認できない数字・予定・健康・家族情報は推測しないでください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。収集情報のタイトル・概要・元記事URLは改変せず、検索失敗は「未接続」または「取得失敗」と明示してください。
+          content: `あなたは本人専用の日本語AI秘書です。以下のテンプレートの順番と見出しを必ず守り、内容だけを最新情報に置き換えてください。絵文字は使わず、親しみやすく仕事で読みやすい文章にしてください。情報がない項目も削除せず、空欄のまま残してください。確認できない数字・予定・健康・家族情報は推測しないでください。個人メール・カレンダーは認証されていない限り推測せず、外部操作は提案に留めます。収集情報のタイトル・概要・元記事URLは改変しないでください。X検索が失敗または未接続の場合、「今日の情報」の各項目は必ず「未取得」とし、一般知識や推測で補完しないでください。
 ${template}`,
         }, {
           role: "user",
@@ -1444,11 +1435,14 @@ ${template}`,
     if (researchErrors.length) {
       const unavailable = researchErrors.some((error) => error.includes("未接続"));
       const depleted = researchErrors.some((error) => error.includes("クレジット残高不足"));
+      const billing = researchErrors.some((error) => error.includes("請求またはProject利用設定エラー"));
       const statusLine = unavailable
         ? "未接続：接続済みのXアカウントをご確認ください。"
         : depleted
           ? "取得停止：X APIのクレジット残高が不足しています。"
-          : "取得失敗：X APIの接続と投稿検索権限をご確認ください。";
+          : billing
+            ? "取得停止：X APIの請求設定、利用Project、アプリの紐付けをご確認ください。"
+            : "取得失敗：X APIの接続と投稿検索権限をご確認ください。";
       content = `${content}\n\n【X検索の状態】\n・${statusLine}`;
     }
     const generationToken = report.generationToken;
